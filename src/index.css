@@ -1,29 +1,30 @@
-:root {
-  --bg: #0b0714;
-  --fg: #f5f3ff;
-  --muted: #b7aecb;
-  --accent: #f472b6;
-  --accent-2: #7c3aed;
-  --ok: #34d399;
+@import "tailwindcss";
 
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color-scheme: dark;
-}
-
-* {
-  box-sizing: border-box;
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-ink: #0b0714;
+  --color-ink-2: #140c22;
+  --color-ink-3: #1c1230;
+  --color-fog: #f5f3ff;
+  --color-mist: #b7aecb;
+  --color-berry: #f472b6;
+  --color-plum: #7c3aed;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-danger: #fb7185;
 }
 
 html,
 body,
 #root {
-  height: 100%;
-  margin: 0;
+  min-height: 100%;
 }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-fog);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
