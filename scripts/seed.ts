@@ -1,5 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import {
+  ACCOUNTS,
+  DEFAULT_ACCOUNT_RULES,
+  extractInvoiceFromText,
+} from "../src/lib/invoice-extract.ts";
+import { JOSE_SANTIAGO_OCR } from "../src/lib/invoice-fixtures.ts";
 
 dotenv.config();
 
@@ -7,6 +13,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const email = process.env.DEMO_EMAIL ?? process.env.NEXT_PUBLIC_DEMO_EMAIL ?? "demo@berrify.local";
 const password = process.env.DEMO_PASSWORD ?? process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "BerrifyDemo2026!";
+const staffPassword = password;
 
 if (!url || !serviceRole) {
   throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
@@ -16,25 +23,35 @@ const admin = createClient(url, serviceRole, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-async function findOrCreateUser(): Promise<string> {
+async function findUserId(lookupEmail: string): Promise<string | null> {
   const perPage = 200;
   let page = 1;
   for (;;) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
     if (error) throw error;
-    const found = data.users.find((u) => u.email === email);
+    const found = data.users.find((u) => u.email === lookupEmail);
     if (found) return found.id;
     if (data.users.length < perPage) break;
     page += 1;
   }
+  return null;
+}
+
+async function findOrCreateUser(
+  lookupEmail: string,
+  userPassword: string,
+  orgName?: string,
+): Promise<string> {
+  const existing = await findUserId(lookupEmail);
+  if (existing) return existing;
 
   const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password,
+    email: lookupEmail,
+    password: userPassword,
     email_confirm: true,
-    user_metadata: { org_name: "Pacifico Kitchen" },
+    user_metadata: orgName ? { org_name: orgName } : {},
   });
-  if (error || !data.user) throw error ?? new Error("Failed to create demo user");
+  if (error || !data.user) throw error ?? new Error(`Failed to create ${lookupEmail}`);
   return data.user.id;
 }
 
@@ -64,18 +81,28 @@ async function orgForUser(userId: string): Promise<string> {
   return org.id as string;
 }
 
-async function main() {
-  const userId = await findOrCreateUser();
-  const orgId = await orgForUser(userId);
+function weekStart(date = new Date()): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
 
+function atHour(dayOffset: number, hour: number, minute = 0): string {
+  const d = weekStart();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+}
+
+async function seedInventory(orgId: string, userId: string) {
   const { count, error: countError } = await admin
     .from("inventory_items")
     .select("id", { count: "exact", head: true })
     .eq("org_id", orgId);
   if (countError) throw countError;
   if ((count ?? 0) > 0) {
-    console.log(`Org already has ${count} item(s); skipping seed.`);
-    console.log(`Demo login: ${email}`);
+    console.log(`Org already has ${count} item(s); skipping inventory seed.`);
     return;
   }
 
@@ -167,9 +194,244 @@ async function main() {
     })),
   );
   if (moveError) throw moveError;
-
   console.log("Seeded Pacifico Kitchen inventory.");
-  console.log(`Demo login: ${email}`);
+}
+
+async function ensureStaffUser(staffEmail: string, orgId: string): Promise<string> {
+  const existing = await findUserId(staffEmail);
+  if (existing) {
+    await admin.from("memberships").upsert({
+      user_id: existing,
+      org_id: orgId,
+      role: "staff",
+    });
+    return existing;
+  }
+
+  const userId = await findOrCreateUser(staffEmail, staffPassword);
+  await admin.from("memberships").upsert({
+    user_id: userId,
+    org_id: orgId,
+    role: "staff",
+  });
+  return userId;
+}
+
+async function seedSchedule(orgId: string, ownerId: string) {
+  const { count, error: countError } = await admin
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId);
+  if (countError) throw countError;
+  if ((count ?? 0) > 0) {
+    console.log(`Org already has ${count} employee(s); skipping schedule seed.`);
+    return;
+  }
+
+  const roster = [
+    { full_name: "Sofia Reyes", email: "server@berrify.local", phone: "787-555-1001", position: "Server", hourly_rate: 12, login: true },
+    { full_name: "Marco Diaz", email: "cook@berrify.local", phone: "787-555-1002", position: "Cook", hourly_rate: 16, login: true },
+    { full_name: "Elena Cruz", email: "host@pacifico.example", phone: "787-555-1003", position: "Host", hourly_rate: 11, login: false },
+    { full_name: "Luis Ortega", email: "bar@pacifico.example", phone: "787-555-1004", position: "Bartender", hourly_rate: 14, login: false },
+    { full_name: "Nina Velez", email: "dish@pacifico.example", phone: "787-555-1005", position: "Dish", hourly_rate: 10, login: false },
+  ];
+
+  const { data: employees, error: empError } = await admin
+    .from("employees")
+    .insert(
+      roster.map((row) => ({
+        org_id: orgId,
+        full_name: row.full_name,
+        email: row.email,
+        phone: row.phone,
+        position: row.position,
+        hourly_rate: row.hourly_rate,
+        active: true,
+      })),
+    )
+    .select("id, email, full_name");
+  if (empError || !employees) throw empError ?? new Error("Failed to insert employees");
+
+  const byEmail = Object.fromEntries(employees.map((e) => [e.email, e.id]));
+
+  for (const row of roster.filter((r) => r.login)) {
+    const userId = await ensureStaffUser(row.email, orgId);
+    const { error } = await admin
+      .from("employees")
+      .update({ user_id: userId })
+      .eq("id", byEmail[row.email]);
+    if (error) throw error;
+  }
+
+  const sofia = byEmail["server@berrify.local"];
+  const marco = byEmail["cook@berrify.local"];
+  const elena = byEmail["host@pacifico.example"];
+  const luis = byEmail["bar@pacifico.example"];
+  const nina = byEmail["dish@pacifico.example"];
+
+  const rows = [
+    { employee_id: sofia, position: "Server", starts_at: atHour(1, 16), ends_at: atHour(1, 22), status: "published", note: "Dinner floor" },
+    { employee_id: marco, position: "Cook", starts_at: atHour(1, 15), ends_at: atHour(1, 23), status: "published", note: "Line lead" },
+    { employee_id: elena, position: "Host", starts_at: atHour(1, 16), ends_at: atHour(1, 21), status: "published", note: null },
+    { employee_id: sofia, position: "Server", starts_at: atHour(3, 11), ends_at: atHour(3, 16), status: "published", note: "Lunch" },
+    { employee_id: sofia, position: "Server", starts_at: atHour(4, 16), ends_at: atHour(4, 22), status: "published", note: "Dinner" },
+    { employee_id: marco, position: "Cook", starts_at: atHour(4, 14), ends_at: atHour(4, 22), status: "published", note: null },
+    { employee_id: luis, position: "Bartender", starts_at: atHour(5, 16), ends_at: atHour(5, 23), status: "published", note: "Weekend bar" },
+    { employee_id: nina, position: "Dish", starts_at: atHour(5, 16), ends_at: atHour(5, 23), status: "published", note: null },
+    { employee_id: null, position: "Server", starts_at: atHour(5, 17), ends_at: atHour(5, 23), status: "published", note: "Open Friday night" },
+    { employee_id: sofia, position: "Server", starts_at: atHour(6, 16), ends_at: atHour(6, 22), status: "published", note: "Saturday dinner" },
+    { employee_id: marco, position: "Cook", starts_at: atHour(6, 14), ends_at: atHour(6, 22), status: "draft", note: "Hold for cover" },
+    { employee_id: elena, position: "Host", starts_at: atHour(6, 16), ends_at: atHour(6, 21), status: "draft", note: "Draft host" },
+  ];
+
+  const { error: shiftError } = await admin.from("shifts").insert(
+    rows.map((row) => ({
+      org_id: orgId,
+      employee_id: row.employee_id,
+      position: row.position,
+      starts_at: row.starts_at,
+      ends_at: row.ends_at,
+      status: row.status,
+      note: row.note,
+      created_by: ownerId,
+    })),
+  );
+  if (shiftError) throw shiftError;
+  console.log("Seeded Pacifico Kitchen schedule.");
+}
+
+async function seedInvoices(orgId: string, userId: string) {
+  const { data: existing, error: existingError } = await admin
+    .from("suppliers")
+    .select("id, name")
+    .eq("org_id", orgId)
+    .eq("name", "Jose Santiago Inc")
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  let supplierId = existing?.id as string | undefined;
+  if (!supplierId) {
+    const { data, error } = await admin
+      .from("suppliers")
+      .insert({
+        org_id: orgId,
+        name: "Jose Santiago Inc",
+        contact_email: "billing@josesantiago.example",
+        phone: "787-555-0249",
+        notes: "QBO vendor. Print name is CAN ENTERPRISE LLC / BENMAMAN DANIEL.",
+      })
+      .select("id")
+      .single();
+    if (error || !data) throw error ?? new Error("Failed to insert Jose Santiago Inc");
+    supplierId = data.id as string;
+  }
+
+  const aliases = [
+    { match_text: "jose santiago", qbo_vendor_name: "Jose Santiago Inc" },
+    { match_text: "can enterprise", qbo_vendor_name: "Jose Santiago Inc" },
+    { match_text: "benmaman", qbo_vendor_name: "Jose Santiago Inc" },
+  ];
+  const { error: aliasError } = await admin.from("vendor_aliases").upsert(
+    aliases.map((a) => ({
+      org_id: orgId,
+      match_text: a.match_text,
+      supplier_id: supplierId,
+      qbo_vendor_name: a.qbo_vendor_name,
+    })),
+    { onConflict: "org_id,match_text" },
+  );
+  if (aliasError) throw aliasError;
+
+  const { error: ruleError } = await admin.from("account_rules").upsert(
+    DEFAULT_ACCOUNT_RULES.map((rule) => ({
+      org_id: orgId,
+      keyword: rule.keyword,
+      account: rule.account,
+      memo: rule.memo,
+      category: rule.category,
+    })),
+    { onConflict: "org_id,keyword" },
+  );
+  if (ruleError) throw ruleError;
+
+  const { count, error: countError } = await admin
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("invoice_number", "6512495");
+  if (countError) throw countError;
+  if ((count ?? 0) > 0) {
+    console.log("Jose Santiago sample bill already present; skipping invoice seed.");
+    return;
+  }
+
+  const extracted = extractInvoiceFromText(
+    JOSE_SANTIAGO_OCR,
+    aliases.map((a) => ({ ...a, supplier_id: supplierId })),
+  );
+  const { data: invoice, error: invError } = await admin
+    .from("invoices")
+    .insert({
+      org_id: orgId,
+      supplier_id: supplierId,
+      vendor_name: "CAN ENTERPRISE LLC",
+      invoice_number: extracted.invoice_number,
+      invoice_date: extracted.invoice_date,
+      due_date: extracted.due_date,
+      terms: extracted.terms,
+      subtotal: extracted.subtotal,
+      tax: extracted.tax,
+      total: extracted.total,
+      ap_account: ACCOUNTS.ap,
+      status: "extracted",
+      source: "upload",
+      caption: "Seeded from Jose Santiago $1,155.59 example",
+      ocr_text: JOSE_SANTIAGO_OCR,
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+  if (invError || !invoice) throw invError ?? new Error("Failed to insert sample invoice");
+
+  const { error: lineError } = await admin.from("invoice_lines").insert(
+    extracted.lines.map((line) => ({
+      org_id: orgId,
+      invoice_id: invoice.id,
+      code: line.code,
+      description: line.description,
+      qty_ordered: line.qty_ordered,
+      qty_shipped: line.qty_shipped,
+      uom: line.uom,
+      pounds: line.pounds,
+      unit_price: line.unit_price,
+      amount: line.amount,
+      category: line.category,
+    })),
+  );
+  if (lineError) throw lineError;
+
+  const { error: expError } = await admin.from("invoice_expense_lines").insert(
+    extracted.expenses.map((line, index) => ({
+      org_id: orgId,
+      invoice_id: invoice.id,
+      account: line.account,
+      amount: line.amount,
+      memo: line.memo,
+      sort_order: index,
+    })),
+  );
+  if (expError) throw expError;
+  console.log("Seeded Jose Santiago Inc aliases, account rules, and $1,155.59 sample bill.");
+}
+
+async function main() {
+  const userId = await findOrCreateUser(email, password, "Pacifico Kitchen");
+  const orgId = await orgForUser(userId);
+  await seedInventory(orgId, userId);
+  await seedSchedule(orgId, userId);
+  await seedInvoices(orgId, userId);
+  console.log(`Manager login: ${email}`);
+  console.log("Staff login: server@berrify.local / cook@berrify.local");
 }
 
 await main();

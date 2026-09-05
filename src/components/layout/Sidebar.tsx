@@ -1,29 +1,38 @@
 import {
   BarChart3,
   Boxes,
+  CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  Receipt,
   Truck,
   Users,
   Wallet,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
-
-const active = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
-  { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
-  { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
-] as const;
-
-const soon = [
-  { label: "Workforce", icon: Users },
-  { label: "Payroll", icon: Wallet },
-  { label: "Analytics", icon: BarChart3 },
-] as const;
+import { isManager } from "../../lib/schedule";
 
 export function Sidebar() {
+  const { role } = useAuth();
+  const manager = isManager(role);
+
+  const links = [
+    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+    { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+    ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
+    { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
+    ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),
+    { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
+    { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
+  ] as const;
+
+  const soon = [
+    { label: "Payroll", icon: Wallet },
+    { label: "Analytics", icon: BarChart3 },
+  ] as const;
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-white/8 bg-ink-2/80 px-3 py-4">
       <div className="mb-6 flex items-center gap-2.5 px-2">
@@ -35,7 +44,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">
-        {active.map((item) => {
+        {links.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink

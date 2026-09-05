@@ -1,8 +1,9 @@
 # Berrify
 
-AI-powered restaurant ERP. This repository ships the **Inventory MVP**: a
-multi-tenant workspace for items, suppliers, stock movements, and a live
-dashboard, backed by Supabase (Postgres + Auth + RLS).
+AI-powered restaurant ERP. This repository ships **Inventory**, **Employee
+scheduling**, and **supplier invoice capture**: a multi-tenant workspace for
+items, stock, a weekly schedule board, and QuickBooks Desktop bills from
+sideways invoice photos, backed by Supabase (Postgres + Auth + RLS).
 
 ## Stack
 
@@ -33,10 +34,14 @@ npm run dev
 
 The dev server runs at http://localhost:5173.
 
-Demo account (created by `npm run db:seed`):
+Demo accounts (created by `npm run db:seed`), password `BerrifyDemo2026!`:
 
-- Email: `demo@berrify.local`
-- Password: `BerrifyDemo2026!`
+- Manager: `demo@berrify.local`
+- Staff (server): `server@berrify.local`
+- Staff (cook): `cook@berrify.local`
+
+Managers create an employee with an email. When that person signs up with the
+same email, they join the restaurant as staff instead of getting a new workspace.
 
 ## Scripts
 
@@ -50,17 +55,50 @@ Demo account (created by `npm run db:seed`):
 | `npm test`          | Run Vitest unit tests.                              |
 | `npm run db:push`   | Apply `supabase/migrations/*.sql` via `DIRECT_URL`. |
 | `npm run verify:db` | Assert tables, RLS, and policies exist.             |
-| `npm run db:seed`   | Create a confirmed demo user and sample inventory.  |
+| `npm run db:seed`   | Create demo users, inventory, roster, shifts, and a Jose Santiago bill. |
+| `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
 
 ## Data model
 
-Multi-tenant by organization. Every inventory/supplier/movement row is scoped
-by `org_id`. Row Level Security allows access only when the signed-in user has
-a `memberships` row for that org. New auth users get a personal restaurant
-workspace automatically.
+Multi-tenant by organization. Inventory and scheduling rows are scoped by
+`org_id`. Row Level Security allows access only when the signed-in user has a
+`memberships` row for that org.
 
-Low stock is `quantity <= reorder_level`. Adjusting stock writes a
-`stock_movements` row; a database trigger updates `inventory_items.quantity`.
+- Low stock is `quantity <= reorder_level`. Adjusting stock writes a
+  `stock_movements` row; a database trigger updates `inventory_items.quantity`.
+- Shifts may be `draft` or `published`. Staff can only read published shifts.
+  Owners and managers can edit the roster and the week board.
+- `employees.user_id` is optional. Roster rows can exist before the person has
+  a login.
+- Invoices store raw SKU lines plus rolled-up `invoice_expense_lines` (Food,
+  Kitchen, Cleaning, Tax). Export is a QuickBooks Desktop IIF Bill on the
+  Expenses tab (A/P `20000`), not one item line per SKU.
+
+## Invoices → QuickBooks Desktop Bill
+
+1. Photograph a Jose Santiago / CAN Enterprise invoice (landscape, often rotated
+   90°) or import a photo forwarded from the kitchen WhatsApp group.
+2. Open **Invoices**, review the photo, SKUs (bill qty = **Desp**), and the
+   proposed Expenses tab.
+3. Export **Desktop IIF** (or CSV fallback) and import the Bill in QuickBooks
+   Desktop. Vendor is **Jose Santiago Inc**, terms Net 15, due = date + 15.
+
+The seed includes the `$1,155.59` example (ref `6512495`) with expense splits
+`$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso / `$915.75` food.
+
+WhatsApp: official Cloud API cannot join a normal group. Forward the photo to
+the restaurant Business number, then run:
+
+```bash
+npm run whatsapp:ingest -- --file ./factura.jpg --from +17875550100
+# or, when you already have OCR / caption text:
+npm run whatsapp:ingest -- --file ./ocr.txt --caption "Forwarded factura"
+```
+
+The webhook JSON shape is documented at the top of
+`scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
+and unofficial group bots are out of scope. OCR runs in the browser with
+`tesseract.js` (tries 0/90/180/270 and keeps the highest confidence).
 
 ## Cursor Cloud Agent environment
 
