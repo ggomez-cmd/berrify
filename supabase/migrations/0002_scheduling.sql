@@ -17,7 +17,7 @@ create table if not exists public.employees (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.shifts (
+create table if not exists public.staff_shifts (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations (id) on delete cascade,
   employee_id uuid references public.employees (id) on delete set null,
@@ -36,18 +36,18 @@ create table if not exists public.shifts (
 
 create index if not exists employees_org_id_idx on public.employees (org_id);
 create index if not exists employees_email_idx on public.employees (lower(email));
-create index if not exists shifts_org_id_idx on public.shifts (org_id);
-create index if not exists shifts_employee_id_idx on public.shifts (employee_id);
-create index if not exists shifts_starts_at_idx on public.shifts (starts_at);
+create index if not exists staff_shifts_org_id_idx on public.staff_shifts (org_id);
+create index if not exists staff_shifts_employee_id_idx on public.staff_shifts (employee_id);
+create index if not exists staff_shifts_starts_at_idx on public.staff_shifts (starts_at);
 
 drop trigger if exists employees_set_updated_at on public.employees;
 create trigger employees_set_updated_at
   before update on public.employees
   for each row execute function public.set_updated_at();
 
-drop trigger if exists shifts_set_updated_at on public.shifts;
-create trigger shifts_set_updated_at
-  before update on public.shifts
+drop trigger if exists staff_shifts_set_updated_at on public.staff_shifts;
+create trigger staff_shifts_set_updated_at
+  before update on public.staff_shifts
   for each row execute function public.set_updated_at();
 
 create or replace function public.has_org_role(check_org_id uuid, roles text[])
@@ -118,7 +118,7 @@ end;
 $$;
 
 alter table public.employees enable row level security;
-alter table public.shifts enable row level security;
+alter table public.staff_shifts enable row level security;
 
 do $$
 begin
@@ -133,8 +133,8 @@ begin
       with check (public.has_org_role(org_id, array['owner', 'manager']));
   end if;
 
-  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'shifts' and policyname = 'shifts_select_member') then
-    create policy shifts_select_member on public.shifts
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'staff_shifts' and policyname = 'staff_shifts_select_member') then
+    create policy staff_shifts_select_member on public.staff_shifts
       for select using (
         public.is_org_member(org_id)
         and (
@@ -144,8 +144,8 @@ begin
       );
   end if;
 
-  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'shifts' and policyname = 'shifts_write_manager') then
-    create policy shifts_write_manager on public.shifts
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'staff_shifts' and policyname = 'staff_shifts_write_manager') then
+    create policy staff_shifts_write_manager on public.staff_shifts
       for all using (public.has_org_role(org_id, array['owner', 'manager']))
       with check (public.has_org_role(org_id, array['owner', 'manager']));
   end if;
@@ -153,4 +153,4 @@ end
 $$;
 
 grant select, insert, update, delete on public.employees to authenticated;
-grant select, insert, update, delete on public.shifts to authenticated;
+grant select, insert, update, delete on public.staff_shifts to authenticated;

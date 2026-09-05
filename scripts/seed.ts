@@ -284,7 +284,7 @@ async function seedSchedule(orgId: string, ownerId: string) {
     { employee_id: elena, position: "Host", starts_at: atHour(6, 16), ends_at: atHour(6, 21), status: "draft", note: "Draft host" },
   ];
 
-  const { error: shiftError } = await admin.from("shifts").insert(
+  const { error: shiftError } = await admin.from("staff_shifts").insert(
     rows.map((row) => ({
       org_id: orgId,
       employee_id: row.employee_id,

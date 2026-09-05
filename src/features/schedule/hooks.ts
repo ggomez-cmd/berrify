@@ -10,7 +10,7 @@ export function useShifts() {
     enabled: Boolean(org?.id),
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("shifts")
+        .from("staff_shifts")
         .select("*, employees(id, full_name, position, user_id)")
         .eq("org_id", org!.id)
         .order("starts_at");
@@ -47,10 +47,10 @@ export function useUpsertShift() {
         created_by: user?.id ?? null,
       };
       if (id) {
-        const { error } = await supabase.from("shifts").update(payload).eq("id", id);
+        const { error } = await supabase.from("staff_shifts").update(payload).eq("id", id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("shifts").insert(payload);
+        const { error } = await supabase.from("staff_shifts").insert(payload);
         if (error) throw error;
       }
     },
@@ -64,7 +64,7 @@ export function useDeleteShift() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("shifts").delete().eq("id", id);
+      const { error } = await supabase.from("staff_shifts").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -78,7 +78,7 @@ export function usePublishWeek() {
   return useMutation({
     mutationFn: async (ids: string[]) => {
       if (ids.length === 0) return;
-      const { error } = await supabase.from("shifts").update({ status: "published" }).in("id", ids);
+      const { error } = await supabase.from("staff_shifts").update({ status: "published" }).in("id", ids);
       if (error) throw error;
     },
     onSuccess: () => {
