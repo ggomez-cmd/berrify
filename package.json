@@ -15,7 +15,8 @@
     "db:push": "tsx scripts/db-push.ts",
     "db:seed": "tsx scripts/seed.ts",
     "verify:db": "tsx scripts/verify-db.ts",
-    "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts"
+    "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",
+    "ocr:photo": "tsx scripts/ocr-photo.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -25,6 +26,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.3",
+    "sharp": "^0.35.4",
     "tesseract.js": "^6.0.1"
   },
   "devDependencies": {

@@ -97,8 +97,10 @@ npm run whatsapp:ingest -- --file ./ocr.txt --caption "Forwarded factura"
 
 The webhook JSON shape is documented at the top of
 `scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
-and unofficial group bots are out of scope. OCR runs in the browser with
-`tesseract.js` (tries 0/90/180/270 and keeps the highest confidence).
+and unofficial group bots are out of scope. OCR runs in the browser (and in
+`whatsapp:ingest` for image files) with `tesseract.js` — it tries 0/90/180/270
+and keeps the highest confidence. Pink carbonless photos that were shot
+sideways usually need a human pass in Review before you export.
 
 ## Cursor Cloud Agent environment
 

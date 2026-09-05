@@ -48,6 +48,11 @@ describe("extractInvoiceFromText", () => {
     expect(withAlias.vendor_name).toBe("CAN ENTERPRISE LLC");
   });
 
+  it("does not treat a SKU code as the invoice number", () => {
+    const noRef = extractInvoiceFromText("1 1 CS 0118041 MAGNUM WINGS 60.08C 240.32");
+    expect(noRef.invoice_number).toBeNull();
+  });
+
   it("skips zero-shipped saran wrap and comment blocks", () => {
     expect(extracted.lines.some((l) => /saran/i.test(l.description))).toBe(false);
     expect(extracted.lines.some((l) => /martes/i.test(l.description))).toBe(false);
@@ -80,6 +85,16 @@ describe("rollupExpenses", () => {
     );
     expect(expenses).toHaveLength(1);
     expect(expenses[0]?.account).toBe(ACCOUNTS.food);
+  });
+});
+
+describe("fuzzy OCR lines", () => {
+  it("recovers a messy fries line with a trailing amount", () => {
+    const extracted = extractInvoiceFromText(
+      "L E a 1%. BAY COATED 8/8 F. FRY 5g. 1c 233.24\nMunicipal Auth T: $11.22\nPR Territory Auth: $21.73\nSubtotal $1,122.64",
+    );
+    expect(extracted.lines.some((l) => /fry/i.test(l.description) && l.amount === 233.24)).toBe(true);
+    expect(extracted.tax).toBeCloseTo(32.95);
   });
 });
 

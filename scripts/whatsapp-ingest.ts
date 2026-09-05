@@ -42,6 +42,7 @@ import {
   extractInvoiceFromText,
   type VendorAlias,
 } from "../src/lib/invoice-extract.ts";
+import { ocrFile } from "./ocr-node.ts";
 
 dotenv.config();
 
@@ -73,9 +74,14 @@ const from = arg("from") ?? null;
 const messageId = arg("message-id") ?? null;
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
-const ocrText = imageExts.has(ext)
-  ? caption
-  : readFileSync(abs, "utf8");
+let ocrText = imageExts.has(ext) ? "" : readFileSync(abs, "utf8");
+if (imageExts.has(ext)) {
+  console.error(`OCR ${abs} (trying 0/90/180/270)…`);
+  const ocr = await ocrFile(abs);
+  ocrText = ocr.text || caption;
+  console.error(`OCR rotation ${ocr.rotation}° confidence ${ocr.confidence.toFixed(1)}`);
+}
+if (!ocrText.trim()) ocrText = caption;
 const imageData = imageExts.has(ext)
   ? `data:image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")};base64,${readFileSync(abs).toString("base64")}`
   : null;

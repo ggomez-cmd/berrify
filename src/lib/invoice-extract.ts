@@ -330,11 +330,13 @@ function extractInvoiceNumber(text: string): string | null {
     /\b(?:num(?:ero|\.)?|ref(?:\.|\s*no\.?)?)\s*[:#]?\s*(\d{5,})\b/i,
   );
   if (labeled?.[1]) return labeled[1];
-  const loose = withoutCliente.match(/\b(\d{7,})\b/);
-  return loose?.[1] ?? null;
+  return null;
 }
 
 function parseSkuLine(line: string): ExtractedSku | null {
+  if (/subtotal|balance due|municipal|territory auth|amount due|total due/i.test(line)) {
+    return null;
+  }
   const strict = line.match(SKU_LINE);
   if (strict) {
     return {
@@ -351,7 +353,7 @@ function parseSkuLine(line: string): ExtractedSku | null {
   }
 
   const loose = line.match(SKU_LOOSE);
-  if (!loose) return null;
+  if (!loose) return parseFuzzySku(line);
   const rest = loose[5];
   const money = [...rest.matchAll(/(\d+(?:,\d{3})*\.\d{2,4})[A-Z$#]*/gi)];
   if (money.length < 2) return null;
@@ -368,6 +370,41 @@ function parseSkuLine(line: string): ExtractedSku | null {
     pounds: null,
     unit_price: stripPriceSuffix(priceTok[0]),
     amount: parseMoney(amountTok[1]),
+    category: "food",
+  };
+}
+
+function parseFuzzySku(line: string): ExtractedSku | null {
+  const fuzzy = line.match(/(\d{6,7})\D+(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
+  if (fuzzy) {
+    const description = fuzzy[2].replace(/[^A-Za-z0-9 /.*#"'-]+/g, " ").replace(/\s+/g, " ").trim();
+    if (description.length < 4) return null;
+    return {
+      code: fuzzy[1],
+      description,
+      qty_ordered: 0,
+      qty_shipped: 1,
+      uom: null,
+      pounds: null,
+      unit_price: 0,
+      amount: parseMoney(fuzzy[3]),
+      category: "food",
+    };
+  }
+
+  const tail = line.match(/([A-Za-z][A-Za-z0-9 /.*#"'-]{5,})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
+  if (!tail) return null;
+  const description = tail[1].trim();
+  if (COMMENT.test(description) || description.length < 6) return null;
+  return {
+    code: null,
+    description,
+    qty_ordered: 0,
+    qty_shipped: 1,
+    uom: null,
+    pounds: null,
+    unit_price: 0,
+    amount: parseMoney(tail[2]),
     category: "food",
   };
 }
