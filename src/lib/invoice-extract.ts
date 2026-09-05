@@ -127,19 +127,28 @@ export function matchVendor(
   text: string,
   aliases: VendorAlias[],
 ): { supplier_id: string | null; qbo_vendor_name: string; vendor_name: string | null } {
+  const letterhead =
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => /can enterprise|jose santiago|benmaman/i.test(l)) ?? null;
   const hay = text.toLowerCase();
   const hit = aliases.find((a) => hay.includes(a.match_text.toLowerCase()));
   if (hit) {
     return {
       supplier_id: hit.supplier_id,
       qbo_vendor_name: hit.qbo_vendor_name,
-      vendor_name: hit.match_text,
+      vendor_name: letterhead ?? hit.match_text,
     };
   }
   if (/jose santiago|can enterprise|benmaman/i.test(text)) {
-    return { supplier_id: null, qbo_vendor_name: "Jose Santiago Inc", vendor_name: "CAN ENTERPRISE LLC" };
+    return {
+      supplier_id: null,
+      qbo_vendor_name: "Jose Santiago Inc",
+      vendor_name: letterhead ?? "CAN ENTERPRISE LLC",
+    };
   }
-  return { supplier_id: null, qbo_vendor_name: "Jose Santiago Inc", vendor_name: null };
+  return { supplier_id: null, qbo_vendor_name: "Jose Santiago Inc", vendor_name: letterhead };
 }
 
 function labeledMoney(text: string, labels: string[]): number {

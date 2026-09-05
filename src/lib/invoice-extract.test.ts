@@ -40,6 +40,14 @@ describe("extractInvoiceFromText", () => {
     expect(extracted.vendor_name).toBe("CAN ENTERPRISE LLC");
   });
 
+  it("keeps the letterhead print name when aliases match", () => {
+    const withAlias = extractInvoiceFromText(JOSE_SANTIAGO_OCR, [
+      { match_text: "can enterprise", supplier_id: "sup-1", qbo_vendor_name: "Jose Santiago Inc" },
+    ]);
+    expect(withAlias.supplier_id).toBe("sup-1");
+    expect(withAlias.vendor_name).toBe("CAN ENTERPRISE LLC");
+  });
+
   it("skips zero-shipped saran wrap and comment blocks", () => {
     expect(extracted.lines.some((l) => /saran/i.test(l.description))).toBe(false);
     expect(extracted.lines.some((l) => /martes/i.test(l.description))).toBe(false);
