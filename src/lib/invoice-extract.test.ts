@@ -149,6 +149,7 @@ DANIEL BENMAMAN MEDINA/CAN ENTERPRISE 40494738
 SUBTOTAL 757.56
 Municipal Sales Tax 757.56 .000 0.00
 SUPERHAX T-SHIRT LDPE BAG 0.10
+8/14/2026 6:56:04 PM
 BOARS HEAD CANADIAN CHEDDAR 9.39
 SubTotal 47.95
 Tax Municipal 1% 0.48
@@ -166,6 +167,7 @@ Invoice #: 000000058724
     expect(bills[1]?.invoice_number).toBe("000000058724");
     expect(bills[1]?.total).toBeCloseTo(48.44);
     expect(bills[1]?.tax).toBeCloseTo(0.49);
+    expect(bills[1]?.invoice_date).toBe("2026-08-14");
   });
 });
 
@@ -177,6 +179,8 @@ describe("extractInvoicesFromText", () => {
     expect(bills[0]?.total).toBeCloseTo(757.56);
     expect(bills[1]?.qbo_vendor_name).toBe("SuperMax");
     expect(bills[1]?.total).toBeCloseTo(48.44);
+    expect(bills[0]?.invoice_date).toBe("2026-08-13");
+    expect(bills[1]?.invoice_date).toBe("2026-08-14");
   });
 });
 

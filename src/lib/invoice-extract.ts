@@ -271,8 +271,7 @@ export function extractInvoiceFromText(
           }
         : matchVendor(text, aliases);
   const invoiceNumber = extractInvoiceNumber(text, hint);
-  const fecha = text.match(new RegExp(`fecha(?:\\s+\\w+)?\\s*[:.]?\\s*(${DATE.source})`, "i"));
-  const invoiceDate = normalizeDate(fecha?.[1]) ?? normalizeDate(text.match(DATE)?.[0]);
+  const invoiceDate = extractInvoiceDate(text, hint);
   const termsInfo = detectTerms(text, hint);
   const dueDate = invoiceDate ? addDaysIso(invoiceDate, termsInfo.days) : null;
 
@@ -473,6 +472,16 @@ export function toQuickBooksBillCsv(input: {
     ].join(","),
   );
   return [header, ...rows].join("\n") + "\n";
+}
+
+function extractInvoiceDate(text: string, hint: ExtractHint = "auto"): string | null {
+  if (hint === "supermax") {
+    const receiptOnly = text.replace(/fecha\s+\w+[^\n]*/gi, "");
+    const stamped = receiptOnly.match(new RegExp(`${DATE.source}\\s+\\d{1,2}:\\d{2}`));
+    return normalizeDate(stamped?.[1]) ?? normalizeDate(receiptOnly.match(DATE)?.[0]);
+  }
+  const fecha = text.match(new RegExp(`fecha(?:\\s+\\w+)?\\s*[:.]?\\s*(${DATE.source})`, "i"));
+  return normalizeDate(fecha?.[1]) ?? normalizeDate(text.match(DATE)?.[0]);
 }
 
 function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string | null {
