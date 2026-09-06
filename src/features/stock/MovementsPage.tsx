@@ -65,7 +65,7 @@ export function MovementsPage() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading movements…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading movements…</p> : null}
 
       {!isLoading ? (
         <Table>
@@ -81,17 +81,17 @@ export function MovementsPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={5} className="py-10 text-center text-mist">
+                <Td colSpan={5} className="py-10 text-center text-muted">
                   No movements yet.
                 </Td>
               </tr>
             ) : (
               filtered.map((m) => (
-                <tr key={m.id} className="hover:bg-white/3">
-                  <Td className="whitespace-nowrap text-mist">{formatDateTime(m.created_at)}</Td>
+                <tr key={m.id} className="hover:bg-paper">
+                  <Td className="whitespace-nowrap text-muted">{formatDateTime(m.created_at)}</Td>
                   <Td>
                     <div className="font-medium">{m.inventory_items?.name ?? "Deleted item"}</div>
-                    <div className="text-xs text-mist">{m.inventory_items?.sku ?? ""}</div>
+                    <div className="text-xs text-muted">{m.inventory_items?.sku ?? ""}</div>
                   </Td>
                   <Td>
                     <Badge tone={toneFor(m.reason)}>{reasonLabel(m.reason)}</Badge>
@@ -100,7 +100,7 @@ export function MovementsPage() {
                     {Number(m.delta) > 0 ? "+" : ""}
                     {formatQty(m.delta)} {m.inventory_items?.unit ?? ""}
                   </Td>
-                  <Td className="text-mist">{m.note ?? "—"}</Td>
+                  <Td className="text-muted">{m.note ?? "—"}</Td>
                 </tr>
               ))
             )}

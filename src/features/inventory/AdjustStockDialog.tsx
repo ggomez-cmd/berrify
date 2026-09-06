@@ -90,9 +90,9 @@ export function AdjustStockDialog({
             placeholder="Optional"
           />
         </Field>
-        <p className="text-sm text-mist">
+        <p className="text-sm text-muted">
           Resulting quantity:{" "}
-          <span className="font-semibold text-fog">
+          <span className="font-semibold text-navy">
             {formatQty(nextQty)} {item.unit}
           </span>
         </p>

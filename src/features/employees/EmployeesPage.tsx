@@ -55,7 +55,7 @@ export function EmployeesPage() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading roster…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading roster…</p> : null}
 
       {!isLoading ? (
         <Table>
@@ -74,13 +74,13 @@ export function EmployeesPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-mist">
+                <Td colSpan={8} className="py-10 text-center text-muted">
                   No employees yet.
                 </Td>
               </tr>
             ) : (
               filtered.map((employee) => (
-                <tr key={employee.id} className="hover:bg-white/3">
+                <tr key={employee.id} className="hover:bg-paper">
                   <Td className="font-medium">{employee.full_name}</Td>
                   <Td>{employee.position}</Td>
                   <Td>{employee.email ?? "—"}</Td>

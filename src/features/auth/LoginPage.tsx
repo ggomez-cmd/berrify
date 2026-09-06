@@ -54,28 +54,24 @@ export function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-1/4 h-[70vh] bg-[radial-gradient(40%_55%_at_20%_30%,rgba(244,114,182,0.35),transparent_70%),radial-gradient(45%_50%_at_80%_20%,rgba(124,58,237,0.4),transparent_70%)] blur-xl"
-      />
-      <div className="relative mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
+    <div className="min-h-screen bg-paper">
+      <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
         <div className="mb-8 flex items-center gap-3">
           <img src="/berry.svg" alt="" className="size-9" />
           <div>
-            <p className="text-lg font-bold tracking-tight">Berrify</p>
-            <p className="text-xs uppercase tracking-[0.18em] text-mist">Restaurant ERP</p>
+            <p className="text-lg font-bold lowercase tracking-tight text-navy">berrify</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted">Restaurant ERP</p>
           </div>
         </div>
 
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="rounded-2xl border border-white/10 bg-white/4 p-6 backdrop-blur"
+          className="rounded-2xl border border-line bg-white p-6 shadow-sm"
         >
-          <h1 className="mb-1 text-xl font-semibold">
+          <h1 className="mb-1 text-xl font-semibold text-navy">
             {mode === "signin" ? "Sign in" : "Create your workspace"}
           </h1>
-          <p className="mb-5 text-sm text-mist">
+          <p className="mb-5 text-sm text-muted">
             Inventory, weekly scheduling, and supplier bills for one restaurant.
           </p>
 
@@ -127,7 +123,7 @@ export function LoginPage() {
 
           <button
             type="button"
-            className="mt-3 w-full text-center text-sm text-mist hover:text-fog"
+            className="mt-3 w-full text-center text-sm text-muted hover:text-ink"
             onClick={() => {
               setMode(mode === "signin" ? "signup" : "signin");
               setError(null);

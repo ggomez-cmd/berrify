@@ -138,7 +138,7 @@ export function InvoicesPage() {
 
   return (
     <div>
-      <p className="mb-4 max-w-2xl text-sm text-mist">
+      <p className="mb-4 max-w-2xl text-sm text-muted">
         Photograph a supplier invoice or a WhatsApp forward from that restaurant’s group.
         Berrify picks the books from the group name, caption, or sold-to (Semilla vs Kane
         Rum Bar), then rolls SKUs into that restaurant’s QuickBooks Desktop Expenses tab.
@@ -218,9 +218,9 @@ export function InvoicesPage() {
         </Select>
       </div>
 
-      {busy || message ? <p className="mb-3 text-sm text-mist">{message}</p> : null}
+      {busy || message ? <p className="mb-3 text-sm text-muted">{message}</p> : null}
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading invoices…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading invoices…</p> : null}
 
       {!isLoading ? (
         <Table>
@@ -239,7 +239,7 @@ export function InvoicesPage() {
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-mist">
+                <Td colSpan={8} className="py-10 text-center text-muted">
                   No invoices yet. Photograph a supplier bill or import a WhatsApp photo.
                 </Td>
               </tr>
@@ -247,7 +247,7 @@ export function InvoicesPage() {
               invoices
                 .filter((invoice) => !restaurantFilter || invoice.restaurant_id === restaurantFilter)
                 .map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-white/3">
+                <tr key={invoice.id} className="hover:bg-paper">
                   <Td className="font-medium">{invoice.invoice_number ?? invoice.id.slice(0, 8)}</Td>
                   <Td>{invoice.restaurants?.name ?? "—"}</Td>
                   <Td>{invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}</Td>

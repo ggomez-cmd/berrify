@@ -4,10 +4,10 @@ import { cn } from "../../lib/cn";
 type Tone = "ok" | "warn" | "danger" | "neutral";
 
 const tones: Record<Tone, string> = {
-  ok: "bg-ok/15 text-ok border-ok/25",
-  warn: "bg-warn/15 text-warn border-warn/25",
-  danger: "bg-danger/15 text-danger border-danger/25",
-  neutral: "bg-white/8 text-mist border-white/10",
+  ok: "bg-ok/10 text-ok border-ok/20",
+  warn: "bg-warn/10 text-warn border-warn/25",
+  danger: "bg-danger/10 text-danger border-danger/20",
+  neutral: "bg-wine text-white border-wine",
 };
 
 export function Badge({
