@@ -52,31 +52,8 @@ export function DashboardPage() {
   });
 
   return (
-    <div className="flex gap-5">
-      <aside className="hidden w-48 shrink-0 lg:block">
-        <div className="rounded-2xl bg-[#eef0f3] p-3">
-          <p className="px-2 text-sm font-semibold text-navy">Operations</p>
-          <p className="mb-3 px-2 text-[11px] text-muted">Today at {org?.name ?? "the restaurant"}</p>
-          <a className="block rounded-lg bg-white px-3 py-2 text-sm font-medium text-wine" href="#overview">
-            Overview
-          </a>
-          <a className="block rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-white" href="#low-stock">
-            Low stock
-          </a>
-          <a className="block rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-white" href="#invoices">
-            Invoice queue
-          </a>
-          <a className="block rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-white" href="#on-today">
-            On today
-          </a>
-          <a className="block rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-white" href="#movements">
-            Movements
-          </a>
-        </div>
-      </aside>
-
-      <div className="min-w-0 flex-1 space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-2" id="overview">
+    <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h1 className="text-2xl font-semibold text-navy">Hi, welcome back</h1>
             <p className="text-sm text-muted">{org?.name ?? "Workspace"}</p>
@@ -151,7 +128,7 @@ export function DashboardPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card id="on-today">
+          <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">{isManager(role) ? "On today" : "My next shifts"}</h2>
               <Link to="/schedule" className="text-xs font-medium text-wine hover:underline">
@@ -199,7 +176,7 @@ export function DashboardPage() {
           </Card>
 
           {isManager(role) ? (
-            <Card id="invoices">
+            <Card>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="font-semibold">Supplier bills</h2>
                 <Link to="/invoices" className="text-xs font-medium text-wine hover:underline">
@@ -226,7 +203,7 @@ export function DashboardPage() {
             </Card>
           ) : null}
 
-          <Card id="low-stock">
+          <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">Low stock</h2>
               <Link to="/inventory" className="text-xs font-medium text-wine hover:underline">
@@ -254,7 +231,7 @@ export function DashboardPage() {
             )}
           </Card>
 
-          <Card id="movements">
+          <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">Recent movements</h2>
               <Link to="/movements" className="text-xs font-medium text-wine hover:underline">
@@ -283,7 +260,6 @@ export function DashboardPage() {
             )}
           </Card>
         </div>
-      </div>
     </div>
   );
 }

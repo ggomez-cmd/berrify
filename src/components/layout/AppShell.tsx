@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { Navbar } from "./Navbar";
+import { Sidebar } from "./Sidebar";
 
 function titleFor(path: string): string {
   if (path.startsWith("/inventory")) return "Inventory";
@@ -18,9 +18,9 @@ export function AppShell() {
   const showPageTitle = pathname !== "/";
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <Navbar />
-      <main className="px-6 py-5">
+    <div className="flex min-h-screen bg-paper text-ink">
+      <Sidebar />
+      <main className="min-w-0 flex-1 px-6 py-5">
         {showPageTitle ? (
           <div className="mb-4">
             <h1 className="text-xl font-semibold text-navy">{titleFor(pathname)}</h1>

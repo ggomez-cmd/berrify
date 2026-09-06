@@ -15,7 +15,7 @@ import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
 import { isManager } from "../../lib/schedule";
 
-export function Navbar() {
+export function Sidebar() {
   const { role, user, signOut } = useAuth();
   const manager = isManager(role);
 
@@ -35,12 +35,16 @@ export function Navbar() {
   ] as const;
 
   return (
-    <header className="flex items-center gap-2 bg-wine px-3 text-white sm:px-4">
-      <div className="mr-2 flex shrink-0 items-center gap-2 py-3">
-        <img src="/berry.svg" alt="" className="size-6 brightness-0 invert" />
-        <p className="text-sm font-bold lowercase tracking-tight">berrify</p>
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto bg-wine px-3 py-4 text-white">
+      <div className="mb-6 flex items-center gap-2.5 px-2">
+        <img src="/berry.svg" alt="" className="size-7 brightness-0 invert" />
+        <div>
+          <p className="text-sm font-bold lowercase leading-none tracking-tight">berrify</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/65">ERP</p>
+        </div>
       </div>
-      <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+
+      <nav className="flex flex-1 flex-col gap-1">
         {links.map((item) => {
           const Icon = item.icon;
           return (
@@ -50,7 +54,7 @@ export function Navbar() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex shrink-0 items-center gap-1.5 px-3 py-3 text-sm font-medium text-white/75 hover:bg-wine-deep hover:text-white",
+                  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white",
                   isActive && "bg-wine-deep text-white",
                 )
               }
@@ -60,12 +64,16 @@ export function Navbar() {
             </NavLink>
           );
         })}
+
+        <p className="mb-1 mt-5 px-3 text-[10px] uppercase tracking-[0.16em] text-white/45">
+          Coming soon
+        </p>
         {soon.map((item) => {
           const Icon = item.icon;
           return (
             <span
               key={item.label}
-              className="flex shrink-0 cursor-not-allowed items-center gap-1.5 px-3 py-3 text-sm text-white/35"
+              className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-white/40"
             >
               <Icon className="size-4" />
               {item.label}
@@ -73,17 +81,18 @@ export function Navbar() {
           );
         })}
       </nav>
-      <div className="ml-2 flex shrink-0 items-center gap-3 py-2">
-        <span className="hidden text-xs text-white/70 lg:inline">{user?.email}</span>
+
+      <div className="mt-3 px-2">
+        <p className="mb-2 truncate text-[11px] text-white/60">{user?.email}</p>
         <button
           type="button"
           onClick={() => void signOut()}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-white/80 hover:bg-wine-deep hover:text-white"
+          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white"
         >
           <LogOut className="size-4" />
           Sign out
         </button>
       </div>
-    </header>
+    </aside>
   );
 }
