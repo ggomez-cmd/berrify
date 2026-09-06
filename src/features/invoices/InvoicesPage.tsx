@@ -112,8 +112,10 @@ export function InvoicesPage() {
     <div>
       <p className="mb-4 max-w-2xl text-sm text-mist">
         Photograph a supplier invoice or a WhatsApp forward — Jose Santiago, Ballester
-        Hermanos, SuperMax, or a clipped pair. Berrify OCRs SKUs, rolls them into QuickBooks
-        Desktop expense accounts, and exports an IIF Bill — Expenses tab, not item lines.
+        Hermanos, SuperMax, Drouyn, Santurce Brewing, B. Fernández, Northwestern Selecta,
+        or a clipped pair. Berrify OCRs SKUs, rolls them into QuickBooks Desktop expense
+        accounts (food, beverage, kitchen, cleaning, tax), and exports an IIF Bill —
+        Expenses tab, not item lines.
       </p>
 
       <div className="mb-4 flex flex-wrap gap-2">

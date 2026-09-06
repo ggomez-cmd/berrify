@@ -77,17 +77,21 @@ Multi-tenant by organization. Inventory and scheduling rows are scoped by
 ## Invoices → QuickBooks Desktop Bill
 
 1. Photograph a supplier invoice — Jose Santiago, Ballester Hermanos, SuperMax,
-   or a clipped pair (often rotated 90°) — or import a WhatsApp forward.
+   Drouyn, Santurce Brewing, B. Fernández, Northwestern Selecta, or a clipped
+   pair (often rotated 90°) — or import a WhatsApp forward.
 2. Open **Invoices**, review the photo, SKUs (bill qty = **Desp** on Jose
    Santiago), and the proposed Expenses tab. One photo can create two bills.
 3. Export **Desktop IIF** (or CSV fallback) and import the Bill in QuickBooks
-   Desktop. Vendors: **Jose Santiago Inc** (Net 15), **Ballester Hermanos Inc**
-   (Net 7), **SuperMax** (due on receipt). Expenses tab only, not item lines.
+   Desktop. Vendors and terms: Jose Santiago Inc (Net 15), Ballester Hermanos
+   Inc (Net 30), SuperMax (due on receipt), Drouyn & Co (Net 7), Santurce
+   Brewing Inc (Net 15), B. Fernandez & Hnos Inc (Net 30), Northwestern Selecta
+   (Net 7). Expenses tab only — food, beverage, kitchen, cleaning, tax.
 
 The seed includes the Jose Santiago `$1,155.59` example (ref `6512495`) with
 expense splits `$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso /
-`$915.75` food. Ballester `$757.56` (food, no tax) and SuperMax `$48.44`
-(food + PR tax) are the other fixtures.
+`$915.75` food. Other fixtures: Ballester `$757.56` food, SuperMax `$48.44`,
+Drouyn `$61.50`, Santurce `$78.05` (beer + tax), Fernández `$182.86` (rum +
+tax), Northwestern `$446.27`.
 
 WhatsApp: official Cloud API cannot join a normal group. Forward the photo to
 the restaurant Business number, then run:

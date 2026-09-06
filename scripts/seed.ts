@@ -332,18 +332,43 @@ async function seedInvoices(orgId: string, userId: string) {
   const ballesterId = await ensureSupplier(orgId, "Ballester Hermanos Inc", {
     contact_email: "billing@ballester.example",
     phone: "787-555-1914",
-    notes: "Wholesale. Terms Net 7. Customer on the form is CAN ENTERPRISE.",
+    notes: "Wholesale. Terms Net 30 (BC 30 DAYS). Customer on the form is CAN ENTERPRISE.",
   });
   const supermaxId = await ensureSupplier(orgId, "SuperMax", {
     contact_email: "condado@supermax.example",
     phone: "787-723-1611",
     notes: "Condado SuperMax self-checkout receipts.",
   });
+  const drouynId = await ensureSupplier(orgId, "Drouyn & Co", {
+    contact_email: "billing@drouyn.example",
+    phone: "787-765-6643",
+    notes: "Produce. Terms Net 7. Skip back-ordered lines.",
+  });
+  const santurceId = await ensureSupplier(orgId, "Santurce Brewing Inc", {
+    contact_email: "billing@santurcebrewing.example",
+    phone: "787-555-1356",
+    notes: "Beer. Terms Net 15. Expense account 50010 Beverage Purchases.",
+  });
+  const fernandezId = await ensureSupplier(orgId, "B. Fernandez & Hnos Inc", {
+    contact_email: "billing@bfernandez.example",
+    phone: "787-288-7272",
+    notes: "Liquor. Terms Net 30. Customer on the form is KANE RUM BAR.",
+  });
+  const northwesternId = await ensureSupplier(orgId, "Northwestern Selecta", {
+    contact_email: "billing@northwesternselecta.example",
+    phone: "787-781-1950",
+    notes: "Protein. Terms Net 7. Weight lines (cajas / libras / por libra).",
+  });
 
   const aliases = [
     { match_text: "jose santiago", qbo_vendor_name: "Jose Santiago Inc", supplier_id: joseId },
     { match_text: "ballester", qbo_vendor_name: "Ballester Hermanos Inc", supplier_id: ballesterId },
     { match_text: "supermax", qbo_vendor_name: "SuperMax", supplier_id: supermaxId },
+    { match_text: "drouyn", qbo_vendor_name: "Drouyn & Co", supplier_id: drouynId },
+    { match_text: "santurce", qbo_vendor_name: "Santurce Brewing Inc", supplier_id: santurceId },
+    { match_text: "fernandez", qbo_vendor_name: "B. Fernandez & Hnos Inc", supplier_id: fernandezId },
+    { match_text: "northwestern", qbo_vendor_name: "Northwestern Selecta", supplier_id: northwesternId },
+    { match_text: "selecta", qbo_vendor_name: "Northwestern Selecta", supplier_id: northwesternId },
   ];
   const { error: aliasError } = await admin.from("vendor_aliases").upsert(
     aliases.map((a) => ({

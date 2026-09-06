@@ -36,7 +36,13 @@ export async function rotateImage(dataUrl: string, degrees: number): Promise<str
 
 function usefulness(text: string, confidence: number): number {
   let score = confidence;
-  if (/ballester|supermax|jose\s+santiago|can enterprise/i.test(text)) score += 40;
+  if (
+    /ballester|supermax|jose\s+santiago|drouyn|santurce|fern[aá]ndez|northwestern|selecta|can enterprise/i.test(
+      text,
+    )
+  ) {
+    score += 40;
+  }
   if (/factura|subtotal|balance due|desp/i.test(text)) score += 15;
   if (/\d+\.\d{2}/.test(text)) score += 5;
   return score;

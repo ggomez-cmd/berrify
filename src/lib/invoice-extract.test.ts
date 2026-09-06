@@ -9,7 +9,16 @@ import {
   stripPriceSuffix,
   toQuickBooksBillIif,
 } from "./invoice-extract";
-import { BALLESTER_OCR, JOSE_SANTIAGO_OCR, SUPERMAX_OCR } from "./invoice-fixtures";
+import {
+  BALLESTER_OCR,
+  DROUYN_OCR,
+  FERNANDEZ_OCR,
+  JOSE_SANTIAGO_BACON_OCR,
+  JOSE_SANTIAGO_OCR,
+  NORTHWESTERN_OCR,
+  SANTURCE_OCR,
+  SUPERMAX_OCR,
+} from "./invoice-fixtures";
 
 describe("stripPriceSuffix", () => {
   it("drops C / C# / B$ suffixes", () => {
@@ -26,6 +35,8 @@ describe("classifySku", () => {
     expect(classifySku("MEDIUM 1 COMP. CONT. 8X8").category).toBe("kitchen");
     expect(classifySku("FABULOSO LAVANDA").category).toBe("cleaning");
     expect(classifySku("MAGNUM FULLY CKD CKN WINGS").category).toBe("food");
+    expect(classifySku("Ron Tresclavos Cafe").category).toBe("beverage");
+    expect(classifySku("West Coast IPA").category).toBe("beverage");
   });
 });
 
@@ -106,8 +117,8 @@ describe("Ballester Hermanos", () => {
     expect(extracted.qbo_vendor_name).toBe("Ballester Hermanos Inc");
     expect(extracted.invoice_number).toBe("40494738");
     expect(extracted.invoice_date).toBe("2026-08-13");
-    expect(extracted.due_date).toBe("2026-08-20");
-    expect(extracted.terms).toBe("Net 7");
+    expect(extracted.due_date).toBe("2026-09-12");
+    expect(extracted.terms).toBe("Net 30");
     expect(extracted.total).toBeCloseTo(757.56);
     expect(extracted.tax).toBeCloseTo(0);
   });
@@ -181,6 +192,84 @@ describe("extractInvoicesFromText", () => {
     expect(bills[1]?.total).toBeCloseTo(48.44);
     expect(bills[0]?.invoice_date).toBe("2026-08-13");
     expect(bills[1]?.invoice_date).toBe("2026-08-14");
+  });
+});
+
+describe("Jose Santiago bacon", () => {
+  const extracted = extractInvoiceFromText(JOSE_SANTIAGO_BACON_OCR);
+
+  it("keeps the $243.49 bacon bill and skips the $0 layout", () => {
+    expect(extracted.qbo_vendor_name).toBe("Jose Santiago Inc");
+    expect(extracted.invoice_number).toBe("6517569");
+    expect(extracted.invoice_date).toBe("2023-08-14");
+    expect(extracted.total).toBeCloseTo(243.49);
+    expect(extracted.tax).toBeCloseTo(2.41);
+    expect(extracted.lines).toHaveLength(1);
+    expect(extracted.lines[0]?.amount).toBeCloseTo(241.08);
+  });
+});
+
+describe("Drouyn & Co", () => {
+  const extracted = extractInvoiceFromText(DROUYN_OCR);
+
+  it("skips the back-ordered potato and bills produce only", () => {
+    expect(extracted.qbo_vendor_name).toBe("Drouyn & Co");
+    expect(extracted.invoice_number).toBe("01014389");
+    expect(extracted.invoice_date).toBe("2026-08-09");
+    expect(extracted.due_date).toBe("2026-08-16");
+    expect(extracted.terms).toBe("Net 7");
+    expect(extracted.total).toBeCloseTo(61.5);
+    expect(extracted.tax).toBeCloseTo(0);
+    expect(extracted.lines).toHaveLength(5);
+    expect(extracted.lines.some((l) => /creamer/i.test(l.description))).toBe(false);
+  });
+});
+
+describe("Santurce Brewing", () => {
+  const extracted = extractInvoiceFromText(SANTURCE_OCR);
+
+  it("rolls beer plus PR tax", () => {
+    expect(extracted.qbo_vendor_name).toBe("Santurce Brewing Inc");
+    expect(extracted.invoice_number).toBe("E-13563");
+    expect(extracted.invoice_date).toBe("2026-08-04");
+    expect(extracted.due_date).toBe("2026-08-19");
+    expect(extracted.terms).toBe("Net 15");
+    expect(extracted.tax).toBeCloseTo(8.05);
+    expect(extracted.total).toBeCloseTo(78.05);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.beverage)?.amount).toBeCloseTo(70);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.tax)?.amount).toBeCloseTo(8.05);
+  });
+});
+
+describe("B. Fernandez rum", () => {
+  const extracted = extractInvoiceFromText(FERNANDEZ_OCR);
+
+  it("does not treat Kane / CAN ENTERPRISE as the vendor", () => {
+    expect(extracted.qbo_vendor_name).toBe("B. Fernandez & Hnos Inc");
+    expect(extracted.invoice_number).toBe("4275290");
+    expect(extracted.invoice_date).toBe("2026-08-17");
+    expect(extracted.due_date).toBe("2026-09-16");
+    expect(extracted.terms).toBe("Net 30");
+    expect(extracted.lines).toHaveLength(8);
+    expect(extracted.tax).toBeCloseTo(18.86);
+    expect(extracted.total).toBeCloseTo(182.86);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.beverage)?.amount).toBeCloseTo(164);
+  });
+});
+
+describe("Northwestern Selecta", () => {
+  const extracted = extractInvoiceFromText(NORTHWESTERN_OCR);
+
+  it("reads weight lines and ignores the conduce number", () => {
+    expect(extracted.qbo_vendor_name).toBe("Northwestern Selecta");
+    expect(extracted.invoice_number).toBe("4128806");
+    expect(extracted.invoice_date).toBe("2026-08-12");
+    expect(extracted.due_date).toBe("2026-08-19");
+    expect(extracted.terms).toBe("Net 7");
+    expect(extracted.total).toBeCloseTo(446.27);
+    expect(extracted.lines).toHaveLength(3);
+    expect(extracted.lines.find((l) => l.code === "148590")?.pounds).toBeCloseTo(10);
+    expect(extracted.expenses[0]?.account).toBe(ACCOUNTS.food);
   });
 });
 

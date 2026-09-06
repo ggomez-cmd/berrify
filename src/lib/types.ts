@@ -98,7 +98,7 @@ export type ShiftWithEmployee = Shift & {
 
 export type InvoiceStatus = "received" | "extracted" | "reviewed" | "exported";
 export type InvoiceSource = "upload" | "whatsapp" | "camera";
-export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "other";
+export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "beverage" | "other";
 
 export type Invoice = {
   id: string;

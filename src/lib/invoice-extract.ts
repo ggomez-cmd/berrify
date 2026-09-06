@@ -1,4 +1,4 @@
-export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "other";
+export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "beverage" | "other";
 
 export type AccountRule = {
   keyword: string;
@@ -49,12 +49,20 @@ export type ExtractedInvoice = {
 export const ACCOUNTS = {
   ap: "20000 · Accounts payable",
   food: "50000 · Food Purchases",
+  beverage: "50010 · Beverage Purchases",
   kitchen: "60020 · Restaurant & Kitchen Expense",
   cleaning: "60021 · Cleaning Supplies",
   tax: "60025 · Sales tax expense",
 } as const;
 
 export const DEFAULT_ACCOUNT_RULES: AccountRule[] = [
+  { keyword: "tresclavos", account: ACCOUNTS.beverage, memo: "Liquor", category: "beverage" },
+  { keyword: " ron ", account: ACCOUNTS.beverage, memo: "Liquor", category: "beverage" },
+  { keyword: "ron ", account: ACCOUNTS.beverage, memo: "Liquor", category: "beverage" },
+  { keyword: "rum", account: ACCOUNTS.beverage, memo: "Liquor", category: "beverage" },
+  { keyword: "ipa", account: ACCOUNTS.beverage, memo: "Beer", category: "beverage" },
+  { keyword: "beer", account: ACCOUNTS.beverage, memo: "Beer", category: "beverage" },
+  { keyword: "cerveza", account: ACCOUNTS.beverage, memo: "Beer", category: "beverage" },
   { keyword: "fabuloso", account: ACCOUNTS.cleaning, memo: "Fabuloso", category: "cleaning" },
   { keyword: "clean", account: ACCOUNTS.cleaning, memo: "Cleaning", category: "cleaning" },
   { keyword: "detergent", account: ACCOUNTS.cleaning, memo: "Cleaning", category: "cleaning" },
@@ -72,9 +80,16 @@ export const DEFAULT_ACCOUNT_RULES: AccountRule[] = [
   { keyword: "servilleta", account: ACCOUNTS.kitchen, memo: "Cups/ napkins /containers", category: "kitchen" },
 ];
 
-const MONEY = /\$?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/;
+const MONEY = /\$?\s*(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/;
 const DATE = /\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/;
-const COMMENT = /martes solo recibe|comments:|debido a nuestro|recibe: miercoles|inventario anual/i;
+const COMMENT =
+  /martes solo recibe|comments:|debido a nuestro|recibe:\s*miercoles|inventario anual|returned checks|consuming raw|claims must|page:\s*\d|customer copy/i;
+const DROUYN_LINE =
+  /^(\d+)\s+(\d+)\s+(\d{4,5})\s+(.+?)\s+(\d+\.\d{2})\s+(\.?\d{2}|\d+\.\d{2})\s*$/;
+const NORTHWESTERN_LINE =
+  /^(\d{4,6})\s+(.+?)\s+(\d+)\s+(\d+\.\d{2})\s+(\d+\.\d{2,4})\s+(\d+\.\d{2})\s*$/;
+const FERNANDEZ_LINE =
+  /^(\d{5,7}E)\s+(\d{11,14})\s+(.+?)\s+(\d+\.\d{2})(?:\s+\d+\.\d{2}){0,2}\s*$/i;
 const SKU_LINE =
   /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{1,4})\s+(\d{4,})\s+(.+?)\s+(\d+(?:,\d{3})*\.\d{2,4})[A-Z$#]*\s+(\d+(?:,\d{3})*\.\d{2})\s*$/i;
 const SKU_LOOSE = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{1,4})\s+(\d{4,})\s+(.+)$/i;
@@ -132,6 +147,10 @@ const KNOWN_VENDORS = [
   { test: /ballester/i, qbo: "Ballester Hermanos Inc", print: "Ballester Hermanos, Inc." },
   { test: /supermax|superhax|super max/i, qbo: "SuperMax", print: "SuperMax" },
   { test: /jose\s+santiago/i, qbo: "Jose Santiago Inc", print: "Jose Santiago Inc" },
+  { test: /drouyn/i, qbo: "Drouyn & Co", print: "Drouyn & Co." },
+  { test: /santurce\s+brewing/i, qbo: "Santurce Brewing Inc", print: "Santurce Brewing, Inc" },
+  { test: /fern[aá]ndez|b\.\s*fern/i, qbo: "B. Fernandez & Hnos Inc", print: "B. Fernández & Hnos., Inc." },
+  { test: /northwestern|selecta/i, qbo: "Northwestern Selecta", print: "Northwestern Selecta" },
 ] as const;
 
 export function matchVendor(
@@ -142,7 +161,11 @@ export function matchVendor(
     text
       .split("\n")
       .map((l) => l.trim())
-      .find((l) => /ballester|supermax|jose santiago|can enterprise|benmaman/i.test(l)) ?? null;
+      .find((l) =>
+        /ballester|supermax|jose santiago|drouyn|santurce brewing|fern[aá]ndez|northwestern|selecta|can enterprise|benmaman/i.test(
+          l,
+        ),
+      ) ?? null;
   const hay = text.toLowerCase();
 
   const known = KNOWN_VENDORS.find((v) => v.test.test(text));
@@ -180,12 +203,6 @@ export function matchVendor(
   return { supplier_id: null, qbo_vendor_name: "Unknown vendor", vendor_name: letterhead };
 }
 
-function lineStartMoney(text: string, label: string): number {
-  const re = new RegExp(`^${label}\\s*[:.]?\\s*${MONEY.source}`, "im");
-  const match = text.match(re);
-  return match?.[1] ? parseMoney(match[1]) : 0;
-}
-
 function labeledMoney(text: string, labels: string[]): number {
   for (const label of labels) {
     const re = new RegExp(`${label}[^\\n$]*${MONEY.source}`, "i");
@@ -198,6 +215,7 @@ function labeledMoney(text: string, labels: string[]): number {
 export function rollupExpenses(lines: ExtractedSku[], tax: number): ExpenseLine[] {
   const kitchen = lines.filter((l) => l.category === "kitchen");
   const cleaning = lines.filter((l) => l.category === "cleaning");
+  const beverage = lines.filter((l) => l.category === "beverage");
   const food = lines.filter((l) => l.category === "food" || l.category === "other");
   const expenses: ExpenseLine[] = [];
 
@@ -224,6 +242,13 @@ export function rollupExpenses(lines: ExtractedSku[], tax: number): ExpenseLine[
       amount: cleaningAmt,
       memo: /fabuloso/i.test(cleaning.map((l) => l.description).join(" ")) ? "Fabuloso" : memo,
     });
+  }
+  const beverageAmt = sum(beverage);
+  if (beverageAmt > 0) {
+    const memo = /ipa|beer|cerveza/i.test(beverage.map((l) => l.description).join(" "))
+      ? "Beer"
+      : "Liquor";
+    expenses.push({ account: ACCOUNTS.beverage, amount: beverageAmt, memo });
   }
   const foodAmt = sum(food);
   if (foodAmt > 0) {
@@ -273,28 +298,10 @@ export function extractInvoiceFromText(
   const invoiceNumber = extractInvoiceNumber(text, hint);
   const invoiceDate = extractInvoiceDate(text, hint);
   const termsInfo = detectTerms(text, hint);
-  const dueDate = invoiceDate ? addDaysIso(invoiceDate, termsInfo.days) : null;
+  const printedDue = extractPrintedDueDate(text);
+  const dueDate = printedDue ?? (invoiceDate ? addDaysIso(invoiceDate, termsInfo.days) : null);
 
-  const municipal = labeledMoney(
-    text,
-    hint === "supermax"
-      ? ["tax municipal"]
-      : hint === "ballester"
-        ? ["municipal auth"]
-        : ["municipal auth", "tax municipal", "municipal sales tax", "municipal"],
-  );
-  const territory = labeledMoney(
-    text,
-    hint === "supermax"
-      ? ["tax estatal"]
-      : hint === "ballester"
-        ? ["pr territory auth"]
-        : ["pr territory auth", "territory auth", "tax estatal", "state sales tax", "estatal"],
-  );
-  let tax = round2(municipal + territory);
-  if (hint === "ballester" && (tax > 50 || /sales tax[^\n]*\.000/i.test(text))) {
-    tax = 0;
-  }
+  let tax = extractTax(text, hint);
 
   const lines: ExtractedSku[] = [];
   for (const line of rawLines) {
@@ -309,7 +316,7 @@ export function extractInvoiceFromText(
       if (parsed.amount > 30) continue;
       if (!/cheddar|jerry|brownie|bag|ldpe/i.test(parsed.description)) continue;
     }
-    if (parsed.qty_shipped === 0 && parsed.amount === 0) continue;
+    if (parsed.amount === 0) continue;
     const classified = classifySku(parsed.description, rules);
     lines.push({ ...parsed, category: classified.category });
   }
@@ -318,31 +325,19 @@ export function extractInvoiceFromText(
   const subtotals = [...text.matchAll(/sub\s*-?totals?\s*\$?\s*([\d,]+\.\d{2})/gi)].map((m) =>
     parseMoney(m[1]),
   );
-  let subtotal = labeledMoney(text, ["subtotal", "sub total"]) || lineSum;
+  let subtotal =
+    labeledMoney(text, ["sub total", "subtotal", "products total", "products"]) || lineSum;
   if (hint === "ballester") {
     subtotal = Math.max(lineSum, ...subtotals, 0);
   } else if (hint === "supermax") {
     const retail = subtotals.filter((n) => n > 5 && n < 200);
     subtotal = retail.length > 0 ? retail[retail.length - 1]! : lineSum;
   }
-  let total =
-    labeledMoney(text, ["balance due", "total due", "amount due"]) ||
-    lineStartMoney(text, "total") ||
-    round2(subtotal + tax);
+  let total = extractTotal(text, hint, subtotal, tax);
   if (hint === "ballester") {
     tax = 0;
     total = subtotal;
   } else if (hint === "supermax") {
-    const purchase = text.match(/purchase amount[:\s]+\$?([\d,]+\.\d{2})/i);
-    const ath = text.match(/(?:ath|debit\s*sale)[^\n]*?([\d,]+\.\d{2})/i);
-    const smallTotals = [...text.matchAll(/^total\s*\$?\s*([\d,]+\.\d{2})/gim)]
-      .map((m) => parseMoney(m[1]))
-      .filter((n) => n > 0 && n < 200);
-    total =
-      (purchase ? parseMoney(purchase[1]) : 0) ||
-      (ath ? parseMoney(ath[1]) : 0) ||
-      (smallTotals.length > 0 ? smallTotals[smallTotals.length - 1] : 0) ||
-      round2(subtotal + tax);
     if (tax > 5) tax = Math.max(0, round2(total - subtotal));
   }
 
@@ -383,6 +378,10 @@ function splitVendorDocuments(text: string): string[] {
     { re: /ballester/i },
     { re: /supermax|superhax/i },
     { re: /jose\s+santiago/i },
+    { re: /drouyn/i },
+    { re: /santurce\s+brewing/i },
+    { re: /fern[aá]ndez|b\.\s*fern/i },
+    { re: /northwestern|selecta/i },
   ];
   const hits = markers
     .map((m) => ({ idx: text.search(m.re) }))
@@ -397,18 +396,69 @@ function splitVendorDocuments(text: string): string[] {
 }
 
 function detectTerms(text: string, hint: ExtractHint = "auto"): { terms: string; days: number } {
-  if (hint === "ballester" || (hint === "auto" && /ballester/i.test(text) && !/supermax|superhax/i.test(text))) {
-    return { terms: "Net 7", days: 7 };
-  }
   if (
     hint === "supermax" ||
     (/supermax|superhax/i.test(text) && /selfcheckout|ath|debit/i.test(text))
   ) {
     return { terms: "Due on receipt", days: 0 };
   }
-  if (/\b7\s*days\b/i.test(text)) return { terms: "Net 7", days: 7 };
-  if (/15-?\s*net\s*15|net\s*15/i.test(text)) return { terms: "Net 15", days: 15 };
+  if (/\b(?:bc\s*)?30\s*days\b|net\s*30/i.test(text)) return { terms: "Net 30", days: 30 };
+  if (/\b(?:net\s*)?7\s*days\b/i.test(text)) return { terms: "Net 7", days: 7 };
+  if (/\b15\s*days\b|15-?\s*net\s*15|net\s*15/i.test(text)) return { terms: "Net 15", days: 15 };
+  if (hint === "ballester") return { terms: "Net 30", days: 30 };
   return { terms: "Net 15", days: 15 };
+}
+
+function extractPrintedDueDate(text: string): string | null {
+  const labeled = text.match(
+    new RegExp(`(?:due\\s*date|fecha\\s*venc\\w*|paid before|antes del)\\s*:?\\s*${DATE.source}`, "i"),
+  );
+  return normalizeDate(labeled?.[1]);
+}
+
+function extractTax(text: string, hint: ExtractHint): number {
+  if (hint === "ballester") return 0;
+  if (hint === "auto" && /ballester/i.test(text) && /sales tax[^\n]*\.000/i.test(text) && !/supermax|superhax/i.test(text)) {
+    return 0;
+  }
+  const combined = labeledMoney(text, ["total tax", "puerto rico state"]);
+  if (combined > 0) return combined;
+  const municipal = labeledMoney(
+    text,
+    hint === "supermax"
+      ? ["tax municipal"]
+      : ["municipal auth", "tax municipal", "municipal sales tax", "tax rt. 1%", "tax rt 1%"],
+  );
+  const territory = labeledMoney(
+    text,
+    hint === "supermax"
+      ? ["tax estatal"]
+      : ["pr territory auth", "territory auth", "tax estatal", "state sales tax", "tax rt. 10.5%", "tax rt 10.5%"],
+  );
+  const tax = round2(municipal + territory);
+  if (hint === "supermax" && tax > 5) return 0;
+  return tax;
+}
+
+function extractTotal(text: string, hint: ExtractHint, subtotal: number, tax: number): number {
+  if (hint === "supermax" || /supermax|superhax/i.test(text)) {
+    const purchase = text.match(/purchase amount[:\s]+\$?([\d,]+\.\d{2})/i);
+    const ath = text.match(/(?:ath|debit\s*sale)[^\n]*?([\d,]+\.\d{2})/i);
+    const smallTotals = [...text.matchAll(/^total\s*\$?\s*([\d,]+\.\d{2})/gim)]
+      .map((m) => parseMoney(m[1]))
+      .filter((n) => n > 0 && n < 200);
+    return (
+      (purchase ? parseMoney(purchase[1]) : 0) ||
+      (ath ? parseMoney(ath[1]) : 0) ||
+      (smallTotals.length > 0 ? smallTotals[smallTotals.length - 1]! : 0) ||
+      round2(subtotal + tax)
+    );
+  }
+  return (
+    labeledMoney(text, ["balance due", "total due", "amount due", "invoice total", "total orden", "total order"]) ||
+    parseMoney(text.match(/^total\s*:?\s*\$\s*([\d,]+\.\d{2})/im)?.[1]) ||
+    round2(subtotal + tax)
+  );
 }
 
 export function toQuickBooksBillIif(input: {
@@ -480,20 +530,41 @@ function extractInvoiceDate(text: string, hint: ExtractHint = "auto"): string | 
     const stamped = receiptOnly.match(new RegExp(`${DATE.source}\\s+\\d{1,2}:\\d{2}`));
     return normalizeDate(stamped?.[1]) ?? normalizeDate(receiptOnly.match(DATE)?.[0]);
   }
-  const fecha = text.match(new RegExp(`fecha(?:\\s+\\w+)?\\s*[:.]?\\s*(${DATE.source})`, "i"));
-  return normalizeDate(fecha?.[1]) ?? normalizeDate(text.match(DATE)?.[0]);
+  const labeled = [
+    new RegExp(`fecha(?:\\s+factura)?\\s*[:.]?\\s*${DATE.source}`, "i"),
+    new RegExp(`date\\s*entered\\s*:?\\s*${DATE.source}`, "i"),
+    new RegExp(`delivery\\s*date\\s*:?\\s*${DATE.source}`, "i"),
+    new RegExp(`fecha\\s*:?\\s*${DATE.source}`, "i"),
+  ];
+  for (const re of labeled) {
+    const hit = text.match(re);
+    const iso = normalizeDate(hit?.[1]);
+    if (iso) return iso;
+  }
+  return normalizeDate(text.match(DATE)?.[0]);
 }
 
 function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string | null {
-  const withoutCliente = text.replace(/num(?:ero|\.)?\s+cliente\b[^\n]*/gi, "");
+  const withoutCliente = text
+    .replace(/num(?:ero|\.)?\s+cliente\b[^\n]*/gi, "")
+    .replace(/cliente\s*no\.?[^\n]*/gi, "")
+    .replace(/conduce\b[^\n]*/gi, "")
+    .replace(/orden\s*compra[^\n]*/gi, "")
+    .replace(/customer\s*(?:no\.?|number|#)[^\n]*/gi, "");
   if (hint === "supermax") {
     const receipt =
       withoutCliente.match(/invoice\s*#:?\s*(\d{8,})/i) ??
       withoutCliente.match(/nice\s*#:?\s*\(?(\d{8,})/i);
     return receipt?.[1] ?? null;
   }
-  const numFactura = withoutCliente.match(/num\.?\s*factura[\s\S]{0,160}?(\d{8})/i);
+  const ekos = withoutCliente.match(/\binvoice\s*(?:number|#)?\s*:?\s*(E-\d{4,})/i);
+  if (ekos?.[1]) return ekos[1];
+  const invoiceWord = withoutCliente.match(/\binvoice\s+(\d{7,8})\b/i);
+  if (invoiceWord?.[1]) return invoiceWord[1];
+  const numFactura = withoutCliente.match(/num\.?\s*factura[\s\S]{0,160}?(\d{7,8})/i);
   if (numFactura?.[1]) return numFactura[1];
+  const facturaNumero = withoutCliente.match(/factura\s+numero[^\d]{0,20}(\d{7,8})/i);
+  if (facturaNumero?.[1]) return facturaNumero[1];
   const factura = withoutCliente.match(/\b(?:num\.?\s*)?factura[^\d]{0,40}(\d{7,8})/i);
   if (factura?.[1] && factura[1].length >= 7) return factura[1];
   const invoiceHash = withoutCliente.match(/\binvoice\s*#:?\s*(\d{5,})/i);
@@ -507,11 +578,55 @@ function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string 
 
 function parseSkuLine(line: string): ExtractedSku | null {
   if (
-    /subtotal|balance due|municipal|territory auth|amount due|total due|tax estatal|selfcheckout|recibe mas|debit sale|total de articulos|sales tax|taxable amount|weight invoiced|eight invoiced/i.test(
+    /subtotal|sub total|balance due|municipal|territory auth|amount due|total due|tax estatal|selfcheckout|recibe mas|debit sale|total de articulos|sales tax|taxable amount|weight invoiced|eight invoiced|total qty|total libras|total cajas|invoice total|total orden|back ordered|tax rt|total tax|must pay|payments|credits applied|ajuste/i.test(
       line,
     )
   ) {
     return null;
+  }
+  const drouyn = line.match(DROUYN_LINE);
+  if (drouyn) {
+    return {
+      code: drouyn[3],
+      description: drouyn[4].trim(),
+      qty_ordered: Number(drouyn[1]),
+      qty_shipped: Number(drouyn[2]),
+      uom: null,
+      pounds: null,
+      unit_price: Number(drouyn[5]),
+      amount: parseMoney(drouyn[6] === ".00" ? "0.00" : drouyn[6]),
+      category: "food",
+    };
+  }
+  const northwestern = line.match(NORTHWESTERN_LINE);
+  if (northwestern) {
+    return {
+      code: northwestern[1],
+      description: northwestern[2].trim(),
+      qty_ordered: Number(northwestern[3]),
+      qty_shipped: Number(northwestern[3]),
+      uom: "CS",
+      pounds: Number(northwestern[4]),
+      unit_price: Number(northwestern[5]),
+      amount: parseMoney(northwestern[6]),
+      category: "food",
+    };
+  }
+  const fernandez = line.match(FERNANDEZ_LINE);
+  if (fernandez) {
+    const money = [...line.matchAll(/(\d+\.\d{2})\b/g)];
+    const amountTok = money[money.length - 1];
+    return {
+      code: fernandez[1],
+      description: fernandez[3].trim(),
+      qty_ordered: 1,
+      qty_shipped: 1,
+      uom: "EA",
+      pounds: null,
+      unit_price: Number(fernandez[4]),
+      amount: parseMoney(amountTok?.[1] ?? fernandez[4]),
+      category: "beverage",
+    };
   }
   const weight = line.match(BALLESTER_WEIGHT);
   if (weight) {
@@ -610,7 +725,25 @@ function parseFuzzySku(line: string): ExtractedSku | null {
     };
   }
 
-  const tail = line.match(/([A-Za-z][A-Za-z0-9 /.*#"'&+-]{5,})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\b/);
+  const beverage = line.match(
+    /([A-Za-z][A-Za-z0-9 /.*#"'&()+-]{5,}(?:ipa|beer|cerveza|ron tresclavos)[A-Za-z0-9 /.*#"'&()+-]*)\s+(\d+\.\d{2})\s*$/i,
+  );
+  if (beverage) {
+    const amounts = [...line.matchAll(/(?<![0-9])(\d+\.\d{2})\b/g)];
+    const amount = parseMoney(amounts[amounts.length - 1]?.[1]);
+    return {
+      code: null,
+      description: beverage[1].trim(),
+      qty_ordered: 1,
+      qty_shipped: 1,
+      uom: /case/i.test(line) ? "CS" : "EA",
+      pounds: null,
+      unit_price: amount,
+      amount,
+      category: "beverage",
+    };
+  }
+  const tail = line.match(/([A-Za-z][A-Za-z0-9 /.*#"'&()+-]{5,})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\b/);
   if (!tail) return null;
   const description = tail[1].trim();
   if (COMMENT.test(description) || description.length < 6) return null;

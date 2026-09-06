@@ -16,7 +16,7 @@ import { formatMoney } from "../../lib/format";
 import type { InvoiceCategory, InvoiceWithSupplier, Supplier } from "../../lib/types";
 import { useUpdateInvoice } from "./hooks";
 
-const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "tax", "other"];
+const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
 
 function downloadText(filename: string, contents: string, mime: string) {
   const blob = new Blob([contents], { type: mime });
