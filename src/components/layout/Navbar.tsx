@@ -15,8 +15,8 @@ import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
 import { isManager } from "../../lib/schedule";
 
-export function Sidebar() {
-  const { role, signOut } = useAuth();
+export function Navbar() {
+  const { role, user, signOut } = useAuth();
   const manager = isManager(role);
 
   const links = [
@@ -35,16 +35,12 @@ export function Sidebar() {
   ] as const;
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col bg-wine px-3 py-4 text-white">
-      <div className="mb-6 flex items-center gap-2.5 px-2">
-        <img src="/berry.svg" alt="" className="size-7 brightness-0 invert" />
-        <div>
-          <p className="text-sm font-bold lowercase leading-none tracking-tight">berrify</p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/65">ERP</p>
-        </div>
+    <header className="flex items-center gap-2 bg-wine px-3 text-white sm:px-4">
+      <div className="mr-2 flex shrink-0 items-center gap-2 py-3">
+        <img src="/berry.svg" alt="" className="size-6 brightness-0 invert" />
+        <p className="text-sm font-bold lowercase tracking-tight">berrify</p>
       </div>
-
-      <nav className="flex flex-1 flex-col gap-1">
+      <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {links.map((item) => {
           const Icon = item.icon;
           return (
@@ -54,7 +50,7 @@ export function Sidebar() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white",
+                  "flex shrink-0 items-center gap-1.5 px-3 py-3 text-sm font-medium text-white/75 hover:bg-wine-deep hover:text-white",
                   isActive && "bg-wine-deep text-white",
                 )
               }
@@ -64,16 +60,12 @@ export function Sidebar() {
             </NavLink>
           );
         })}
-
-        <p className="mb-1 mt-5 px-3 text-[10px] uppercase tracking-[0.16em] text-white/45">
-          Coming soon
-        </p>
         {soon.map((item) => {
           const Icon = item.icon;
           return (
             <span
               key={item.label}
-              className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-white/40"
+              className="flex shrink-0 cursor-not-allowed items-center gap-1.5 px-3 py-3 text-sm text-white/35"
             >
               <Icon className="size-4" />
               {item.label}
@@ -81,15 +73,17 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      <button
-        type="button"
-        onClick={() => void signOut()}
-        className="mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white"
-      >
-        <LogOut className="size-4" />
-        Sign out
-      </button>
-    </aside>
+      <div className="ml-2 flex shrink-0 items-center gap-3 py-2">
+        <span className="hidden text-xs text-white/70 lg:inline">{user?.email}</span>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-white/80 hover:bg-wine-deep hover:text-white"
+        >
+          <LogOut className="size-4" />
+          Sign out
+        </button>
+      </div>
+    </header>
   );
 }
