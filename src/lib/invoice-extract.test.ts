@@ -244,6 +244,14 @@ describe("Santurce Brewing", () => {
 describe("B. Fernandez rum", () => {
   const extracted = extractInvoiceFromText(FERNANDEZ_OCR);
 
+  it("links the fernandez alias when the letterhead has an accent", () => {
+    const withAlias = extractInvoiceFromText(FERNANDEZ_OCR, [
+      { match_text: "fernandez", supplier_id: "sup-f", qbo_vendor_name: "B. Fernandez & Hnos Inc" },
+    ]);
+    expect(withAlias.supplier_id).toBe("sup-f");
+    expect(withAlias.qbo_vendor_name).toBe("B. Fernandez & Hnos Inc");
+  });
+
   it("does not treat Kane / CAN ENTERPRISE as the vendor", () => {
     expect(extracted.qbo_vendor_name).toBe("B. Fernandez & Hnos Inc");
     expect(extracted.invoice_number).toBe("4275290");

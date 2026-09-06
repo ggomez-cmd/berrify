@@ -153,6 +153,10 @@ const KNOWN_VENDORS = [
   { test: /northwestern|selecta/i, qbo: "Northwestern Selecta", print: "Northwestern Selecta" },
 ] as const;
 
+function foldText(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 export function matchVendor(
   text: string,
   aliases: VendorAlias[],
@@ -166,14 +170,14 @@ export function matchVendor(
           l,
         ),
       ) ?? null;
-  const hay = text.toLowerCase();
+  const hay = foldText(text);
 
   const known = KNOWN_VENDORS.find((v) => v.test.test(text));
   if (known) {
     const alias = aliases.find(
       (a) =>
-        hay.includes(a.match_text.toLowerCase()) &&
-        a.qbo_vendor_name.toLowerCase() === known.qbo.toLowerCase(),
+        hay.includes(foldText(a.match_text)) &&
+        foldText(a.qbo_vendor_name) === foldText(known.qbo),
     );
     return {
       supplier_id: alias?.supplier_id ?? null,
@@ -183,7 +187,7 @@ export function matchVendor(
   }
 
   const hit = [...aliases].sort((a, b) => b.match_text.length - a.match_text.length).find((a) =>
-    hay.includes(a.match_text.toLowerCase()),
+    hay.includes(foldText(a.match_text)),
   );
   if (hit) {
     return {

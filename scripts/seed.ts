@@ -367,6 +367,7 @@ async function seedInvoices(orgId: string, userId: string) {
     { match_text: "drouyn", qbo_vendor_name: "Drouyn & Co", supplier_id: drouynId },
     { match_text: "santurce", qbo_vendor_name: "Santurce Brewing Inc", supplier_id: santurceId },
     { match_text: "fernandez", qbo_vendor_name: "B. Fernandez & Hnos Inc", supplier_id: fernandezId },
+    { match_text: "fernández", qbo_vendor_name: "B. Fernandez & Hnos Inc", supplier_id: fernandezId },
     { match_text: "northwestern", qbo_vendor_name: "Northwestern Selecta", supplier_id: northwesternId },
     { match_text: "selecta", qbo_vendor_name: "Northwestern Selecta", supplier_id: northwesternId },
   ];

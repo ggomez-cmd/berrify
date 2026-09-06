@@ -114,7 +114,10 @@ export function InvoiceReviewDialog({
   };
 
   const vendor =
-    suppliers.find((s) => s.id === supplierId)?.name ?? invoice.suppliers?.name ?? "Jose Santiago Inc";
+    suppliers.find((s) => s.id === supplierId)?.name ??
+    invoice.suppliers?.name ??
+    invoice.vendor_name ??
+    "Unknown vendor";
 
   const exportPayload = {
     vendor,
@@ -170,7 +173,7 @@ export function InvoiceReviewDialog({
         <div className="grid gap-2">
           <Field label="QuickBooks vendor" htmlFor="inv-sup">
             <Select id="inv-sup" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">Jose Santiago Inc</option>
+              <option value="">Select vendor</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
