@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Berrify — AI-powered restaurant ERP. Inventory MVP.",
+  "description": "Berrify — AI-powered restaurant ERP. Inventory, scheduling, and invoice capture.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -14,7 +14,9 @@
     "test:watch": "vitest",
     "db:push": "tsx scripts/db-push.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "verify:db": "tsx scripts/verify-db.ts"
+    "verify:db": "tsx scripts/verify-db.ts",
+    "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",
+    "ocr:photo": "tsx scripts/ocr-photo.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -23,7 +25,9 @@
     "lucide-react": "^1.41.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "sharp": "^0.35.4",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

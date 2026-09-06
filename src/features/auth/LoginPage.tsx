@@ -4,7 +4,7 @@ import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
-import { DEMO_EMAIL, DEMO_PASSWORD } from "../../lib/constants";
+import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_STAFF_EMAIL } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
 
 type Mode = "signin" | "signup";
@@ -76,7 +76,7 @@ export function LoginPage() {
             {mode === "signin" ? "Sign in" : "Create your workspace"}
           </h1>
           <p className="mb-5 text-sm text-mist">
-            Inventory, suppliers, and stock movements for one restaurant.
+            Inventory, weekly scheduling, and supplier bills for one restaurant.
           </p>
 
           {mode === "signup" ? (
@@ -137,18 +137,32 @@ export function LoginPage() {
             {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
           </button>
 
-          <Button
-            type="button"
-            variant="ghost"
-            className="mt-4 w-full"
-            onClick={() => {
-              setMode("signin");
-              setEmail(demoEmail);
-              setPassword(demoPassword);
-            }}
-          >
-            Fill demo credentials
-          </Button>
+          <div className="mt-4 grid gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setMode("signin");
+                setEmail(demoEmail);
+                setPassword(demoPassword);
+              }}
+            >
+              Fill manager demo
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setMode("signin");
+                setEmail(import.meta.env.NEXT_PUBLIC_DEMO_STAFF_EMAIL ?? DEMO_STAFF_EMAIL);
+                setPassword(demoPassword);
+              }}
+            >
+              Fill staff demo
+            </Button>
+          </div>
         </form>
       </div>
     </div>

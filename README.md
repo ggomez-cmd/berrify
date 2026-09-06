@@ -1,8 +1,9 @@
 # Berrify
 
-AI-powered restaurant ERP. This repository ships the **Inventory MVP**: a
-multi-tenant workspace for items, suppliers, stock movements, and a live
-dashboard, backed by Supabase (Postgres + Auth + RLS).
+AI-powered restaurant ERP. This repository ships **Inventory**, **Employee
+scheduling**, and **supplier invoice capture**: a multi-tenant workspace for
+items, stock, a weekly schedule board, and QuickBooks Desktop bills from
+sideways invoice photos, backed by Supabase (Postgres + Auth + RLS).
 
 ## Stack
 
@@ -33,10 +34,14 @@ npm run dev
 
 The dev server runs at http://localhost:5173.
 
-Demo account (created by `npm run db:seed`):
+Demo accounts (created by `npm run db:seed`), password `BerrifyDemo2026!`:
 
-- Email: `demo@berrify.local`
-- Password: `BerrifyDemo2026!`
+- Manager: `demo@berrify.local`
+- Staff (server): `server@berrify.local`
+- Staff (cook): `cook@berrify.local`
+
+Managers create an employee with an email. When that person signs up with the
+same email, they join the restaurant as staff instead of getting a new workspace.
 
 ## Scripts
 
@@ -50,17 +55,67 @@ Demo account (created by `npm run db:seed`):
 | `npm test`          | Run Vitest unit tests.                              |
 | `npm run db:push`   | Apply `supabase/migrations/*.sql` via `DIRECT_URL`. |
 | `npm run verify:db` | Assert tables, RLS, and policies exist.             |
-| `npm run db:seed`   | Create a confirmed demo user and sample inventory.  |
+| `npm run db:seed`   | Create demo users, inventory, roster, shifts, and a Jose Santiago bill. |
+| `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
 
 ## Data model
 
-Multi-tenant by organization. Every inventory/supplier/movement row is scoped
-by `org_id`. Row Level Security allows access only when the signed-in user has
-a `memberships` row for that org. New auth users get a personal restaurant
-workspace automatically.
+Multi-tenant by organization. Inventory and scheduling rows are scoped by
+`org_id`. Row Level Security allows access only when the signed-in user has a
+`memberships` row for that org.
 
-Low stock is `quantity <= reorder_level`. Adjusting stock writes a
-`stock_movements` row; a database trigger updates `inventory_items.quantity`.
+- Low stock is `quantity <= reorder_level`. Adjusting stock writes a
+  `stock_movements` row; a database trigger updates `inventory_items.quantity`.
+- Shifts may be `draft` or `published`. Staff can only read published shifts.
+  Owners and managers can edit the roster and the week board.
+- `employees.user_id` is optional. Roster rows can exist before the person has
+  a login.
+- Invoices store raw SKU lines plus rolled-up `invoice_expense_lines` (Food,
+  Kitchen, Cleaning, Tax). Export is a QuickBooks Desktop IIF Bill on the
+  Expenses tab (A/P `20000`), not one item line per SKU.
+
+## Invoices → QuickBooks Desktop Bill
+
+1. Photograph a supplier invoice — Jose Santiago, Ballester Hermanos, SuperMax,
+   Drouyn, Santurce Brewing, B. Fernández, Northwestern Selecta, or a clipped
+   pair (often rotated 90°) — or import a WhatsApp forward.
+2. Open **Invoices**, review the photo, SKUs (bill qty = **Desp** on Jose
+   Santiago), and the proposed Expenses tab. One photo can create two bills.
+3. Export **Desktop IIF** (or CSV fallback) and import the Bill in QuickBooks
+   Desktop. Vendors and terms: Jose Santiago Inc (Net 15), Ballester Hermanos
+   Inc (Net 30), SuperMax (due on receipt), Drouyn & Co (Net 7), Santurce
+   Brewing Inc (Net 15), B. Fernandez & Hnos Inc (Net 30), Northwestern Selecta
+   (Net 7). Expenses tab only — food, beverage, kitchen, cleaning, tax.
+
+The seed includes the Jose Santiago `$1,155.59` example (ref `6512495`) with
+expense splits `$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso /
+`$915.75` food. Other fixtures: Ballester `$757.56` food, SuperMax `$48.44`,
+Drouyn `$61.50`, Santurce `$78.05` (beer + tax), Fernández `$182.86` (rum +
+tax), Northwestern `$446.27`.
+
+Each restaurant has its own QuickBooks company file. Official WhatsApp Cloud
+API cannot join a normal kitchen group, so staff photograph the bill in that
+restaurant’s group and forward it (or upload it). Routing order:
+
+1. `--group "Kane invoices"` / `--restaurant kane-rum-bar`
+2. `--from` Business number mapped in `restaurant_aliases`
+3. Caption (`semilla`, `kane`)
+4. Sold-to / ship-to on the factura (Semilla · 57 Delcasse vs Kane Rum Bar · Ashford)
+
+Do not use `CAN ENTERPRISE` alone — both restaurants print that. Seed restaurants
+are **Semilla** and **Kane Rum Bar**.
+
+```bash
+npm run whatsapp:ingest -- --file ./factura.jpg --group "Kane invoices"
+npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
+```
+
+The webhook JSON shape is documented at the top of
+`scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
+and unofficial group bots are out of scope. OCR runs in the browser (and in
+`whatsapp:ingest` for image files) with `tesseract.js` — it tries 0/90/180/270
+and keeps the highest confidence. Pink carbonless photos that were shot
+sideways usually need a human pass in Review before you export.
 
 ## Cursor Cloud Agent environment
 
