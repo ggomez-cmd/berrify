@@ -13,7 +13,8 @@ import {
   type ExtractedSku,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
-import type { InvoiceCategory, InvoiceWithSupplier, Supplier } from "../../lib/types";
+import { restaurantFileSlug } from "../../lib/restaurant-route";
+import type { InvoiceCategory, InvoiceWithSupplier, Restaurant, Supplier } from "../../lib/types";
 import { useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
@@ -33,13 +34,16 @@ export function InvoiceReviewDialog({
   onOpenChange,
   invoice,
   suppliers,
+  restaurants,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   invoice: InvoiceWithSupplier | null;
   suppliers: Supplier[];
+  restaurants: Restaurant[];
 }) {
   const save = useUpdateInvoice();
+  const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [number, setNumber] = useState("");
@@ -53,6 +57,7 @@ export function InvoiceReviewDialog({
 
   useEffect(() => {
     if (!open || !invoice) return;
+    setRestaurantId(invoice.restaurant_id ?? "");
     setSupplierId(invoice.supplier_id ?? "");
     setVendorName(invoice.vendor_name ?? "");
     setNumber(invoice.invoice_number ?? "");
@@ -95,6 +100,7 @@ export function InvoiceReviewDialog({
         invoice,
         lines,
         expenses,
+        restaurant_id: restaurantId || null,
         supplier_id: supplierId || null,
         vendor_name: vendorName || null,
         invoice_number: number,
@@ -130,9 +136,12 @@ export function InvoiceReviewDialog({
     total: totals.total,
   };
 
+  const books = restaurants.find((r) => r.id === restaurantId);
+  const filePrefix = books ? `${restaurantFileSlug(books)}-` : "";
+
   const exportIif = async () => {
     downloadText(
-      `qbd-bill-${exportPayload.invoiceNumber}.iif`,
+      `${filePrefix}qbd-bill-${exportPayload.invoiceNumber}.iif`,
       toQuickBooksBillIif(exportPayload),
       "text/plain",
     );
@@ -142,7 +151,7 @@ export function InvoiceReviewDialog({
 
   const exportCsv = async () => {
     downloadText(
-      `qbd-bill-${exportPayload.invoiceNumber}.csv`,
+      `${filePrefix}qbd-bill-${exportPayload.invoiceNumber}.csv`,
       toQuickBooksBillCsv(exportPayload),
       "text/csv",
     );
@@ -171,6 +180,16 @@ export function InvoiceReviewDialog({
           </div>
         )}
         <div className="grid gap-2">
+          <Field label="Restaurant / QBO books" htmlFor="inv-rest">
+            <Select id="inv-rest" value={restaurantId} onChange={(e) => setRestaurantId(e.target.value)}>
+              <option value="">Select restaurant</option>
+              {restaurants.map((restaurant) => (
+                <option key={restaurant.id} value={restaurant.id}>
+                  {restaurant.name} · {restaurant.qbo_company_name}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="QuickBooks vendor" htmlFor="inv-sup">
             <Select id="inv-sup" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Select vendor</option>

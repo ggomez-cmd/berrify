@@ -4,6 +4,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Select } from "../../components/ui/input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import {
   ACCOUNTS,
@@ -15,10 +16,19 @@ import {
 import { formatMoney } from "../../lib/format";
 import { ocrImage } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
+import { matchRestaurant } from "../../lib/restaurant-route";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
-import { fileToDataUrl, useAccountRules, useCreateInvoice, useInvoices, useVendorAliases } from "./hooks";
+import {
+  fileToDataUrl,
+  useAccountRules,
+  useCreateInvoice,
+  useInvoices,
+  useRestaurantAliases,
+  useRestaurants,
+  useVendorAliases,
+} from "./hooks";
 
 function statusTone(status: InvoiceWithSupplier["status"]) {
   switch (status) {
@@ -41,12 +51,15 @@ export function InvoicesPage() {
   const { role } = useAuth();
   const { data: invoices = [], isLoading, error } = useInvoices();
   const { data: suppliers = [] } = useSuppliers();
+  const { data: restaurants = [] } = useRestaurants();
+  const { data: restaurantAliases = [] } = useRestaurantAliases();
   const { data: aliases = [] } = useVendorAliases();
   const { data: rules = [] } = useAccountRules();
   const create = useCreateInvoice();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<InvoiceWithSupplier | null>(null);
+  const [restaurantFilter, setRestaurantFilter] = useState("");
 
   if (!isManager(role)) {
     return <Navigate to="/" replace />;
@@ -74,6 +87,20 @@ export function InvoicesPage() {
             }))
           : DEFAULT_ACCOUNT_RULES;
       const extracted = extractInvoicesFromText(ocr.text || caption || "", vendorAliases, accountRules);
+      const route = matchRestaurant(
+        { ocrText: ocr.text || caption || "", caption },
+        restaurants.map((r) => ({
+          id: r.id,
+          name: r.name,
+          qbo_company_name: r.qbo_company_name,
+          slug: r.slug,
+        })),
+        restaurantAliases.map((a) => ({
+          restaurant_id: a.restaurant_id,
+          match_kind: a.match_kind,
+          match_text: a.match_text,
+        })),
+      );
       const ids: string[] = [];
       for (const bill of extracted) {
         const id = await create.mutateAsync({
@@ -82,6 +109,7 @@ export function InvoicesPage() {
           image_mime: mime,
           ocr_text: ocr.text,
           caption,
+          restaurant_id: route?.restaurant.id ?? null,
           vendor_name: bill.vendor_name,
           supplier_id: bill.supplier_id,
           invoice_number: bill.invoice_number,
@@ -99,7 +127,7 @@ export function InvoicesPage() {
         ids.push(id);
       }
       setMessage(
-        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created. OCR rotation ${ocr.rotation}° · review the Expenses tab then export IIF.`,
+        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. OCR rotation ${ocr.rotation}° · review the restaurant and Expenses tab, then export IIF.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not read invoice");
@@ -111,11 +139,9 @@ export function InvoicesPage() {
   return (
     <div>
       <p className="mb-4 max-w-2xl text-sm text-mist">
-        Photograph a supplier invoice or a WhatsApp forward — Jose Santiago, Ballester
-        Hermanos, SuperMax, Drouyn, Santurce Brewing, B. Fernández, Northwestern Selecta,
-        or a clipped pair. Berrify OCRs SKUs, rolls them into QuickBooks Desktop expense
-        accounts (food, beverage, kitchen, cleaning, tax), and exports an IIF Bill —
-        Expenses tab, not item lines.
+        Photograph a supplier invoice or a WhatsApp forward from that restaurant’s group.
+        Berrify picks the books from the group name, caption, or sold-to (Semilla vs Kane
+        Rum Bar), then rolls SKUs into that restaurant’s QuickBooks Desktop Expenses tab.
       </p>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -181,6 +207,17 @@ export function InvoicesPage() {
         </label>
       </div>
 
+      <div className="mb-4 max-w-xs">
+        <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
+          <option value="">All restaurants</option>
+          {restaurants.map((restaurant) => (
+            <option key={restaurant.id} value={restaurant.id}>
+              {restaurant.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+
       {busy || message ? <p className="mb-3 text-sm text-mist">{message}</p> : null}
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
       {isLoading ? <p className="text-sm text-mist">Loading invoices…</p> : null}
@@ -190,6 +227,7 @@ export function InvoicesPage() {
           <THead>
             <tr>
               <Th>Ref</Th>
+              <Th>Restaurant</Th>
               <Th>Vendor</Th>
               <Th>Date</Th>
               <Th>Total</Th>
@@ -201,14 +239,17 @@ export function InvoicesPage() {
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <Td colSpan={7} className="py-10 text-center text-mist">
+                <Td colSpan={8} className="py-10 text-center text-mist">
                   No invoices yet. Photograph a supplier bill or import a WhatsApp photo.
                 </Td>
               </tr>
             ) : (
-              invoices.map((invoice) => (
+              invoices
+                .filter((invoice) => !restaurantFilter || invoice.restaurant_id === restaurantFilter)
+                .map((invoice) => (
                 <tr key={invoice.id} className="hover:bg-white/3">
                   <Td className="font-medium">{invoice.invoice_number ?? invoice.id.slice(0, 8)}</Td>
+                  <Td>{invoice.restaurants?.name ?? "—"}</Td>
                   <Td>{invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}</Td>
                   <Td>{invoice.invoice_date ?? "—"}</Td>
                   <Td>{formatMoney(invoice.total)}</Td>
@@ -235,6 +276,7 @@ export function InvoicesPage() {
         }}
         invoice={reviewing}
         suppliers={suppliers}
+        restaurants={restaurants}
       />
     </div>
   );

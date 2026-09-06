@@ -10,6 +10,8 @@ import type {
   InvoiceSource,
   InvoiceStatus,
   InvoiceWithSupplier,
+  Restaurant,
+  RestaurantAliasRow,
   VendorAliasRow,
 } from "../../lib/types";
 
@@ -21,7 +23,7 @@ export function useInvoices() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("*, suppliers(id, name), invoice_lines(*), invoice_expense_lines(*)")
+        .select("*, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)")
         .eq("org_id", org!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -42,6 +44,39 @@ export function useVendorAliases() {
         .eq("org_id", org!.id);
       if (error) throw error;
       return (data ?? []) as VendorAliasRow[];
+    },
+  });
+}
+
+export function useRestaurants() {
+  const { org } = useAuth();
+  return useQuery({
+    queryKey: ["restaurants", org?.id],
+    enabled: Boolean(org?.id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("restaurants")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as Restaurant[];
+    },
+  });
+}
+
+export function useRestaurantAliases() {
+  const { org } = useAuth();
+  return useQuery({
+    queryKey: ["restaurant_aliases", org?.id],
+    enabled: Boolean(org?.id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("restaurant_aliases")
+        .select("*")
+        .eq("org_id", org!.id);
+      if (error) throw error;
+      return (data ?? []) as RestaurantAliasRow[];
     },
   });
 }
@@ -74,6 +109,8 @@ export function useCreateInvoice() {
       ocr_text: string | null;
       caption?: string;
       whatsapp_from?: string;
+      whatsapp_group?: string;
+      restaurant_id: string | null;
       vendor_name: string | null;
       supplier_id: string | null;
       invoice_number: string | null;
@@ -93,6 +130,7 @@ export function useCreateInvoice() {
         .from("invoices")
         .insert({
           org_id: org.id,
+          restaurant_id: input.restaurant_id,
           supplier_id: input.supplier_id,
           vendor_name: input.vendor_name,
           invoice_number: input.invoice_number,
@@ -107,6 +145,7 @@ export function useCreateInvoice() {
           source: input.source,
           caption: input.caption ?? null,
           whatsapp_from: input.whatsapp_from ?? null,
+          whatsapp_group: input.whatsapp_group ?? null,
           image_data: input.image_data,
           image_mime: input.image_mime,
           ocr_text: input.ocr_text,
@@ -145,6 +184,7 @@ export function useUpdateInvoice() {
         >
       >;
       expenses: Array<Pick<InvoiceExpenseLine, "account" | "amount" | "memo">>;
+      restaurant_id: string | null;
       supplier_id: string | null;
       vendor_name: string | null;
       invoice_number: string;
@@ -160,6 +200,7 @@ export function useUpdateInvoice() {
       const { error } = await supabase
         .from("invoices")
         .update({
+          restaurant_id: input.restaurant_id,
           supplier_id: input.supplier_id,
           vendor_name: input.vendor_name,
           invoice_number: input.invoice_number || null,

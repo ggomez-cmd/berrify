@@ -6,6 +6,7 @@ import {
   extractInvoiceFromText,
 } from "../src/lib/invoice-extract.ts";
 import { JOSE_SANTIAGO_OCR } from "../src/lib/invoice-fixtures.ts";
+import { matchRestaurant, type RestaurantAlias } from "../src/lib/restaurant-route.ts";
 
 dotenv.config();
 
@@ -43,6 +44,36 @@ async function ensureSupplier(
     .select("id")
     .single();
   if (error || !data) throw error ?? new Error(`Failed to insert ${name}`);
+  return data.id as string;
+}
+
+async function ensureRestaurant(
+  orgId: string,
+  name: string,
+  slug: string,
+  qboCompanyName: string,
+  notes: string,
+): Promise<string> {
+  const { data: existing, error: existingError } = await admin
+    .from("restaurants")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing?.id) {
+    await admin
+      .from("restaurants")
+      .update({ name, qbo_company_name: qboCompanyName, notes })
+      .eq("id", existing.id);
+    return existing.id as string;
+  }
+  const { data, error } = await admin
+    .from("restaurants")
+    .insert({ org_id: orgId, name, slug, qbo_company_name: qboCompanyName, notes })
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error(`Failed to insert restaurant ${name}`);
   return data.id as string;
 }
 
@@ -324,6 +355,40 @@ async function seedSchedule(orgId: string, ownerId: string) {
 }
 
 async function seedInvoices(orgId: string, userId: string) {
+  const semillaId = await ensureRestaurant(
+    orgId,
+    "Semilla",
+    "semilla",
+    "Semilla",
+    "57 Calle Delcasse. WhatsApp group: Semilla kitchen.",
+  );
+  const kaneId = await ensureRestaurant(
+    orgId,
+    "Kane Rum Bar",
+    "kane-rum-bar",
+    "Kane Rum Bar",
+    "1060 Ave Ashford. WhatsApp group: Kane invoices.",
+  );
+  const restaurantAliases: RestaurantAlias[] = [
+    { restaurant_id: kaneId, match_kind: "whatsapp_group", match_text: "kane invoices" },
+    { restaurant_id: semillaId, match_kind: "whatsapp_group", match_text: "semilla kitchen" },
+    { restaurant_id: kaneId, match_kind: "caption", match_text: "kane" },
+    { restaurant_id: semillaId, match_kind: "caption", match_text: "semilla" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "kane rum bar" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "kanerb" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "can enterprise deux" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "1060 ave ashford" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "1080 ave ashford" },
+    { restaurant_id: semillaId, match_kind: "customer", match_text: "semilla" },
+    { restaurant_id: semillaId, match_kind: "customer", match_text: "57 delcasse" },
+    { restaurant_id: semillaId, match_kind: "customer", match_text: "57 c/del" },
+  ];
+  const { error: restaurantAliasError } = await admin.from("restaurant_aliases").upsert(
+    restaurantAliases.map((a) => ({ org_id: orgId, ...a })),
+    { onConflict: "org_id,match_kind,match_text" },
+  );
+  if (restaurantAliasError) throw restaurantAliasError;
+
   const joseId = await ensureSupplier(orgId, "Jose Santiago Inc", {
     contact_email: "billing@josesantiago.example",
     phone: "787-555-0249",
@@ -394,6 +459,35 @@ async function seedInvoices(orgId: string, userId: string) {
   );
   if (ruleError) throw ruleError;
 
+  const { data: untagged, error: untaggedError } = await admin
+    .from("invoices")
+    .select("id, ocr_text, caption, whatsapp_from, whatsapp_group")
+    .eq("org_id", orgId)
+    .is("restaurant_id", null);
+  if (untaggedError) throw untaggedError;
+  const restaurantRows = [
+    { id: semillaId, name: "Semilla", qbo_company_name: "Semilla", slug: "semilla" },
+    { id: kaneId, name: "Kane Rum Bar", qbo_company_name: "Kane Rum Bar", slug: "kane-rum-bar" },
+  ];
+  for (const invoice of untagged ?? []) {
+    const route = matchRestaurant(
+      {
+        ocrText: invoice.ocr_text,
+        caption: invoice.caption,
+        group: invoice.whatsapp_group,
+        from: invoice.whatsapp_from,
+      },
+      restaurantRows,
+      restaurantAliases,
+    );
+    if (!route) continue;
+    const { error } = await admin
+      .from("invoices")
+      .update({ restaurant_id: route.restaurant.id })
+      .eq("id", invoice.id);
+    if (error) throw error;
+  }
+
   const { count, error: countError } = await admin
     .from("invoices")
     .select("id", { count: "exact", head: true })
@@ -410,6 +504,7 @@ async function seedInvoices(orgId: string, userId: string) {
     .from("invoices")
     .insert({
       org_id: orgId,
+      restaurant_id: semillaId,
       supplier_id: joseId,
       vendor_name: "CAN ENTERPRISE LLC",
       invoice_number: extracted.invoice_number,

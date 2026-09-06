@@ -7,8 +7,9 @@
  * path for that forwarded image.
  *
  * Usage:
+ *   npm run whatsapp:ingest -- --file ./bill.jpg --group "Kane invoices"
  *   npm run whatsapp:ingest -- --file ./bill.jpg --from +17875550100
- *   npm run whatsapp:ingest -- --file ./ocr.txt --caption "Forwarded factura"
+ *   npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
  *
  * Cloud API webhook shape (document only — no live webhook in this MVP):
  *
@@ -42,6 +43,7 @@ import {
   extractInvoicesFromText,
   type VendorAlias,
 } from "../src/lib/invoice-extract.ts";
+import { matchRestaurant } from "../src/lib/restaurant-route.ts";
 import { ocrFile } from "./ocr-node.ts";
 
 dotenv.config();
@@ -54,7 +56,9 @@ function arg(name: string): string | undefined {
 
 const filePath = arg("file");
 if (!filePath) {
-  throw new Error("Usage: npm run whatsapp:ingest -- --file <photo-or-ocr.txt> [--caption ...] [--from ...] [--org-id ...]");
+  throw new Error(
+    "Usage: npm run whatsapp:ingest -- --file <photo-or-ocr.txt> [--group ...] [--from ...] [--caption ...] [--restaurant semilla|kane-rum-bar] [--org-id ...]",
+  );
 }
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -71,6 +75,8 @@ const abs = resolve(filePath);
 const ext = extname(abs).toLowerCase();
 const caption = arg("caption") ?? "Forwarded from WhatsApp Business inbox";
 const from = arg("from") ?? null;
+const group = arg("group") ?? null;
+const restaurantSlug = arg("restaurant") ?? null;
 const messageId = arg("message-id") ?? null;
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
@@ -103,14 +109,36 @@ const { data: ruleRows, error: ruleError } = await admin
   .eq("org_id", orgId);
 if (ruleError) throw ruleError;
 
+const { data: restaurantRows, error: restaurantError } = await admin
+  .from("restaurants")
+  .select("id, name, qbo_company_name, slug")
+  .eq("org_id", orgId);
+if (restaurantError) throw restaurantError;
+const { data: restaurantAliasRows, error: restaurantAliasError } = await admin
+  .from("restaurant_aliases")
+  .select("restaurant_id, match_kind, match_text")
+  .eq("org_id", orgId);
+if (restaurantAliasError) throw restaurantAliasError;
+
 const aliases = (aliasRows ?? []) as VendorAlias[];
 const rules = (ruleRows ?? []).length > 0 ? ruleRows! : DEFAULT_ACCOUNT_RULES;
 const extracted = extractInvoicesFromText(ocrText, aliases, rules);
+const forced = restaurantRows?.find((r) => r.slug === restaurantSlug) ?? null;
+const route =
+  forced
+    ? { restaurant: forced, match_kind: "whatsapp_group" as const, match_text: restaurantSlug ?? "" }
+    : matchRestaurant(
+        { ocrText, caption, group, from },
+        restaurantRows ?? [],
+        restaurantAliasRows ?? [],
+      );
 const created: Array<{
   invoice_id: string;
   invoice_number: string | null;
   total: number;
   vendor: string;
+  restaurant: string | null;
+  matched_by: string | null;
   expenses: typeof extracted[number]["expenses"];
 }> = [];
 
@@ -119,6 +147,7 @@ for (const bill of extracted) {
     .from("invoices")
     .insert({
       org_id: orgId,
+      restaurant_id: route?.restaurant.id ?? null,
       supplier_id: bill.supplier_id,
       vendor_name: bill.vendor_name,
       invoice_number: bill.invoice_number,
@@ -132,6 +161,7 @@ for (const bill of extracted) {
       status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
       source: "whatsapp",
       whatsapp_from: from,
+      whatsapp_group: group,
       whatsapp_message_id: messageId,
       caption,
       image_data: imageData,
@@ -171,6 +201,8 @@ for (const bill of extracted) {
     invoice_number: invoice.invoice_number,
     total: Number(invoice.total),
     vendor: bill.qbo_vendor_name,
+    restaurant: route?.restaurant.qbo_company_name ?? null,
+    matched_by: route?.match_kind ?? null,
     expenses: bill.expenses,
   });
 }

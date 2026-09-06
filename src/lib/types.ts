@@ -100,9 +100,29 @@ export type InvoiceStatus = "received" | "extracted" | "reviewed" | "exported";
 export type InvoiceSource = "upload" | "whatsapp" | "camera";
 export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "beverage" | "other";
 
+export type Restaurant = {
+  id: string;
+  org_id: string;
+  name: string;
+  qbo_company_name: string;
+  slug: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RestaurantAliasRow = {
+  id: string;
+  org_id: string;
+  restaurant_id: string;
+  match_kind: "whatsapp_group" | "whatsapp_from" | "caption" | "customer";
+  match_text: string;
+};
+
 export type Invoice = {
   id: string;
   org_id: string;
+  restaurant_id: string | null;
   supplier_id: string | null;
   vendor_name: string | null;
   invoice_number: string | null;
@@ -117,6 +137,7 @@ export type Invoice = {
   status: InvoiceStatus;
   source: InvoiceSource;
   whatsapp_from: string | null;
+  whatsapp_group: string | null;
   whatsapp_message_id: string | null;
   caption: string | null;
   image_data: string | null;
@@ -174,6 +195,7 @@ export type AccountRuleRow = {
 
 export type InvoiceWithSupplier = Invoice & {
   suppliers: Pick<Supplier, "id" | "name"> | null;
+  restaurants: Pick<Restaurant, "id" | "name" | "qbo_company_name" | "slug"> | null;
   invoice_lines: InvoiceLine[];
   invoice_expense_lines: InvoiceExpenseLine[];
 };

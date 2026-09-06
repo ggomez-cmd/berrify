@@ -93,13 +93,21 @@ expense splits `$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso /
 Drouyn `$61.50`, Santurce `$78.05` (beer + tax), Fernández `$182.86` (rum +
 tax), Northwestern `$446.27`.
 
-WhatsApp: official Cloud API cannot join a normal group. Forward the photo to
-the restaurant Business number, then run:
+Each restaurant has its own QuickBooks company file. Official WhatsApp Cloud
+API cannot join a normal kitchen group, so staff photograph the bill in that
+restaurant’s group and forward it (or upload it). Routing order:
+
+1. `--group "Kane invoices"` / `--restaurant kane-rum-bar`
+2. `--from` Business number mapped in `restaurant_aliases`
+3. Caption (`semilla`, `kane`)
+4. Sold-to / ship-to on the factura (Semilla · 57 Delcasse vs Kane Rum Bar · Ashford)
+
+Do not use `CAN ENTERPRISE` alone — both restaurants print that. Seed restaurants
+are **Semilla** and **Kane Rum Bar**.
 
 ```bash
-npm run whatsapp:ingest -- --file ./factura.jpg --from +17875550100
-# or, when you already have OCR / caption text:
-npm run whatsapp:ingest -- --file ./ocr.txt --caption "Forwarded factura"
+npm run whatsapp:ingest -- --file ./factura.jpg --group "Kane invoices"
+npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
 ```
 
 The webhook JSON shape is documented at the top of

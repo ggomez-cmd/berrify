@@ -20,6 +20,8 @@ const requiredTables = [
   "invoice_expense_lines",
   "vendor_aliases",
   "account_rules",
+  "restaurants",
+  "restaurant_aliases",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -35,6 +37,8 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   invoice_expense_lines: ["invoice_expenses_all_member"],
   vendor_aliases: ["vendor_aliases_all_member"],
   account_rules: ["account_rules_all_member"],
+  restaurants: ["restaurants_all_member"],
+  restaurant_aliases: ["restaurant_aliases_all_member"],
 };
 
 const client = createPgClient();
