@@ -20,6 +20,13 @@ export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
 export function formatRelative(iso: string): string {
   const then = new Date(iso).getTime();
   const delta = Date.now() - then;
