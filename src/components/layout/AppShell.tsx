@@ -16,7 +16,7 @@ export function AppShell() {
   const { pathname } = useLocation();
 
   return (
-    <div className="flex min-h-screen bg-ink text-fog">
+    <div className="flex min-h-screen bg-paper text-ink">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar title={titleFor(pathname)} />

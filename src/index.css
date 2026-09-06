@@ -2,16 +2,23 @@
 
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --color-ink: #0b0714;
-  --color-ink-2: #140c22;
-  --color-ink-3: #1c1230;
-  --color-fog: #f5f3ff;
-  --color-mist: #b7aecb;
-  --color-berry: #f472b6;
-  --color-plum: #7c3aed;
-  --color-ok: #34d399;
-  --color-warn: #fbbf24;
-  --color-danger: #fb7185;
+  --color-wine: #7b1924;
+  --color-wine-deep: #5c0201;
+  --color-navy: #0b1b3a;
+  --color-paper: #f4f5f7;
+  --color-ink: #111827;
+  --color-muted: #6b7280;
+  --color-line: #e5e7eb;
+  --color-ok: #16a34a;
+  --color-warn: #d97706;
+  --color-danger: #dc2626;
+  /* Leftover aliases: old dark-theme class names stay readable on paper. */
+  --color-fog: #111827;
+  --color-mist: #6b7280;
+  --color-berry: #7b1924;
+  --color-plum: #5c0201;
+  --color-ink-2: #ffffff;
+  --color-ink-3: #f4f5f7;
 }
 
 html,
@@ -22,8 +29,8 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-ink);
-  color: var(--color-fog);
+  background: var(--color-paper);
+  color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

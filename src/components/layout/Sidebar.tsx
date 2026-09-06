@@ -34,12 +34,12 @@ export function Sidebar() {
   ] as const;
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-white/8 bg-ink-2/80 px-3 py-4">
+    <aside className="flex w-60 shrink-0 flex-col bg-wine px-3 py-4 text-white">
       <div className="mb-6 flex items-center gap-2.5 px-2">
-        <img src="/berry.svg" alt="" className="size-7" />
+        <img src="/berry.svg" alt="" className="size-7 brightness-0 invert" />
         <div>
-          <p className="text-sm font-bold leading-none">Berrify</p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-mist">ERP</p>
+          <p className="text-sm font-bold lowercase leading-none tracking-tight">berrify</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/65">ERP</p>
         </div>
       </div>
 
@@ -53,8 +53,8 @@ export function Sidebar() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-mist hover:bg-white/6 hover:text-fog",
-                  isActive && "bg-white/8 text-fog",
+                  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white",
+                  isActive && "bg-wine-deep text-white",
                 )
               }
             >
@@ -64,7 +64,7 @@ export function Sidebar() {
           );
         })}
 
-        <p className="mb-1 mt-5 px-3 text-[10px] uppercase tracking-[0.16em] text-mist/70">
+        <p className="mb-1 mt-5 px-3 text-[10px] uppercase tracking-[0.16em] text-white/45">
           Coming soon
         </p>
         {soon.map((item) => {
@@ -72,7 +72,7 @@ export function Sidebar() {
           return (
             <span
               key={item.label}
-              className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-mist/45"
+              className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-white/40"
             >
               <Icon className="size-4" />
               {item.label}

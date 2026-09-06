@@ -80,7 +80,7 @@ export function EmployeesPage() {
               </tr>
             ) : (
               filtered.map((employee) => (
-                <tr key={employee.id} className="hover:bg-white/3">
+                <tr key={employee.id} className="hover:bg-paper">
                   <Td className="font-medium">{employee.full_name}</Td>
                   <Td>{employee.position}</Td>
                   <Td>{employee.email ?? "—"}</Td>

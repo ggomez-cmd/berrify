@@ -67,7 +67,7 @@ export function SuppliersPage() {
               </tr>
             ) : (
               filtered.map((supplier) => (
-                <tr key={supplier.id} className="hover:bg-white/3">
+                <tr key={supplier.id} className="hover:bg-paper">
                   <Td className="font-medium">{supplier.name}</Td>
                   <Td>{supplier.contact_email ?? "—"}</Td>
                   <Td>{supplier.phone ?? "—"}</Td>

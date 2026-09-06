@@ -97,7 +97,7 @@ export function InventoryPage() {
               filtered.map((item) => {
                 const low = isLowStock(item);
                 return (
-                  <tr key={item.id} className="hover:bg-white/3">
+                  <tr key={item.id} className="hover:bg-paper">
                     <Td>
                       <div className="font-medium">{item.name}</div>
                       <div className="text-xs text-mist">{item.sku ?? "—"}</div>

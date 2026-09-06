@@ -172,10 +172,10 @@ export function InvoiceReviewDialog({
           <img
             src={invoice.image_data}
             alt="Invoice photo"
-            className="max-h-80 w-full rounded-xl border border-white/10 object-contain bg-black/20"
+            className="max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
           />
         ) : (
-          <div className="grid min-h-40 place-items-center rounded-xl border border-white/10 text-sm text-mist">
+          <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
             No photo attached
           </div>
         )}

@@ -247,7 +247,7 @@ export function InvoicesPage() {
               invoices
                 .filter((invoice) => !restaurantFilter || invoice.restaurant_id === restaurantFilter)
                 .map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-white/3">
+                <tr key={invoice.id} className="hover:bg-paper">
                   <Td className="font-medium">{invoice.invoice_number ?? invoice.id.slice(0, 8)}</Td>
                   <Td>{invoice.restaurants?.name ?? "—"}</Td>
                   <Td>{invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}</Td>

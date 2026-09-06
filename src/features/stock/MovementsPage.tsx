@@ -87,7 +87,7 @@ export function MovementsPage() {
               </tr>
             ) : (
               filtered.map((m) => (
-                <tr key={m.id} className="hover:bg-white/3">
+                <tr key={m.id} className="hover:bg-paper">
                   <Td className="whitespace-nowrap text-mist">{formatDateTime(m.created_at)}</Td>
                   <Td>
                     <div className="font-medium">{m.inventory_items?.name ?? "Deleted item"}</div>

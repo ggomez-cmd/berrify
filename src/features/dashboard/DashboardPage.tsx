@@ -61,30 +61,30 @@ export function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">{isManager(role) ? "On today" : "My next shifts"}</h2>
-            <Link to="/schedule" className="text-xs text-berry hover:underline">
+            <Link to="/schedule" className="text-xs font-medium text-wine hover:underline">
               View schedule
             </Link>
           </div>
           {shiftsQuery.isLoading ? (
-            <p className="text-sm text-mist">Loading…</p>
+            <p className="text-sm text-muted">Loading…</p>
           ) : isManager(role) ? (
             onToday.length === 0 ? (
-              <p className="text-sm text-mist">No published shifts today.</p>
+              <p className="text-sm text-muted">No published shifts today.</p>
             ) : (
               <ul className="space-y-2">
                 {onToday.slice(0, 8).map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
                     <span>
                       <span className="font-medium">{s.employees?.full_name ?? "Open"}</span>
-                      <span className="ml-2 text-mist">{s.position}</span>
+                      <span className="ml-2 text-muted">{s.position}</span>
                     </span>
-                    <span className="text-mist">{formatTimeRange(s.starts_at, s.ends_at)}</span>
+                    <span className="text-muted">{formatTimeRange(s.starts_at, s.ends_at)}</span>
                   </li>
                 ))}
               </ul>
             )
           ) : myUpcoming.length === 0 ? (
-            <p className="text-sm text-mist">No upcoming published shifts.</p>
+            <p className="text-sm text-muted">No upcoming published shifts.</p>
           ) : (
             <ul className="space-y-2">
               {myUpcoming.map((s) => (
@@ -96,7 +96,7 @@ export function DashboardPage() {
                       day: "numeric",
                     })}
                   </span>
-                  <span className="text-mist">
+                  <span className="text-muted">
                     {formatTimeRange(s.starts_at, s.ends_at)} · {s.position}
                   </span>
                 </li>
@@ -108,38 +108,38 @@ export function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold flex items-center gap-2">
-              <CalendarDays className="size-4 text-mist" />
+              <CalendarDays className="size-4 text-muted" />
               Coverage
             </h2>
           </div>
           <p className="text-3xl font-semibold tracking-tight">{onToday.length}</p>
-          <p className="mt-1 text-sm text-mist">published shifts today</p>
+          <p className="mt-1 text-sm text-muted">published shifts today</p>
         </Card>
 
         {isManager(role) ? (
           <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold flex items-center gap-2">
-                <Receipt className="size-4 text-mist" />
+                <Receipt className="size-4 text-muted" />
                 Supplier bills
               </h2>
-              <Link to="/invoices" className="text-xs text-berry hover:underline">
+              <Link to="/invoices" className="text-xs font-medium text-wine hover:underline">
                 Review invoices
               </Link>
             </div>
             {invoicesQuery.isLoading ? (
-              <p className="text-sm text-mist">Loading…</p>
+              <p className="text-sm text-muted">Loading…</p>
             ) : invoices.length === 0 ? (
-              <p className="text-sm text-mist">No captured invoices yet.</p>
+              <p className="text-sm text-muted">No captured invoices yet.</p>
             ) : (
               <ul className="space-y-2">
                 {invoices.slice(0, 5).map((inv) => (
                   <li key={inv.id} className="flex items-center justify-between gap-3 text-sm">
                     <span>
                       <span className="font-medium">{inv.invoice_number ?? inv.id.slice(0, 8)}</span>
-                      <span className="ml-2 text-mist">{inv.suppliers?.name ?? inv.vendor_name ?? "Vendor"}</span>
+                      <span className="ml-2 text-muted">{inv.suppliers?.name ?? inv.vendor_name ?? "Vendor"}</span>
                     </span>
-                    <span className="text-mist">{formatMoney(inv.total)}</span>
+                    <span className="text-muted">{formatMoney(inv.total)}</span>
                   </li>
                 ))}
               </ul>
@@ -150,21 +150,21 @@ export function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Low stock</h2>
-            <Link to="/inventory" className="text-xs text-berry hover:underline">
+            <Link to="/inventory" className="text-xs font-medium text-wine hover:underline">
               View inventory
             </Link>
           </div>
           {itemsQuery.isLoading ? (
-            <p className="text-sm text-mist">Loading…</p>
+            <p className="text-sm text-muted">Loading…</p>
           ) : low.length === 0 ? (
-            <p className="text-sm text-mist">Everything is above reorder level.</p>
+            <p className="text-sm text-muted">Everything is above reorder level.</p>
           ) : (
             <ul className="space-y-2">
               {low.slice(0, 8).map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
                   <span>
                     <span className="font-medium">{item.name}</span>
-                    <span className="ml-2 text-mist">
+                    <span className="ml-2 text-muted">
                       {formatQty(item.quantity)} / {formatQty(item.reorder_level)} {item.unit}
                     </span>
                   </span>
@@ -178,23 +178,23 @@ export function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Recent movements</h2>
-            <Link to="/movements" className="text-xs text-berry hover:underline">
+            <Link to="/movements" className="text-xs font-medium text-wine hover:underline">
               View all
             </Link>
           </div>
           {movementsQuery.isLoading ? (
-            <p className="text-sm text-mist">Loading…</p>
+            <p className="text-sm text-muted">Loading…</p>
           ) : movements.length === 0 ? (
-            <p className="text-sm text-mist">No stock activity yet.</p>
+            <p className="text-sm text-muted">No stock activity yet.</p>
           ) : (
             <ul className="space-y-2">
               {movements.slice(0, 8).map((m) => (
                 <li key={m.id} className="flex items-center justify-between gap-3 text-sm">
                   <span>
                     <span className="font-medium">{m.inventory_items?.name ?? "Item"}</span>
-                    <span className="ml-2 text-mist">{reasonLabel(m.reason)}</span>
+                    <span className="ml-2 text-muted">{reasonLabel(m.reason)}</span>
                   </span>
-                  <span className="text-mist">
+                  <span className="text-muted">
                     {Number(m.delta) > 0 ? "+" : ""}
                     {formatQty(m.delta)} · {formatRelative(m.created_at)}
                   </span>
@@ -220,12 +220,20 @@ function Kpi({
   warn?: boolean;
 }) {
   return (
-    <Card className={warn ? "border-warn/30" : undefined}>
-      <div className="mb-3 flex items-center justify-between text-mist">
-        {icon}
-        <span className="text-xs uppercase tracking-wide">{label}</span>
+    <Card className={warn ? "border-warn/40" : undefined}>
+      <div className="flex items-center gap-3">
+        <span
+          className={`grid size-10 shrink-0 place-items-center rounded-xl ${
+            warn ? "bg-warn/15 text-warn" : "bg-wine/10 text-wine"
+          }`}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+          <p className="text-2xl font-semibold tracking-tight text-navy">{value}</p>
+        </div>
       </div>
-      <p className="text-2xl font-semibold tracking-tight">{value}</p>
     </Card>
   );
 }
