@@ -1,3 +1,14 @@
+import type {
+  BreakType,
+  ClockActorType,
+  ClockEventType,
+  ClockSessionState,
+  ClockSource,
+  TimeEntryStatus,
+  TimeExceptionStatus,
+  TimeExceptionType,
+} from "./time-clock";
+
 export type MembershipRole = "owner" | "manager" | "staff";
 
 export type MovementReason = "purchase" | "usage" | "adjustment" | "waste";
@@ -6,6 +17,11 @@ export type Organization = {
   id: string;
   name: string;
   created_at: string;
+  timezone: string;
+  workweek_start_dow: number;
+  workweek_start_time: string;
+  default_meal_break_paid: boolean;
+  default_rest_break_paid: boolean;
 };
 
 export type Membership = {
@@ -73,6 +89,7 @@ export type Employee = {
   phone: string | null;
   position: Station;
   hourly_rate: number;
+  home_restaurant_id: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -82,6 +99,7 @@ export type Shift = {
   id: string;
   org_id: string;
   employee_id: string | null;
+  restaurant_id: string | null;
   position: Station;
   starts_at: string;
   ends_at: string;
@@ -107,6 +125,10 @@ export type Restaurant = {
   qbo_company_name: string;
   slug: string;
   notes: string | null;
+  timezone: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  geofence_meters: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -198,4 +220,93 @@ export type InvoiceWithSupplier = Invoice & {
   restaurants: Pick<Restaurant, "id" | "name" | "qbo_company_name" | "slug"> | null;
   invoice_lines: InvoiceLine[];
   invoice_expense_lines: InvoiceExpenseLine[];
+};
+
+export type ClockEvent = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  restaurant_id: string | null;
+  staff_shift_id: string | null;
+  event_type: ClockEventType;
+  actor_type: ClockActorType;
+  source: ClockSource;
+  occurred_at: string;
+  recorded_at: string;
+  client_occurred_at: string | null;
+  client_event_id: string;
+  note: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy_m: number | null;
+  created_by: string | null;
+};
+
+export type ClockSession = {
+  org_id: string;
+  employee_id: string;
+  restaurant_id: string | null;
+  staff_shift_id: string | null;
+  state: ClockSessionState;
+  clocked_in_at: string;
+  break_started_at: string | null;
+  clock_in_event_id: string;
+  last_event_id: string;
+  updated_at: string;
+};
+
+export type TimeEntry = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  staff_shift_id: string | null;
+  restaurant_id: string | null;
+  position: string;
+  started_at: string;
+  ended_at: string;
+  gross_seconds: number;
+  paid_break_seconds: number;
+  unpaid_break_seconds: number;
+  worked_seconds: number;
+  status: TimeEntryStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TimeBreak = {
+  id: string;
+  org_id: string;
+  time_entry_id: string;
+  break_start_event_id: string | null;
+  break_end_event_id: string | null;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  break_type: BreakType;
+  paid: boolean;
+  created_at: string;
+};
+
+export type TimeException = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  time_entry_id: string | null;
+  clock_event_id: string | null;
+  staff_shift_id: string | null;
+  type: TimeExceptionType;
+  delta_seconds: number | null;
+  status: TimeExceptionStatus;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+};
+
+export type WhosWorkingRow = {
+  org_id: string;
+  employee_id: string;
+  full_name: string;
+  state: ClockSessionState;
+  clocked_in_at: string | null;
+  restaurant_id: string | null;
 };
