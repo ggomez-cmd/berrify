@@ -76,15 +76,18 @@ Multi-tenant by organization. Inventory and scheduling rows are scoped by
 
 ## Invoices → QuickBooks Desktop Bill
 
-1. Photograph a Jose Santiago / CAN Enterprise invoice (landscape, often rotated
-   90°) or import a photo forwarded from the kitchen WhatsApp group.
-2. Open **Invoices**, review the photo, SKUs (bill qty = **Desp**), and the
-   proposed Expenses tab.
+1. Photograph a supplier invoice — Jose Santiago, Ballester Hermanos, SuperMax,
+   or a clipped pair (often rotated 90°) — or import a WhatsApp forward.
+2. Open **Invoices**, review the photo, SKUs (bill qty = **Desp** on Jose
+   Santiago), and the proposed Expenses tab. One photo can create two bills.
 3. Export **Desktop IIF** (or CSV fallback) and import the Bill in QuickBooks
-   Desktop. Vendor is **Jose Santiago Inc**, terms Net 15, due = date + 15.
+   Desktop. Vendors: **Jose Santiago Inc** (Net 15), **Ballester Hermanos Inc**
+   (Net 7), **SuperMax** (due on receipt). Expenses tab only, not item lines.
 
-The seed includes the `$1,155.59` example (ref `6512495`) with expense splits
-`$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso / `$915.75` food.
+The seed includes the Jose Santiago `$1,155.59` example (ref `6512495`) with
+expense splits `$32.95` tax / `$176.55` kitchen / `$30.34` Fabuloso /
+`$915.75` food. Ballester `$757.56` (food, no tax) and SuperMax `$48.44`
+(food + PR tax) are the other fixtures.
 
 WhatsApp: official Cloud API cannot join a normal group. Forward the photo to
 the restaurant Business number, then run:

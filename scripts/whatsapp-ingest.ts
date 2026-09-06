@@ -39,7 +39,7 @@ import dotenv from "dotenv";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
-  extractInvoiceFromText,
+  extractInvoicesFromText,
   type VendorAlias,
 } from "../src/lib/invoice-extract.ts";
 import { ocrFile } from "./ocr-node.ts";
@@ -105,69 +105,74 @@ if (ruleError) throw ruleError;
 
 const aliases = (aliasRows ?? []) as VendorAlias[];
 const rules = (ruleRows ?? []).length > 0 ? ruleRows! : DEFAULT_ACCOUNT_RULES;
-const extracted = extractInvoiceFromText(ocrText, aliases, rules);
+const extracted = extractInvoicesFromText(ocrText, aliases, rules);
+const created: Array<{
+  invoice_id: string;
+  invoice_number: string | null;
+  total: number;
+  vendor: string;
+  expenses: typeof extracted[number]["expenses"];
+}> = [];
 
-const { data: invoice, error: invError } = await admin
-  .from("invoices")
-  .insert({
-    org_id: orgId,
-    supplier_id: extracted.supplier_id,
-    vendor_name: extracted.vendor_name,
-    invoice_number: extracted.invoice_number,
-    invoice_date: extracted.invoice_date,
-    due_date: extracted.due_date,
-    terms: extracted.terms,
-    subtotal: extracted.subtotal,
-    tax: extracted.tax,
-    total: extracted.total,
-    ap_account: ACCOUNTS.ap,
-    status: extracted.lines.length > 0 || extracted.total > 0 ? "extracted" : "received",
-    source: "whatsapp",
-    whatsapp_from: from,
-    whatsapp_message_id: messageId,
-    caption,
-    image_data: imageData,
-    image_mime: imageData ? "image/jpeg" : null,
-    ocr_text: ocrText,
-  })
-  .select("id, invoice_number, total")
-  .single();
-if (invError || !invoice) throw invError ?? new Error("Failed to insert invoice");
-
-if (extracted.lines.length > 0) {
-  const { error } = await admin.from("invoice_lines").insert(
-    extracted.lines.map((line) => ({
+for (const bill of extracted) {
+  const { data: invoice, error: invError } = await admin
+    .from("invoices")
+    .insert({
       org_id: orgId,
-      invoice_id: invoice.id,
-      ...line,
-    })),
-  );
-  if (error) throw error;
-}
-if (extracted.expenses.length > 0) {
-  const { error } = await admin.from("invoice_expense_lines").insert(
-    extracted.expenses.map((line, index) => ({
-      org_id: orgId,
-      invoice_id: invoice.id,
-      account: line.account,
-      amount: line.amount,
-      memo: line.memo,
-      sort_order: index,
-    })),
-  );
-  if (error) throw error;
+      supplier_id: bill.supplier_id,
+      vendor_name: bill.vendor_name,
+      invoice_number: bill.invoice_number,
+      invoice_date: bill.invoice_date,
+      due_date: bill.due_date,
+      terms: bill.terms,
+      subtotal: bill.subtotal,
+      tax: bill.tax,
+      total: bill.total,
+      ap_account: ACCOUNTS.ap,
+      status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
+      source: "whatsapp",
+      whatsapp_from: from,
+      whatsapp_message_id: messageId,
+      caption,
+      image_data: imageData,
+      image_mime: imageData ? "image/jpeg" : null,
+      ocr_text: ocrText,
+    })
+    .select("id, invoice_number, total")
+    .single();
+  if (invError || !invoice) throw invError ?? new Error("Failed to insert invoice");
+
+  if (bill.lines.length > 0) {
+    const { error } = await admin.from("invoice_lines").insert(
+      bill.lines.map((line) => ({
+        org_id: orgId,
+        invoice_id: invoice.id,
+        ...line,
+      })),
+    );
+    if (error) throw error;
+  }
+  if (bill.expenses.length > 0) {
+    const { error } = await admin.from("invoice_expense_lines").insert(
+      bill.expenses.map((line, index) => ({
+        org_id: orgId,
+        invoice_id: invoice.id,
+        account: line.account,
+        amount: line.amount,
+        memo: line.memo,
+        sort_order: index,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  created.push({
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    total: Number(invoice.total),
+    vendor: bill.qbo_vendor_name,
+    expenses: bill.expenses,
+  });
 }
 
-console.log(
-  JSON.stringify(
-    {
-      invoice_id: invoice.id,
-      invoice_number: invoice.invoice_number,
-      total: invoice.total,
-      vendor: extracted.qbo_vendor_name,
-      expenses: extracted.expenses,
-    },
-    null,
-    2,
-  ),
-);
+console.log(JSON.stringify(created, null, 2));

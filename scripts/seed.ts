@@ -23,6 +23,29 @@ const admin = createClient(url, serviceRole, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+async function ensureSupplier(
+  orgId: string,
+  name: string,
+  extras: { contact_email?: string; phone?: string; notes?: string },
+): Promise<string> {
+  const { data: existing, error: existingError } = await admin
+    .from("suppliers")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("name", name)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing?.id) return existing.id as string;
+
+  const { data, error } = await admin
+    .from("suppliers")
+    .insert({ org_id: orgId, name, ...extras })
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error(`Failed to insert ${name}`);
+  return data.id as string;
+}
+
 async function findUserId(lookupEmail: string): Promise<string | null> {
   const perPage = 200;
   let page = 1;
@@ -301,41 +324,32 @@ async function seedSchedule(orgId: string, ownerId: string) {
 }
 
 async function seedInvoices(orgId: string, userId: string) {
-  const { data: existing, error: existingError } = await admin
-    .from("suppliers")
-    .select("id, name")
-    .eq("org_id", orgId)
-    .eq("name", "Jose Santiago Inc")
-    .maybeSingle();
-  if (existingError) throw existingError;
-
-  let supplierId = existing?.id as string | undefined;
-  if (!supplierId) {
-    const { data, error } = await admin
-      .from("suppliers")
-      .insert({
-        org_id: orgId,
-        name: "Jose Santiago Inc",
-        contact_email: "billing@josesantiago.example",
-        phone: "787-555-0249",
-        notes: "QBO vendor. Print name is CAN ENTERPRISE LLC / BENMAMAN DANIEL.",
-      })
-      .select("id")
-      .single();
-    if (error || !data) throw error ?? new Error("Failed to insert Jose Santiago Inc");
-    supplierId = data.id as string;
-  }
+  const joseId = await ensureSupplier(orgId, "Jose Santiago Inc", {
+    contact_email: "billing@josesantiago.example",
+    phone: "787-555-0249",
+    notes: "QBO vendor for Jose Santiago / CAN ENTERPRISE letterhead invoices.",
+  });
+  const ballesterId = await ensureSupplier(orgId, "Ballester Hermanos Inc", {
+    contact_email: "billing@ballester.example",
+    phone: "787-555-1914",
+    notes: "Wholesale. Terms Net 7. Customer on the form is CAN ENTERPRISE.",
+  });
+  const supermaxId = await ensureSupplier(orgId, "SuperMax", {
+    contact_email: "condado@supermax.example",
+    phone: "787-723-1611",
+    notes: "Condado SuperMax self-checkout receipts.",
+  });
 
   const aliases = [
-    { match_text: "jose santiago", qbo_vendor_name: "Jose Santiago Inc" },
-    { match_text: "can enterprise", qbo_vendor_name: "Jose Santiago Inc" },
-    { match_text: "benmaman", qbo_vendor_name: "Jose Santiago Inc" },
+    { match_text: "jose santiago", qbo_vendor_name: "Jose Santiago Inc", supplier_id: joseId },
+    { match_text: "ballester", qbo_vendor_name: "Ballester Hermanos Inc", supplier_id: ballesterId },
+    { match_text: "supermax", qbo_vendor_name: "SuperMax", supplier_id: supermaxId },
   ];
   const { error: aliasError } = await admin.from("vendor_aliases").upsert(
     aliases.map((a) => ({
       org_id: orgId,
       match_text: a.match_text,
-      supplier_id: supplierId,
+      supplier_id: a.supplier_id,
       qbo_vendor_name: a.qbo_vendor_name,
     })),
     { onConflict: "org_id,match_text" },
@@ -361,19 +375,16 @@ async function seedInvoices(orgId: string, userId: string) {
     .eq("invoice_number", "6512495");
   if (countError) throw countError;
   if ((count ?? 0) > 0) {
-    console.log("Jose Santiago sample bill already present; skipping invoice seed.");
+    console.log("Jose Santiago sample bill already present; vendors/aliases upserted.");
     return;
   }
 
-  const extracted = extractInvoiceFromText(
-    JOSE_SANTIAGO_OCR,
-    aliases.map((a) => ({ ...a, supplier_id: supplierId })),
-  );
+  const extracted = extractInvoiceFromText(JOSE_SANTIAGO_OCR, aliases);
   const { data: invoice, error: invError } = await admin
     .from("invoices")
     .insert({
       org_id: orgId,
-      supplier_id: supplierId,
+      supplier_id: joseId,
       vendor_name: "CAN ENTERPRISE LLC",
       invoice_number: extracted.invoice_number,
       invoice_date: extracted.invoice_date,

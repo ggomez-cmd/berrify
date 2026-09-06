@@ -8,7 +8,7 @@ import { Table, THead, Td, Th } from "../../components/ui/table";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
-  extractInvoiceFromText,
+  extractInvoicesFromText,
   type AccountRule,
   type VendorAlias,
 } from "../../lib/invoice-extract";
@@ -73,29 +73,33 @@ export function InvoicesPage() {
               category: r.category,
             }))
           : DEFAULT_ACCOUNT_RULES;
-      const extracted = extractInvoiceFromText(ocr.text || caption || "", vendorAliases, accountRules);
-      const id = await create.mutateAsync({
-        source,
-        image_data: data,
-        image_mime: mime,
-        ocr_text: ocr.text,
-        caption,
-        vendor_name: extracted.vendor_name,
-        supplier_id: extracted.supplier_id,
-        invoice_number: extracted.invoice_number,
-        invoice_date: extracted.invoice_date,
-        due_date: extracted.due_date,
-        terms: extracted.terms,
-        subtotal: extracted.subtotal,
-        tax: extracted.tax,
-        total: extracted.total,
-        ap_account: ACCOUNTS.ap,
-        status: extracted.lines.length > 0 || extracted.total > 0 ? "extracted" : "received",
-        lines: extracted.lines,
-        expenses: extracted.expenses,
-      });
+      const extracted = extractInvoicesFromText(ocr.text || caption || "", vendorAliases, accountRules);
+      const ids: string[] = [];
+      for (const bill of extracted) {
+        const id = await create.mutateAsync({
+          source,
+          image_data: data,
+          image_mime: mime,
+          ocr_text: ocr.text,
+          caption,
+          vendor_name: bill.vendor_name,
+          supplier_id: bill.supplier_id,
+          invoice_number: bill.invoice_number,
+          invoice_date: bill.invoice_date,
+          due_date: bill.due_date,
+          terms: bill.terms,
+          subtotal: bill.subtotal,
+          tax: bill.tax,
+          total: bill.total,
+          ap_account: ACCOUNTS.ap,
+          status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
+          lines: bill.lines,
+          expenses: bill.expenses,
+        });
+        ids.push(id);
+      }
       setMessage(
-        `Digital bill created (${id.slice(0, 8)}). OCR rotation ${ocr.rotation}° · review the Expenses tab then export IIF.`,
+        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created. OCR rotation ${ocr.rotation}° · review the Expenses tab then export IIF.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not read invoice");
@@ -107,9 +111,9 @@ export function InvoicesPage() {
   return (
     <div>
       <p className="mb-4 max-w-2xl text-sm text-mist">
-        Photograph a Jose Santiago / CAN Enterprise invoice (or drop a photo forwarded from
-        WhatsApp). Berrify OCRs SKUs, rolls them into QuickBooks Desktop expense accounts, and
-        exports an IIF Bill — Expenses tab, not item lines.
+        Photograph a supplier invoice or a WhatsApp forward — Jose Santiago, Ballester
+        Hermanos, SuperMax, or a clipped pair. Berrify OCRs SKUs, rolls them into QuickBooks
+        Desktop expense accounts, and exports an IIF Bill — Expenses tab, not item lines.
       </p>
 
       <div className="mb-4 flex flex-wrap gap-2">

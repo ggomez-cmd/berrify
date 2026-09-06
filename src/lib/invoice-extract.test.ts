@@ -4,11 +4,12 @@ import {
   addDaysIso,
   classifySku,
   extractInvoiceFromText,
+  extractInvoicesFromText,
   rollupExpenses,
   stripPriceSuffix,
   toQuickBooksBillIif,
 } from "./invoice-extract";
-import { JOSE_SANTIAGO_OCR } from "./invoice-fixtures";
+import { BALLESTER_OCR, JOSE_SANTIAGO_OCR, SUPERMAX_OCR } from "./invoice-fixtures";
 
 describe("stripPriceSuffix", () => {
   it("drops C / C# / B$ suffixes", () => {
@@ -95,6 +96,87 @@ describe("fuzzy OCR lines", () => {
     );
     expect(extracted.lines.some((l) => /fry/i.test(l.description) && l.amount === 233.24)).toBe(true);
     expect(extracted.tax).toBeCloseTo(32.95);
+  });
+});
+
+describe("Ballester Hermanos", () => {
+  const extracted = extractInvoiceFromText(BALLESTER_OCR);
+
+  it("does not treat the customer Benmaman as the vendor", () => {
+    expect(extracted.qbo_vendor_name).toBe("Ballester Hermanos Inc");
+    expect(extracted.invoice_number).toBe("40494738");
+    expect(extracted.invoice_date).toBe("2026-08-13");
+    expect(extracted.due_date).toBe("2026-08-20");
+    expect(extracted.terms).toBe("Net 7");
+    expect(extracted.total).toBeCloseTo(757.56);
+    expect(extracted.tax).toBeCloseTo(0);
+  });
+
+  it("reads weight and case lines as food", () => {
+    expect(extracted.lines).toHaveLength(4);
+    expect(extracted.lines.find((l) => l.code === "37785")?.amount).toBeCloseTo(166.38);
+    expect(extracted.lines.find((l) => l.code === "03194")?.pounds).toBeCloseTo(79.1);
+    expect(extracted.expenses[0]?.account).toBe(ACCOUNTS.food);
+    expect(extracted.expenses[0]?.amount).toBeCloseTo(757.56);
+  });
+});
+
+describe("SuperMax receipt", () => {
+  const extracted = extractInvoiceFromText(SUPERMAX_OCR);
+
+  it("rolls food plus PR tax", () => {
+    expect(extracted.qbo_vendor_name).toBe("SuperMax");
+    expect(extracted.invoice_number).toBe("000000058724");
+    expect(extracted.invoice_date).toBe("2026-08-14");
+    expect(extracted.due_date).toBe("2026-08-14");
+    expect(extracted.tax).toBeCloseTo(0.49);
+    expect(extracted.total).toBeCloseTo(48.44);
+    expect(extracted.terms).toBe("Due on receipt");
+    expect(extracted.lines.length).toBeGreaterThanOrEqual(5);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.tax)?.amount).toBeCloseTo(0.49);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.food)?.amount).toBeCloseTo(47.95);
+  });
+});
+
+describe("messy Ballester+SuperMax OCR", () => {
+  const ocr = `
+BALLESTER | HERMANOS
+NUM. FACTURA
+DANIEL BENMAMAN MEDINA/CAN ENTERPRISE 40494738
+10 LB BEEF GROUND 80/20 03194 5.4999 435.04
+64 OZ JUICE PINEAPPLE LOTUS 80015 47.34 47.34
+57.5 OZ COCONUT CREAM COCO LOPEZ 09850 108.80 108.80
+SUBTOTAL 757.56
+Municipal Sales Tax 757.56 .000 0.00
+SUPERHAX T-SHIRT LDPE BAG 0.10
+BOARS HEAD CANADIAN CHEDDAR 9.39
+SubTotal 47.95
+Tax Municipal 1% 0.48
+Tax Estatal 10.5% 0.01
+TOTAL 48.44
+Invoice #: 000000058724
+`;
+  const bills = extractInvoicesFromText(ocr);
+
+  it("splits and keeps Ballester as the vendor", () => {
+    expect(bills.map((b) => b.qbo_vendor_name)).toEqual(["Ballester Hermanos Inc", "SuperMax"]);
+    expect(bills[0]?.invoice_number).toBe("40494738");
+    expect(bills[0]?.total).toBeCloseTo(757.56);
+    expect(bills[0]?.lines.some((l) => l.code === "03194" && l.amount === 435.04)).toBe(true);
+    expect(bills[1]?.invoice_number).toBe("000000058724");
+    expect(bills[1]?.total).toBeCloseTo(48.44);
+    expect(bills[1]?.tax).toBeCloseTo(0.49);
+  });
+});
+
+describe("extractInvoicesFromText", () => {
+  it("splits a Ballester + SuperMax photo into two bills", () => {
+    const bills = extractInvoicesFromText(`${BALLESTER_OCR}\n${SUPERMAX_OCR}`);
+    expect(bills).toHaveLength(2);
+    expect(bills[0]?.qbo_vendor_name).toBe("Ballester Hermanos Inc");
+    expect(bills[0]?.total).toBeCloseTo(757.56);
+    expect(bills[1]?.qbo_vendor_name).toBe("SuperMax");
+    expect(bills[1]?.total).toBeCloseTo(48.44);
   });
 });
 
