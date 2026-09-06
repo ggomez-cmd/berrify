@@ -351,7 +351,7 @@ export function InvoiceReviewDialog({
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-mist">
+          <p className="mt-2 text-xs text-muted">
             Desktop Bill · A/P {invoice.ap_account || ACCOUNTS.ap} · Expenses tab only
           </p>
         </div>
@@ -367,17 +367,17 @@ export function InvoiceReviewDialog({
           />
         </Field>
         <div>
-          <p className="mb-1.5 text-xs text-mist">Subtotal</p>
+          <p className="mb-1.5 text-xs text-muted">Subtotal</p>
           <p className="py-2">{formatMoney(totals.subtotal)}</p>
         </div>
         <div>
-          <p className="mb-1.5 text-xs text-mist">Total</p>
+          <p className="mb-1.5 text-xs text-muted">Total</p>
           <p className="py-2 font-semibold">{formatMoney(totals.total)}</p>
         </div>
       </div>
 
       {invoice.ocr_text ? (
-        <details className="mt-3 text-xs text-mist">
+        <details className="mt-3 text-xs text-muted">
           <summary>OCR text</summary>
           <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">{invoice.ocr_text}</pre>
         </details>

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  LogOut,
   Receipt,
   Truck,
   Users,
@@ -15,7 +16,7 @@ import { cn } from "../../lib/cn";
 import { isManager } from "../../lib/schedule";
 
 export function Sidebar() {
-  const { role } = useAuth();
+  const { role, signOut } = useAuth();
   const manager = isManager(role);
 
   const links = [
@@ -80,6 +81,15 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <button
+        type="button"
+        onClick={() => void signOut()}
+        className="mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white"
+      >
+        <LogOut className="size-4" />
+        Sign out
+      </button>
     </aside>
   );
 }

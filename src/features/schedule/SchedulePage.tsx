@@ -92,7 +92,7 @@ export function SchedulePage() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading schedule…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading schedule…</p> : null}
 
       <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-sm">
         <table className="w-full min-w-[960px] border-collapse text-sm">
@@ -151,7 +151,7 @@ export function SchedulePage() {
           {activeEmployees.map((employee) => (
             <li key={employee.id} className="flex justify-between text-sm">
               <span>{employee.full_name}</span>
-              <span className="text-mist">{employeeWeekHours(weekShifts, employee.id).toFixed(1)} h</span>
+              <span className="text-muted">{employeeWeekHours(weekShifts, employee.id).toFixed(1)} h</span>
             </li>
           ))}
         </ul>
@@ -214,7 +214,7 @@ function EmployeeRow({
     <tr className="align-top">
       <td className="border-t border-line px-3 py-2">
         <div className="font-medium">{name}</div>
-        <div className="text-xs text-mist">{employee?.position ?? "Unassigned"}</div>
+        <div className="text-xs text-muted">{employee?.position ?? "Unassigned"}</div>
       </td>
       {weekDays.map((day) => {
         const cell = shifts.filter((s) => {
@@ -233,7 +233,7 @@ function EmployeeRow({
                 >
                   <div className="text-xs font-medium">{formatTimeRange(shift.starts_at, shift.ends_at)}</div>
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-mist">{shift.position}</span>
+                    <span className="text-[11px] text-muted">{shift.position}</span>
                     <Badge tone={shift.status === "published" ? "ok" : "warn"}>{statusLabel(shift.status)}</Badge>
                   </div>
                 </button>
@@ -276,7 +276,7 @@ function StaffSchedule({
     <div className="space-y-4">
       <WeekPager cursor={cursor} setCursor={setCursor} />
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading your shifts…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading your shifts…</p> : null}
       {weekDays.map((day) => {
         const dayMine = mine.filter((s) => sameDay(s.starts_at, day));
         const others = weekShifts.filter(
@@ -292,20 +292,20 @@ function StaffSchedule({
               {day.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
             </h2>
             {dayMine.length === 0 ? (
-              <p className="text-sm text-mist">No published shifts for you.</p>
+              <p className="text-sm text-muted">No published shifts for you.</p>
             ) : (
               <ul className="space-y-2">
                 {dayMine.map((s) => (
                   <li key={s.id} className="text-sm">
                     <span className="font-medium">{formatTimeRange(s.starts_at, s.ends_at)}</span>
-                    <span className="ml-2 text-mist">{s.position}</span>
-                    {s.note ? <span className="ml-2 text-mist">· {s.note}</span> : null}
+                    <span className="ml-2 text-muted">{s.position}</span>
+                    {s.note ? <span className="ml-2 text-muted">· {s.note}</span> : null}
                   </li>
                 ))}
               </ul>
             )}
             {others.length > 0 ? (
-              <p className="mt-3 text-xs text-mist">
+              <p className="mt-3 text-xs text-muted">
                 Also on: {others.map((s) => s.employees?.full_name ?? "Open").join(", ")}
               </p>
             ) : null}

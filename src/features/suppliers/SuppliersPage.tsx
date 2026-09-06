@@ -45,7 +45,7 @@ export function SuppliersPage() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
-      {isLoading ? <p className="text-sm text-mist">Loading suppliers…</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading suppliers…</p> : null}
 
       {!isLoading ? (
         <Table>
@@ -61,7 +61,7 @@ export function SuppliersPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={5} className="py-10 text-center text-mist">
+                <Td colSpan={5} className="py-10 text-center text-muted">
                   No suppliers yet.
                 </Td>
               </tr>
@@ -71,7 +71,7 @@ export function SuppliersPage() {
                   <Td className="font-medium">{supplier.name}</Td>
                   <Td>{supplier.contact_email ?? "—"}</Td>
                   <Td>{supplier.phone ?? "—"}</Td>
-                  <Td className="max-w-xs truncate text-mist">{supplier.notes ?? "—"}</Td>
+                  <Td className="max-w-xs truncate text-muted">{supplier.notes ?? "—"}</Td>
                   <Td>
                     <div className="flex justify-end gap-1">
                       <Button
