@@ -5,6 +5,7 @@ import {
   classifyBreakType,
   computeTimeTotals,
   detectSessionExceptions,
+  groupPunchRows,
   isValidTransition,
   managerForceOutValid,
   matchPublishedShift,
@@ -256,5 +257,35 @@ describe("workweek timezone", () => {
     const mondayUtc = new Date("2026-09-07T16:00:00.000Z");
     const start = startOfWorkweek(mondayUtc, "America/Puerto_Rico", 6, "00:00");
     expect(start.toISOString()).toBe("2026-09-05T04:00:00.000Z");
+  });
+});
+
+describe("groupPunchRows", () => {
+  it("groups a clock-in through clock-out into one row, newest first", () => {
+    const rows = groupPunchRows([
+      { id: "4", event_type: "clock_out", occurred_at: "2026-09-07T21:00:00.000Z" },
+      { id: "3", event_type: "break_end", occurred_at: "2026-09-07T16:00:00.000Z" },
+      { id: "2", event_type: "break_start", occurred_at: "2026-09-07T15:30:00.000Z" },
+      { id: "1", event_type: "clock_in", occurred_at: "2026-09-07T12:00:00.000Z" },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      clockIn: "2026-09-07T12:00:00.000Z",
+      breakStart: "2026-09-07T15:30:00.000Z",
+      breakEnd: "2026-09-07T16:00:00.000Z",
+      clockOut: "2026-09-07T21:00:00.000Z",
+    });
+  });
+
+  it("starts a new row on the next clock-in", () => {
+    const rows = groupPunchRows([
+      { id: "1", event_type: "clock_in", occurred_at: "2026-09-06T12:00:00.000Z" },
+      { id: "2", event_type: "clock_out", occurred_at: "2026-09-06T20:00:00.000Z" },
+      { id: "3", event_type: "clock_in", occurred_at: "2026-09-07T12:00:00.000Z" },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].clockIn).toBe("2026-09-07T12:00:00.000Z");
+    expect(rows[0].clockOut).toBeNull();
+    expect(rows[1].clockOut).toBe("2026-09-06T20:00:00.000Z");
   });
 });

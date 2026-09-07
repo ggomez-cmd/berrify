@@ -1,18 +1,24 @@
+import { Coffee, LogIn, LogOut, Pause } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
+import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input, Select, Textarea } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { PageTabs } from "../../components/ui/page-tabs";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatDuration } from "../../lib/format";
 import { isManager } from "../../lib/schedule";
+import { cn } from "../../lib/cn";
 import {
   allowedEvents,
   CLOCK_EVENT_TYPES,
   clockStateFromSession,
   formatInTimeZone,
+  formatTimeInZone,
+  groupPunchRows,
   type ClockEventType,
   type ClockState,
 } from "../../lib/time-clock";
@@ -39,7 +45,7 @@ function stateLabel(state: ClockState): string {
     case "off_clock":
       return "Off clock";
     case "working":
-      return "Working";
+      return "Working / Clocked in";
     case "on_break":
       return "On break";
     default: {
@@ -66,6 +72,27 @@ function actionLabel(event: ClockEventType): string {
   }
 }
 
+function punchCell(iso: string | null, timeZone: string): string {
+  return iso ? formatTimeInZone(iso, timeZone) : "—";
+}
+
+function eventIcon(event: ClockEventType) {
+  switch (event) {
+    case "clock_in":
+      return LogIn;
+    case "clock_out":
+      return LogOut;
+    case "break_start":
+      return Coffee;
+    case "break_end":
+      return Pause;
+    default: {
+      const exhaustive: never = event;
+      return exhaustive;
+    }
+  }
+}
+
 export function TimeClockPage() {
   const { role, org } = useAuth();
   const manager = isManager(role);
@@ -73,33 +100,24 @@ export function TimeClockPage() {
   const timeZone = org?.timezone ?? "America/Puerto_Rico";
   const [tab, setTab] = useState<Tab>("clock");
 
-  const tabs: Array<{ id: Tab; label: string; managerOnly?: boolean; ownerOnly?: boolean }> = [
+  const tabs: Array<{ id: Tab; label: string }> = [
     { id: "clock", label: "Clock" },
     { id: "working", label: "Who’s working" },
-    { id: "attendance", label: "Attendance", managerOnly: true },
-    { id: "activity", label: "Activity", managerOnly: true },
-    { id: "exceptions", label: "Exceptions", managerOnly: true },
-    { id: "settings", label: "Settings", ownerOnly: true },
   ];
+  if (manager) {
+    tabs.push(
+      { id: "attendance", label: "Attendance" },
+      { id: "activity", label: "Activity" },
+      { id: "exceptions", label: "Exceptions" },
+    );
+  }
+  if (owner) {
+    tabs.push({ id: "settings", label: "Settings" });
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 border-b border-line pb-2">
-        {tabs
-          .filter((item) => (!item.managerOnly || manager) && (!item.ownerOnly || owner))
-          .map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                tab === item.id ? "bg-wine text-white" : "text-muted hover:bg-white hover:text-ink"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-      </div>
+      <PageTabs items={tabs} value={tab} onChange={setTab} />
 
       {tab === "clock" ? <EmployeeClockPanel timeZone={timeZone} /> : null}
       {tab === "working" ? <WhosWorkingPanel manager={manager} timeZone={timeZone} /> : null}
@@ -118,6 +136,8 @@ function EmployeeClockPanel({ timeZone }: { timeZone: string }) {
   const punch = useRecordClockEvent();
   const state = clockStateFromSession(sessionQuery.data?.state ?? null);
   const actions = allowedEvents(state);
+  const rows = groupPunchRows(eventsQuery.data ?? []);
+  const clockedInAt = sessionQuery.data?.clocked_in_at;
 
   return (
     <div className="space-y-4">
@@ -131,52 +151,90 @@ function EmployeeClockPanel({ timeZone }: { timeZone: string }) {
       {sessionQuery.error ? <p className="text-sm text-danger">{sessionQuery.error.message}</p> : null}
 
       <Card>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-muted">Current state</p>
-            <p className="mt-1 text-2xl font-semibold text-navy">{stateLabel(state)}</p>
-            {sessionQuery.data ? (
-              <p className="mt-1 text-sm text-muted">
-                Clocked in {formatInTimeZone(sessionQuery.data.clocked_in_at, timeZone)}
-                {sessionQuery.data.break_started_at
-                  ? ` · Break started ${formatInTimeZone(sessionQuery.data.break_started_at, timeZone)}`
-                  : null}
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-muted">Ready to clock in</p>
-            )}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-1 size-2.5 rounded-full",
+                state === "working" ? "bg-ok" : state === "on_break" ? "bg-warn" : "bg-slate-300",
+              )}
+            />
+            <div>
+              <p className="text-lg font-semibold text-ink">{stateLabel(state)}</p>
+              {clockedInAt ? (
+                <p className="mt-1 text-sm text-muted">
+                  Clocked in {formatTimeInZone(clockedInAt, timeZone)}
+                  {sessionQuery.data?.break_started_at
+                    ? ` · Break started ${formatTimeInZone(sessionQuery.data.break_started_at, timeZone)}`
+                    : null}
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted">Ready to clock in</p>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {CLOCK_EVENT_TYPES.map((event) => (
-              <Button
-                key={event}
-                variant={event === "clock_out" ? "danger" : event === "clock_in" ? "primary" : "ghost"}
-                disabled={!actions.includes(event) || punch.isPending || !me.data?.active}
-                onClick={() => punch.mutate({ event_type: event })}
-              >
-                {punch.isPending && actions.includes(event) ? "Saving…" : actionLabel(event)}
-              </Button>
-            ))}
+            {CLOCK_EVENT_TYPES.map((event) => {
+              const enabled = actions.includes(event) && !punch.isPending && Boolean(me.data?.active);
+              const Icon = eventIcon(event);
+              return (
+                <Button
+                  key={event}
+                  variant={
+                    event === "clock_out" || (event === "clock_in" && state === "off_clock")
+                      ? "primary"
+                      : "ghost"
+                  }
+                  disabled={!enabled}
+                  onClick={() => punch.mutate({ event_type: event })}
+                >
+                  {Icon ? <Icon className="size-4" /> : null}
+                  {punch.isPending && actions.includes(event) ? "Saving…" : actionLabel(event)}
+                </Button>
+              );
+            })}
           </div>
         </div>
       </Card>
 
-      <Card>
+      <div>
         <h2 className="mb-3 font-semibold">Recent punches</h2>
         {eventsQuery.isLoading ? <p className="text-sm text-muted">Loading…</p> : null}
         {eventsQuery.error ? <p className="text-sm text-danger">{eventsQuery.error.message}</p> : null}
-        <ul className="divide-y divide-line">
-          {(eventsQuery.data ?? []).map((event) => (
-            <li key={event.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <span className="font-medium">{actionLabel(event.event_type)}</span>
-              <span className="text-muted">{formatInTimeZone(event.occurred_at, timeZone)}</span>
-            </li>
-          ))}
-          {(eventsQuery.data ?? []).length === 0 && !eventsQuery.isLoading ? (
-            <li className="py-6 text-sm text-muted">No clock events yet.</li>
-          ) : null}
-        </ul>
-      </Card>
+        <Table>
+          <THead>
+            <tr>
+              <Th>Date</Th>
+              <Th>Clock in</Th>
+              <Th>Start break</Th>
+              <Th>End break</Th>
+              <Th>Clock out</Th>
+            </tr>
+          </THead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <Td>
+                  {new Date(
+                    row.clockIn ?? row.breakStart ?? row.breakEnd ?? row.clockOut ?? 0,
+                  ).toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })}
+                </Td>
+                <Td>{punchCell(row.clockIn, timeZone)}</Td>
+                <Td>{punchCell(row.breakStart, timeZone)}</Td>
+                <Td>{punchCell(row.breakEnd, timeZone)}</Td>
+                <Td>{punchCell(row.clockOut, timeZone)}</Td>
+              </tr>
+            ))}
+            {rows.length === 0 && !eventsQuery.isLoading ? (
+              <tr>
+                <Td colSpan={5} className="py-8 text-center text-muted">
+                  No clock events yet.
+                </Td>
+              </tr>
+            ) : null}
+          </tbody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -186,38 +244,49 @@ function WhosWorkingPanel({ manager, timeZone }: { manager: boolean; timeZone: s
   const forceOut = useManagerForceClockOut();
   const [reason, setReason] = useState("");
   const [selected, setSelected] = useState<string>("");
+  const rows = working.data ?? [];
 
   return (
     <div className="space-y-4">
       {working.error ? <p className="text-sm text-danger">{working.error.message}</p> : null}
       {forceOut.error ? <p className="text-sm text-danger">{forceOut.error.message}</p> : null}
       <Card>
-        {working.isLoading ? <p className="text-sm text-muted">Loading…</p> : null}
-        <ul className="divide-y divide-line">
-          {(working.data ?? []).map((row) => (
-            <li key={row.employee_id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <span>
-                <span className="font-medium">{row.full_name}</span>
-                <span className="ml-2 text-muted">{stateLabel(row.state)}</span>
-              </span>
-              {manager ? (
-                <span className="text-muted">
-                  {row.clocked_in_at ? `since ${formatInTimeZone(row.clocked_in_at, timeZone)}` : null}
-                  <button
-                    type="button"
-                    className="ml-3 text-wine hover:underline"
-                    onClick={() => setSelected(row.employee_id)}
-                  >
-                    Force out
-                  </button>
-                </span>
-              ) : null}
-            </li>
-          ))}
-          {(working.data ?? []).length === 0 && !working.isLoading ? (
-            <li className="py-6 text-sm text-muted">Nobody is clocked in.</li>
-          ) : null}
-        </ul>
+        <h2 className="font-semibold">Who’s working</h2>
+        <p className="mt-1 text-sm text-muted">View staff who are currently working or on break.</p>
+        {working.isLoading ? <p className="mt-4 text-sm text-muted">Loading…</p> : null}
+        {rows.length === 0 && !working.isLoading ? (
+          <p className="mt-6 text-center text-sm text-muted">
+            No one is working right now. When staff clock in, they’ll appear here.
+          </p>
+        ) : (
+          <ul className="mt-4 divide-y divide-line">
+            {rows.map((row) => (
+              <li key={row.employee_id} className="flex items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-3">
+                  <Avatar name={row.full_name} />
+                  <div>
+                    <p className="font-medium">{row.full_name}</p>
+                    <Badge tone={row.state === "working" ? "ok" : "warn"} dot>
+                      {row.state === "working" ? "Working" : "On break"}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-muted">
+                  {row.clocked_in_at ? `Since ${formatTimeInZone(row.clocked_in_at, timeZone)}` : null}
+                  {manager ? (
+                    <button
+                      type="button"
+                      className="font-medium text-wine hover:underline"
+                      onClick={() => setSelected(row.employee_id)}
+                    >
+                      Force out
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
       {manager && selected ? (
         <Card>
@@ -265,7 +334,7 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
       {recordPunch.error ? <p className="text-sm text-danger">{recordPunch.error.message}</p> : null}
       <Card>
         <h2 className="mb-3 font-semibold">Record missing punch</h2>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <Label>Employee</Label>
             <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
@@ -296,7 +365,7 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Required" />
           </div>
         </div>
-        <div className="mt-3">
+        <div className="mt-4 flex justify-end">
           <Button
             disabled={!employeeId || !occurredAt || !reason.trim() || recordPunch.isPending}
             onClick={() =>
@@ -313,8 +382,9 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
         </div>
       </Card>
 
-      <Card>
-        <h2 className="mb-3 font-semibold">Derived time entries</h2>
+      <div>
+        <h2 className="mb-1 font-semibold">Derived time entries</h2>
+        <p className="mb-3 text-sm text-muted">Auto-calculated from clock events</p>
         <Table>
           <THead>
             <tr>
@@ -329,13 +399,20 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
           <tbody>
             {(entries.data ?? []).map((entry) => (
               <tr key={entry.id}>
-                <Td>{entry.employees?.full_name ?? entry.employee_id.slice(0, 8)}</Td>
+                <Td>
+                  <div className="flex items-center gap-2">
+                    <Avatar name={entry.employees?.full_name ?? "Staff"} className="size-8" />
+                    {entry.employees?.full_name ?? entry.employee_id.slice(0, 8)}
+                  </div>
+                </Td>
                 <Td>{formatInTimeZone(entry.started_at, timeZone)}</Td>
                 <Td>{formatInTimeZone(entry.ended_at, timeZone)}</Td>
                 <Td>{formatDuration(entry.worked_seconds)}</Td>
                 <Td>{formatDuration(entry.unpaid_break_seconds)}</Td>
                 <Td>
-                  <Badge tone={entry.status === "exception" ? "warn" : "neutral"}>{entry.status}</Badge>
+                  <Badge tone={entry.status === "exception" ? "warn" : "neutral"} dot>
+                    {entry.status}
+                  </Badge>
                 </Td>
               </tr>
             ))}
@@ -348,7 +425,7 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
             ) : null}
           </tbody>
         </Table>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -356,8 +433,8 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
 function ActivityPanel({ timeZone }: { timeZone: string }) {
   const events = useOrgClockEvents();
   return (
-    <Card>
-      {events.error ? <p className="text-sm text-danger">{events.error.message}</p> : null}
+    <div>
+      {events.error ? <p className="mb-3 text-sm text-danger">{events.error.message}</p> : null}
       <Table>
         <THead>
           <tr>
@@ -372,15 +449,27 @@ function ActivityPanel({ timeZone }: { timeZone: string }) {
           {(events.data ?? []).map((event) => (
             <tr key={event.id}>
               <Td>{formatInTimeZone(event.occurred_at, timeZone)}</Td>
-              <Td>{event.employees?.full_name ?? event.employee_id.slice(0, 8)}</Td>
+              <Td>
+                <div className="flex items-center gap-2">
+                  <Avatar name={event.employees?.full_name ?? "Staff"} className="size-8" />
+                  {event.employees?.full_name ?? event.employee_id.slice(0, 8)}
+                </div>
+              </Td>
               <Td>{actionLabel(event.event_type)}</Td>
-              <Td>{event.actor_type}</Td>
-              <Td>{event.source}</Td>
+              <Td className="capitalize">{event.actor_type}</Td>
+              <Td className="capitalize">{event.source}</Td>
             </tr>
           ))}
+          {(events.data ?? []).length === 0 ? (
+            <tr>
+              <Td colSpan={5} className="py-8 text-center text-muted">
+                No clock activity yet.
+              </Td>
+            </tr>
+          ) : null}
         </tbody>
       </Table>
-    </Card>
+    </div>
   );
 }
 
@@ -397,55 +486,60 @@ function ExceptionsPanel({ timeZone }: { timeZone: string }) {
         <Button variant="ghost" disabled={reconcile.isPending} onClick={() => reconcile.mutate()}>
           Reconcile open sessions
         </Button>
-        <p className="mt-1 text-xs text-muted">
-          Flags missed-out / missed-in. Does not invent a clock-out.
-        </p>
+        <p className="mt-1 text-xs text-muted">Flags missed-out / missed-in. Does not invent a clock-out.</p>
       </div>
-      <Card>
-        <Table>
-          <THead>
-            <tr>
-              <Th>Created</Th>
-              <Th>Employee</Th>
-              <Th>Type</Th>
-              <Th>Status</Th>
-              <Th />
+      <Table>
+        <THead>
+          <tr>
+            <Th>Created</Th>
+            <Th>Employee</Th>
+            <Th>Type</Th>
+            <Th>Status</Th>
+            <Th />
+          </tr>
+        </THead>
+        <tbody>
+          {(exceptions.data ?? []).map((row) => (
+            <tr key={row.id}>
+              <Td>{formatInTimeZone(row.created_at, timeZone)}</Td>
+              <Td>{row.employees?.full_name ?? row.employee_id.slice(0, 8)}</Td>
+              <Td>{row.type}</Td>
+              <Td>
+                <Badge tone={row.status === "open" ? "warn" : "ok"} dot>
+                  {row.status}
+                </Badge>
+              </Td>
+              <Td>
+                {row.status === "open" ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-wine hover:underline"
+                      onClick={() => resolve.mutate({ exception_id: row.id, new_status: "resolved" })}
+                    >
+                      Resolve
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-muted hover:underline"
+                      onClick={() => resolve.mutate({ exception_id: row.id, new_status: "dismissed" })}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ) : null}
+              </Td>
             </tr>
-          </THead>
-          <tbody>
-            {(exceptions.data ?? []).map((row) => (
-              <tr key={row.id}>
-                <Td>{formatInTimeZone(row.created_at, timeZone)}</Td>
-                <Td>{row.employees?.full_name ?? row.employee_id.slice(0, 8)}</Td>
-                <Td>{row.type}</Td>
-                <Td>
-                  <Badge tone={row.status === "open" ? "warn" : "ok"}>{row.status}</Badge>
-                </Td>
-                <Td>
-                  {row.status === "open" ? (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="text-xs text-wine hover:underline"
-                        onClick={() => resolve.mutate({ exception_id: row.id, new_status: "resolved" })}
-                      >
-                        Resolve
-                      </button>
-                      <button
-                        type="button"
-                        className="text-xs text-muted hover:underline"
-                        onClick={() => resolve.mutate({ exception_id: row.id, new_status: "dismissed" })}
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  ) : null}
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      </Card>
+          ))}
+          {(exceptions.data ?? []).length === 0 ? (
+            <tr>
+              <Td colSpan={5} className="py-8 text-center text-muted">
+                No exceptions.
+              </Td>
+            </tr>
+          ) : null}
+        </tbody>
+      </Table>
     </div>
   );
 }

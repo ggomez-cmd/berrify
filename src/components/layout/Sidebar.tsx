@@ -5,11 +5,13 @@ import {
   ClipboardList,
   Clock,
   LayoutDashboard,
+  Lock,
   LogOut,
   Receipt,
   Truck,
   Users,
   Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -17,34 +19,22 @@ import { cn } from "../../lib/cn";
 import { isManager } from "../../lib/schedule";
 import { BrandMark } from "../ui/brand-mark";
 
-export function Sidebar() {
-  const { role, user, signOut } = useAuth();
-  const manager = isManager(role);
+type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end: boolean;
+};
 
-  const links = [
-    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-    { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
-    { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
-    ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
-    { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
-    ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),
-    { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
-    { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
-  ] as const;
-
-  const soon = [
-    { label: "Payroll", icon: Wallet },
-    { label: "Analytics", icon: BarChart3 },
-  ] as const;
-
+function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+  if (items.length === 0) return null;
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto bg-wine px-3 py-4 text-white">
-      <div className="mb-6 px-2">
-        <BrandMark className="text-white" />
-      </div>
-
-      <nav className="flex flex-1 flex-col gap-1">
-        {links.map((item) => {
+    <div className="mb-4">
+      <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
+        {label}
+      </p>
+      <div className="flex flex-col gap-0.5">
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
@@ -53,8 +43,9 @@ export function Sidebar() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white",
-                  isActive && "bg-wine-deep text-white",
+                  "relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-ink/75 hover:bg-paper hover:text-ink",
+                  isActive &&
+                    "bg-wine/10 text-wine before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-wine",
                 )
               }
             >
@@ -63,30 +54,70 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+      </div>
+    </div>
+  );
+}
 
-        <p className="mb-1 mt-5 px-3 text-[10px] uppercase tracking-[0.16em] text-white/45">
-          Coming soon
-        </p>
-        {soon.map((item) => {
-          const Icon = item.icon;
-          return (
-            <span
-              key={item.label}
-              className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-white/40"
-            >
-              <Icon className="size-4" />
-              {item.label}
-            </span>
-          );
-        })}
+export function Sidebar() {
+  const { role, user, signOut } = useAuth();
+  const manager = isManager(role);
+
+  const overview: NavItem[] = [
+    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+    { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+    { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+  ];
+
+  const operations: NavItem[] = [
+    ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
+    { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
+    ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),
+    { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
+    { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
+  ];
+
+  const soon = [
+    { label: "Payroll", icon: Wallet },
+    { label: "Analytics", icon: BarChart3 },
+  ] as const;
+
+  return (
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-white px-3 py-5">
+      <div className="mb-6 px-2">
+        <BrandMark className="text-wine" />
+      </div>
+
+      <nav className="flex flex-1 flex-col">
+        <NavGroup label="Overview" items={overview} />
+        <NavGroup label="Operations" items={operations} />
+
+        <div>
+          <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
+            Coming soon
+          </p>
+          {soon.map((item) => {
+            const Icon = item.icon;
+            return (
+              <span
+                key={item.label}
+                className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-muted/70"
+              >
+                <Icon className="size-4" />
+                <span className="flex-1">{item.label}</span>
+                <Lock className="size-3.5" />
+              </span>
+            );
+          })}
+        </div>
       </nav>
 
-      <div className="mt-3 px-2">
-        <p className="mb-2 truncate text-[11px] text-white/60">{user?.email}</p>
+      <div className="mt-3 border-t border-line px-2 pt-3">
+        <p className="mb-1 truncate px-1 text-[11px] text-muted">{user?.email}</p>
         <button
           type="button"
           onClick={() => void signOut()}
-          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white"
+          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-muted hover:bg-paper hover:text-ink"
         >
           <LogOut className="size-4" />
           Sign out

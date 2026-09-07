@@ -1,7 +1,6 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import {
@@ -18,6 +17,7 @@ import {
   weekStart,
   atTimeOnDay,
 } from "../../lib/schedule";
+import { cn } from "../../lib/cn";
 import type { Employee, Shift, ShiftWithEmployee } from "../../lib/types";
 import { useEmployees, useMyEmployee } from "../employees/hooks";
 import { ShiftDialog } from "./ShiftDialog";
@@ -62,7 +62,29 @@ export function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      <WeekPager cursor={cursor} setCursor={setCursor} />
+      <div className="flex flex-wrap items-center gap-2">
+        <WeekPager cursor={cursor} setCursor={setCursor} />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() =>
+              setDialog({
+                shift: null,
+                starts: atTimeOnDay(weekDays[0], 16, 0).toISOString(),
+                ends: atTimeOnDay(weekDays[0], 22, 0).toISOString(),
+              })
+            }
+          >
+            Add shift
+          </Button>
+          <Button
+            disabled={drafts.length === 0 || publish.isPending}
+            onClick={() => void publish.mutateAsync(drafts.map((s) => s.id))}
+          >
+            {publish.isPending ? "Publishing…" : `Publish week (${drafts.length} draft)`}
+          </Button>
+        </div>
+      </div>
 
       {overlapCount > 0 ? (
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
@@ -70,43 +92,25 @@ export function SchedulePage() {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          onClick={() =>
-            setDialog({
-              shift: null,
-              starts: atTimeOnDay(weekDays[0], 16, 0).toISOString(),
-              ends: atTimeOnDay(weekDays[0], 22, 0).toISOString(),
-            })
-          }
-        >
-          Add shift
-        </Button>
-        <Button
-          disabled={drafts.length === 0 || publish.isPending}
-          onClick={() => void publish.mutateAsync(drafts.map((s) => s.id))}
-        >
-          {publish.isPending ? "Publishing…" : `Publish week (${drafts.length} draft)`}
-        </Button>
-      </div>
-
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading schedule…</p> : null}
 
       <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-sm">
-        <table className="w-full min-w-[960px] border-collapse text-sm">
-          <thead className="bg-navy text-xs uppercase tracking-wide text-white">
+        <table className="w-full min-w-[1080px] border-collapse text-sm">
+          <thead className="bg-[#f8f8fa] text-xs font-medium uppercase tracking-wide text-muted">
             <tr>
-              <th className="w-40 px-3 py-2.5 text-left font-medium">Employee</th>
+              <th className="w-44 px-4 py-3 text-left">Staff</th>
               {weekDays.map((day) => (
-                <th key={day.toISOString()} className="px-2 py-2.5 text-left font-medium">
-                  <div>{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
-                  <div className="font-normal normal-case text-white/70">
+                <th key={day.toISOString()} className="px-2 py-3 text-left">
+                  <div className="font-semibold normal-case text-ink">
+                    {day.toLocaleDateString(undefined, { weekday: "short" })}
+                  </div>
+                  <div className="font-normal normal-case text-muted">
                     {day.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </div>
                 </th>
               ))}
+              <th className="w-20 px-3 py-3 text-right">Hours</th>
             </tr>
           </thead>
           <tbody>
@@ -116,6 +120,7 @@ export function SchedulePage() {
                 employee={employee}
                 weekDays={weekDays}
                 shifts={weekShifts}
+                hours={employeeWeekHours(weekShifts, employee.id)}
                 onCreate={(day) =>
                   setDialog({
                     shift: null,
@@ -131,6 +136,7 @@ export function SchedulePage() {
               employee={null}
               weekDays={weekDays}
               shifts={weekShifts}
+              hours={null}
               onCreate={(day) =>
                 setDialog({
                   shift: null,
@@ -144,18 +150,6 @@ export function SchedulePage() {
           </tbody>
         </table>
       </div>
-
-      <Card>
-        <h2 className="mb-3 font-semibold">Hours this week</h2>
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {activeEmployees.map((employee) => (
-            <li key={employee.id} className="flex justify-between text-sm">
-              <span>{employee.full_name}</span>
-              <span className="text-muted">{employeeWeekHours(weekShifts, employee.id).toFixed(1)} h</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
 
       <ShiftDialog
         open={Boolean(dialog)}
@@ -181,12 +175,15 @@ function WeekPager({
   setCursor: (d: Date) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button variant="ghost" onClick={() => setCursor(addDays(cursor, -7))} aria-label="Previous week">
+    <div className="flex flex-wrap items-center gap-1">
+      <Button variant="ghost" className="px-2" onClick={() => setCursor(addDays(cursor, -7))} aria-label="Previous week">
         <ChevronLeft className="size-4" />
       </Button>
-      <p className="min-w-48 text-center text-sm font-medium">{formatWeekLabel(cursor)}</p>
-      <Button variant="ghost" onClick={() => setCursor(addDays(cursor, 7))} aria-label="Next week">
+      <Button variant="ghost" className="min-w-48">
+        <CalendarDays className="size-4" />
+        {formatWeekLabel(cursor)}
+      </Button>
+      <Button variant="ghost" className="px-2" onClick={() => setCursor(addDays(cursor, 7))} aria-label="Next week">
         <ChevronRight className="size-4" />
       </Button>
       <Button variant="subtle" onClick={() => setCursor(weekStart(new Date()))}>
@@ -200,19 +197,21 @@ function EmployeeRow({
   employee,
   weekDays,
   shifts,
+  hours,
   onCreate,
   onEdit,
 }: {
   employee: Employee | null;
   weekDays: Date[];
   shifts: ShiftWithEmployee[];
+  hours: number | null;
   onCreate: (day: Date) => void;
   onEdit: (shift: Shift) => void;
 }) {
   const name = employee?.full_name ?? "Open shifts";
   return (
     <tr className="align-top">
-      <td className="border-t border-line px-3 py-2">
+      <td className="border-t border-line px-4 py-3">
         <div className="font-medium">{name}</div>
         <div className="text-xs text-muted">{employee?.position ?? "Unassigned"}</div>
       </td>
@@ -224,17 +223,22 @@ function EmployeeRow({
         return (
           <td key={day.toISOString()} className="border-t border-line px-1.5 py-2">
             <div className="flex min-h-16 flex-col gap-1">
+              {cell.length === 0 ? <span className="px-2 py-1 text-muted">—</span> : null}
               {cell.map((shift) => (
                 <button
                   key={shift.id}
                   type="button"
                   onClick={() => onEdit(shift)}
-                  className="rounded-lg border border-line bg-paper px-2 py-1 text-left hover:border-wine"
+                  className={cn(
+                    "rounded-xl px-2 py-1.5 text-left",
+                    shift.status === "published"
+                      ? "bg-wine text-white"
+                      : "bg-paper text-ink hover:border hover:border-line",
+                  )}
                 >
                   <div className="text-xs font-medium">{formatTimeRange(shift.starts_at, shift.ends_at)}</div>
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-muted">{shift.position}</span>
-                    <Badge tone={shift.status === "published" ? "ok" : "warn"}>{statusLabel(shift.status)}</Badge>
+                  <div className={cn("text-[11px]", shift.status === "published" ? "text-white/80" : "text-muted")}>
+                    {statusLabel(shift.status)}
                   </div>
                 </button>
               ))}
@@ -249,6 +253,9 @@ function EmployeeRow({
           </td>
         );
       })}
+      <td className="border-t border-line px-3 py-3 text-right font-medium">
+        {hours === null ? "—" : `${hours.toFixed(0)}h`}
+      </td>
     </tr>
   );
 }
@@ -297,7 +304,9 @@ function StaffSchedule({
               <ul className="space-y-2">
                 {dayMine.map((s) => (
                   <li key={s.id} className="text-sm">
-                    <span className="font-medium">{formatTimeRange(s.starts_at, s.ends_at)}</span>
+                    <span className="inline-flex rounded-xl bg-wine px-2.5 py-1 text-xs font-medium text-white">
+                      {formatTimeRange(s.starts_at, s.ends_at)}
+                    </span>
                     <span className="ml-2 text-muted">{s.position}</span>
                     {s.note ? <span className="ml-2 text-muted">· {s.note}</span> : null}
                   </li>

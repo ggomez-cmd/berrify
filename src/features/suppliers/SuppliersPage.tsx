@@ -1,7 +1,7 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import type { Supplier } from "../../lib/types";
 import { SupplierDialog } from "./SupplierDialog";
@@ -25,8 +25,7 @@ export function SuppliersPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-xs"
+        <SearchInput
           placeholder="Search suppliers"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

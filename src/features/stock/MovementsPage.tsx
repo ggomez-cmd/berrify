@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "../../components/ui/badge";
-import { Input, Select } from "../../components/ui/input";
+import { Select } from "../../components/ui/input";
+import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { MOVEMENT_REASONS } from "../../lib/constants";
 import { formatDateTime, formatQty } from "../../lib/format";
@@ -44,8 +45,7 @@ export function MovementsPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-xs"
+        <SearchInput
           placeholder="Search item or note"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -94,7 +94,7 @@ export function MovementsPage() {
                     <div className="text-xs text-muted">{m.inventory_items?.sku ?? ""}</div>
                   </Td>
                   <Td>
-                    <Badge tone={toneFor(m.reason)}>{reasonLabel(m.reason)}</Badge>
+                    <Badge tone={toneFor(m.reason)} dot>{reasonLabel(m.reason)}</Badge>
                   </Td>
                   <Td className={Number(m.delta) < 0 ? "text-danger" : "text-ok"}>
                     {Number(m.delta) > 0 ? "+" : ""}

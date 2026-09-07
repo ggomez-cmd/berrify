@@ -1,30 +1,61 @@
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input, Select } from "../../components/ui/input";
+import { Select } from "../../components/ui/input";
+import { PageTabs } from "../../components/ui/page-tabs";
+import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { ITEM_CATEGORIES } from "../../lib/constants";
 import { formatMoney, formatQty } from "../../lib/format";
-import { filterItems, isLowStock } from "../../lib/inventory";
+import { filterItems, stockStatus, type StockStatus } from "../../lib/inventory";
 import type { InventoryItem, InventoryItemWithSupplier } from "../../lib/types";
 import { AdjustStockDialog } from "./AdjustStockDialog";
 import { useDeleteItem, useInventoryItems } from "./hooks";
 import { ItemDialog } from "./ItemDialog";
+
+type StockTab = "all" | "low";
+
+function statusBadge(status: StockStatus) {
+  switch (status) {
+    case "ok":
+      return (
+        <Badge tone="info" dot>
+          In stock
+        </Badge>
+      );
+    case "low":
+      return (
+        <Badge tone="warn" dot>
+          Low stock
+        </Badge>
+      );
+    case "out":
+      return (
+        <Badge tone="danger" dot>
+          Out of stock
+        </Badge>
+      );
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
 
 export function InventoryPage() {
   const { data: items = [], isLoading, error } = useInventoryItems();
   const remove = useDeleteItem();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [tab, setTab] = useState<StockTab>("all");
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [itemOpen, setItemOpen] = useState(false);
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null);
 
   const filtered = useMemo(
-    () => filterItems(items, { search, category, lowStockOnly }),
-    [items, search, category, lowStockOnly],
+    () => filterItems(items, { search, category, lowStockOnly: tab === "low" }),
+    [items, search, category, tab],
   );
 
   const openCreate = () => {
@@ -40,9 +71,8 @@ export function InventoryPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-xs"
-          placeholder="Search name, SKU, category"
+        <SearchInput
+          placeholder="Search inventory…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -54,19 +84,23 @@ export function InventoryPage() {
             </option>
           ))}
         </Select>
-        <Button
-          variant={lowStockOnly ? "primary" : "ghost"}
-          onClick={() => setLowStockOnly((v) => !v)}
-        >
-          <SlidersHorizontal className="size-4" />
-          Low stock
-        </Button>
         <div className="ml-auto">
           <Button onClick={openCreate}>
             <Plus className="size-4" />
             Add item
           </Button>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <PageTabs
+          items={[
+            { id: "all", label: "All items" },
+            { id: "low", label: "Low stock" },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
@@ -95,7 +129,7 @@ export function InventoryPage() {
               </tr>
             ) : (
               filtered.map((item) => {
-                const low = isLowStock(item);
+                const status = stockStatus(item);
                 return (
                   <tr key={item.id} className="hover:bg-paper">
                     <Td>
@@ -109,9 +143,7 @@ export function InventoryPage() {
                     <Td>{formatQty(item.reorder_level)}</Td>
                     <Td>{formatMoney(item.unit_cost)}</Td>
                     <Td>{item.suppliers?.name ?? "—"}</Td>
-                    <Td>
-                      <Badge tone={low ? "warn" : "ok"}>{low ? "Low stock" : "OK"}</Badge>
-                    </Td>
+                    <Td>{statusBadge(status)}</Td>
                     <Td>
                       <div className="flex justify-end gap-1">
                         <Button variant="subtle" onClick={() => setAdjusting(item)}>

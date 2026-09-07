@@ -2,9 +2,11 @@ import { Camera, FileUp, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/input";
+import { PageTabs } from "../../components/ui/page-tabs";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import {
   ACCOUNTS,
@@ -39,7 +41,7 @@ function statusTone(status: InvoiceWithSupplier["status"]) {
     case "reviewed":
       return "ok" as const;
     case "exported":
-      return "ok" as const;
+      return "info" as const;
     default: {
       const exhaustive: never = status;
       return exhaustive;
@@ -60,6 +62,7 @@ export function InvoicesPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<InvoiceWithSupplier | null>(null);
   const [restaurantFilter, setRestaurantFilter] = useState("");
+  const [statusTab, setStatusTab] = useState<"all" | InvoiceWithSupplier["status"]>("all");
 
   if (!isManager(role)) {
     return <Navigate to="/" replace />;
@@ -158,9 +161,13 @@ export function InvoicesPage() {
               e.target.value = "";
             }}
           />
-          <Button disabled={busy} onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
+          >
             <Camera className="size-4" />
-            Take photo
+            Camera
           </Button>
         </label>
         <label className="inline-flex">
@@ -176,7 +183,7 @@ export function InvoicesPage() {
             }}
           />
           <Button
-            variant="ghost"
+            variant="outline"
             disabled={busy}
             onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
           >
@@ -197,25 +204,37 @@ export function InvoicesPage() {
             }}
           />
           <Button
-            variant="ghost"
+            variant="outline"
             disabled={busy}
             onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
           >
             <MessageCircle className="size-4" />
-            WhatsApp photo
+            WhatsApp
           </Button>
         </label>
+        <div className="ml-auto max-w-xs">
+          <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
+            <option value="">All restaurants</option>
+            {restaurants.map((restaurant) => (
+              <option key={restaurant.id} value={restaurant.id}>
+                {restaurant.name}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
-      <div className="mb-4 max-w-xs">
-        <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
-          <option value="">All restaurants</option>
-          {restaurants.map((restaurant) => (
-            <option key={restaurant.id} value={restaurant.id}>
-              {restaurant.name}
-            </option>
-          ))}
-        </Select>
+      <div className="mb-4">
+        <PageTabs
+          items={[
+            { id: "all", label: "All" },
+            { id: "extracted", label: "Extracted" },
+            { id: "reviewed", label: "Reviewed" },
+            { id: "exported", label: "Exported" },
+          ]}
+          value={statusTab}
+          onChange={setStatusTab}
+        />
       </div>
 
       {busy || message ? <p className="mb-3 text-sm text-muted">{message}</p> : null}
@@ -226,12 +245,11 @@ export function InvoicesPage() {
         <Table>
           <THead>
             <tr>
-              <Th>Ref</Th>
-              <Th>Restaurant</Th>
               <Th>Vendor</Th>
+              <Th>Invoice number</Th>
               <Th>Date</Th>
+              <Th>Restaurant</Th>
               <Th>Total</Th>
-              <Th>Source</Th>
               <Th>Status</Th>
               <Th />
             </tr>
@@ -239,23 +257,35 @@ export function InvoicesPage() {
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-muted">
+                <Td colSpan={7} className="py-10 text-center text-muted">
                   No invoices yet. Photograph a supplier bill or import a WhatsApp photo.
                 </Td>
               </tr>
             ) : (
               invoices
                 .filter((invoice) => !restaurantFilter || invoice.restaurant_id === restaurantFilter)
+                .filter((invoice) => statusTab === "all" || invoice.status === statusTab)
                 .map((invoice) => (
                 <tr key={invoice.id} className="hover:bg-paper">
-                  <Td className="font-medium">{invoice.invoice_number ?? invoice.id.slice(0, 8)}</Td>
-                  <Td>{invoice.restaurants?.name ?? "—"}</Td>
-                  <Td>{invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}</Td>
-                  <Td>{invoice.invoice_date ?? "—"}</Td>
-                  <Td>{formatMoney(invoice.total)}</Td>
-                  <Td className="capitalize">{invoice.source}</Td>
                   <Td>
-                    <Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={invoice.suppliers?.name ?? invoice.vendor_name ?? "Vendor"} />
+                      <div>
+                        <div className="font-medium">
+                          {invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}
+                        </div>
+                        <div className="text-xs capitalize text-muted">{invoice.source}</div>
+                      </div>
+                    </div>
+                  </Td>
+                  <Td className="font-medium">{invoice.invoice_number ?? invoice.id.slice(0, 8)}</Td>
+                  <Td>{invoice.invoice_date ?? "—"}</Td>
+                  <Td>{invoice.restaurants?.name ?? "—"}</Td>
+                  <Td className="font-semibold">{formatMoney(invoice.total)}</Td>
+                  <Td>
+                    <Badge tone={statusTone(invoice.status)} dot>
+                      {invoice.status}
+                    </Badge>
                   </Td>
                   <Td>
                     <Button variant="subtle" onClick={() => setReviewing(invoice)}>

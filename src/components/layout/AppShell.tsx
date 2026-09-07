@@ -21,11 +21,11 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen bg-paper text-ink">
       <Sidebar />
-      <main className="min-w-0 flex-1 px-6 py-5">
+      <main className="min-w-0 flex-1 px-8 py-6">
         {showPageTitle ? (
-          <div className="mb-4">
-            <h1 className="text-xl font-semibold text-navy">{titleFor(pathname)}</h1>
-            <p className="text-xs text-muted">{org?.name ?? "Workspace"}</p>
+          <div className="mb-5">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">{titleFor(pathname)}</h1>
+            <p className="mt-0.5 text-sm text-muted">{org?.name ?? "Workspace"}</p>
           </div>
         ) : null}
         <Outlet />
