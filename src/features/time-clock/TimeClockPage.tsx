@@ -181,7 +181,8 @@ function EmployeeClockPanel({ timeZone }: { timeZone: string }) {
                 <Button
                   key={event}
                   variant={
-                    event === "clock_out" || (event === "clock_in" && state === "off_clock")
+                    (event === "clock_in" && state === "off_clock") ||
+                    (event === "clock_out" && state === "working")
                       ? "primary"
                       : "ghost"
                   }
