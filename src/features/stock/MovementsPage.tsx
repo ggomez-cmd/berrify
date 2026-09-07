@@ -44,24 +44,25 @@ export function MovementsPage() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <SearchInput
           placeholder="Search item or note"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select
-          className="w-44"
-          value={reason}
-          onChange={(e) => setReason(e.target.value as "" | MovementReason)}
-        >
-          <option value="">All reasons</option>
-          {MOVEMENT_REASONS.map((r) => (
-            <option key={r} value={r}>
-              {reasonLabel(r)}
-            </option>
-          ))}
-        </Select>
+        <div className="w-44 shrink-0">
+          <Select
+            value={reason}
+            onChange={(e) => setReason(e.target.value as "" | MovementReason)}
+          >
+            <option value="">All reasons</option>
+            {MOVEMENT_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {reasonLabel(r)}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}

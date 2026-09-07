@@ -212,7 +212,7 @@ export function InvoicesPage() {
             WhatsApp
           </Button>
         </label>
-        <div className="ml-auto max-w-xs">
+        <div className="ml-auto w-56 shrink-0">
           <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
             <option value="">All restaurants</option>
             {restaurants.map((restaurant) => (

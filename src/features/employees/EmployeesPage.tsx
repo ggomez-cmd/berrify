@@ -35,7 +35,7 @@ export function EmployeesPage() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <SearchInput
           placeholder="Search roster…"
           value={search}
