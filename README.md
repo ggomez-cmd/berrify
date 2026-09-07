@@ -1,9 +1,12 @@
 # Berrify
 
 AI-powered restaurant ERP. This repository ships **Inventory**, **Employee
-scheduling**, and **supplier invoice capture**: a multi-tenant workspace for
-items, stock, a weekly schedule board, and QuickBooks Desktop bills from
-sideways invoice photos, backed by Supabase (Postgres + Auth + RLS).
+scheduling**, **Time Clock**, and **supplier invoice capture**: a multi-tenant
+workspace for items, stock, a weekly schedule board, punches, and QuickBooks
+Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
++ RLS).
+
+How to use every screen: **[User guide](docs/USER_GUIDE.md)**.
 
 ## Stack
 
