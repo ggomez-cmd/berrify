@@ -2,6 +2,8 @@
 
 Berrify is a restaurant workspace for inventory, weekly scheduling, time clock, and supplier invoices. This guide covers every live screen: what it does, who can use it, and how to complete the common tasks.
 
+Illustrated PDF (screenshots of every screen): [berrify-user-guide.pdf](berrify-user-guide.pdf).
+
 Payroll and Analytics appear in the sidebar as **Coming soon**. They are not built yet.
 
 ---

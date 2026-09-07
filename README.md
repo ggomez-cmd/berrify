@@ -6,7 +6,7 @@ workspace for items, stock, a weekly schedule board, punches, and QuickBooks
 Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 + RLS).
 
-How to use every screen: **[User guide](docs/USER_GUIDE.md)**.
+How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
 ## Stack
 
