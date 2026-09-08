@@ -16,17 +16,6 @@ import type {
   VendorAliasRow,
 } from "../../lib/types";
 
-export const MAX_INVOICE_IMAGE_BYTES = 8 * 1024 * 1024;
-
-export function assertInvoiceImage(file: File): void {
-  if (file.size > MAX_INVOICE_IMAGE_BYTES) {
-    throw new Error("Invoice photo must be 8 MB or smaller.");
-  }
-  if (file.type && !file.type.startsWith("image/")) {
-    throw new Error("Invoice must be an image file.");
-  }
-}
-
 const INVOICE_LIST_SELECT =
   "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, caption, image_mime, created_by, exported_at, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
 

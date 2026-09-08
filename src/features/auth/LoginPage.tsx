@@ -6,6 +6,12 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { BrandMark } from "../../components/ui/brand-mark";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_STAFF_EMAIL } from "../../lib/constants";
+import {
+  clearLoginFailures,
+  isHoneypotFilled,
+  loginLockRemainingMs,
+  recordLoginFailure,
+} from "../../lib/login-guard";
 import { supabase } from "../../lib/supabase";
 
 type Mode = "signin" | "signup";
@@ -17,6 +23,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [orgName, setOrgName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [website, setWebsite] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -33,11 +40,31 @@ export function LoginPage() {
     event.preventDefault();
     setError(null);
     setInfo(null);
+    const lockMs = loginLockRemainingMs();
+    if (lockMs > 0) {
+      setError(`Too many attempts. Try again in ${Math.ceil(lockMs / 1000)} seconds.`);
+      return;
+    }
+    if (isHoneypotFilled(website)) {
+      if (mode === "signup") {
+        setInfo("Check your email to confirm the account, then sign in.");
+      } else {
+        setError("Invalid email or password");
+      }
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "signin") {
         const { error: signError } = await supabase.auth.signInWithPassword({ email, password });
-        if (signError) throw signError;
+        if (signError) {
+          const remaining = recordLoginFailure();
+          if (remaining > 0) {
+            throw new Error(`Too many attempts. Try again in ${Math.ceil(remaining / 1000)} seconds.`);
+          }
+          throw signError;
+        }
+        clearLoginFailures();
       } else {
         const { data, error: signError } = await supabase.auth.signUp({
           email,
@@ -96,6 +123,22 @@ export function LoginPage() {
               </div>
             </>
           ) : null}
+
+          <div className="relative mb-3" aria-hidden="true">
+            <label className="sr-only" htmlFor="website">
+              Website
+            </label>
+            <input
+              id="website"
+              name="website"
+              type="text"
+              tabIndex={-1}
+              autoComplete="off"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              className="absolute -left-[9999px] h-0 w-0 opacity-0"
+            />
+          </div>
 
           <div className="relative mb-3">
             <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />

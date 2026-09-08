@@ -16,6 +16,7 @@ import {
   type VendorAlias,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
+import { assertInvoiceImage } from "../../lib/invoice-image";
 import { ocrImage } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
@@ -23,7 +24,6 @@ import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
-  assertInvoiceImage,
   fileToDataUrl,
   useAccountRules,
   useCreateInvoice,

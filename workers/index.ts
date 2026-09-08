@@ -64,6 +64,18 @@ function apiPath(pathname: string): string {
   return pathname;
 }
 
+export function redirectToHttps(request: Request): Response | null {
+  const url = new URL(request.url);
+  const host = url.hostname;
+  if (url.protocol !== "http:") return null;
+  if (host === "localhost" || host === "127.0.0.1") return null;
+  url.protocol = "https:";
+  return new Response(null, {
+    status: 301,
+    headers: { Location: url.toString() },
+  });
+}
+
 export async function handleApi(request: Request, env: WorkerEnv): Promise<Response> {
   const url = new URL(request.url);
   const path = apiPath(url.pathname);
@@ -102,6 +114,8 @@ export async function handleApi(request: Request, env: WorkerEnv): Promise<Respo
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    const httpsRedirect = redirectToHttps(request);
+    if (httpsRedirect) return httpsRedirect;
     const path = apiPath(new URL(request.url).pathname);
     if (path === "/api" || path.startsWith("/api/")) {
       return handleApi(request, env);
