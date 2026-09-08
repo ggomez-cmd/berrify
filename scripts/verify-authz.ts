@@ -175,14 +175,103 @@ try {
   });
   assert(staffInventory.length > 0, "staff cannot read inventory");
 
+  const staffUnitCost = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select unit_cost from public.inventory_items where org_id = $1`, [orgId])),
+  );
+  assert(staffUnitCost, "staff can select inventory unit_cost");
+
+  const staffInventoryRpc = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ unit_cost: number }>(`select unit_cost from public.list_inventory_full()`);
+    return rows;
+  });
+  assert(staffInventoryRpc.length === 0, "staff list_inventory_full returned rows");
+
+  const managerInventory = await asAuthenticated(ownerId, async () => {
+    const { rows } = await q<{ unit_cost: number }>(`select unit_cost from public.list_inventory_full()`);
+    return rows;
+  });
+  assert(managerInventory.length > 0, "manager list_inventory_full returned no rows");
+  assert(
+    managerInventory.some((row) => Number(row.unit_cost) > 0),
+    "manager list_inventory_full hid unit_cost",
+  );
+
+  const staffSupplierContacts = await asAuthenticated(staffId, async () =>
+    expectReject(() =>
+      q(`select contact_email, phone, notes from public.suppliers where org_id = $1`, [orgId]),
+    ),
+  );
+  assert(staffSupplierContacts, "staff can select supplier contact columns");
+
+  const staffSupplierNames = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ name: string }>(`select name from public.suppliers where org_id = $1`, [orgId]);
+    return rows;
+  });
+  assert(staffSupplierNames.length > 0, "staff cannot select supplier names");
+
+  const staffSupplierRpc = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ contact_email: string }>(`select contact_email from public.list_suppliers_full()`);
+    return rows;
+  });
+  assert(staffSupplierRpc.length === 0, "staff list_suppliers_full returned rows");
+
+  const managerSuppliers = await asAuthenticated(ownerId, async () => {
+    const { rows } = await q<{ contact_email: string | null }>(
+      `select contact_email from public.list_suppliers_full()`,
+    );
+    return rows;
+  });
+  assert(managerSuppliers.length > 0, "manager list_suppliers_full returned no rows");
+
+  const staffInviteCode = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select invite_code from public.employees where org_id = $1`, [orgId])),
+  );
+  assert(staffInviteCode, "staff can select employee invite_code");
+
+  let { rows: pendingInvites } = await q<{ id: string; invite_code: string | null }>(
+    `select id, invite_code
+     from public.employees
+     where org_id = $1 and user_id is null and email is not null
+     limit 1`,
+    [orgId],
+  );
+  if (!pendingInvites[0]) {
+    const inserted = await q<{ id: string; invite_code: string | null }>(
+      `insert into public.employees (org_id, full_name, email, position)
+       values ($1, 'Authz Probe', 'probe-invite@berrify.example', 'Other')
+       returning id, invite_code`,
+      [orgId],
+    );
+    pendingInvites = inserted.rows;
+  }
+  const pending = pendingInvites[0];
+  assert(Boolean(pending?.invite_code), "unbound employee with email has no invite_code");
+
+  if (pending?.id) {
+    const staffRotate = await asAuthenticated(staffId, async () =>
+      expectReject(() => q(`select public.rotate_employee_invite($1)`, [pending.id])),
+    );
+    assert(staffRotate, "staff can rotate employee invite codes");
+
+    const managerRotate = await asAuthenticated(ownerId, async () => {
+      const { rows } = await q<{ rotate_employee_invite: string }>(
+        `select public.rotate_employee_invite($1)`,
+        [pending.id],
+      );
+      return rows[0]?.rotate_employee_invite;
+    });
+    assert(Boolean(managerRotate), "manager rotate_employee_invite returned no code");
+    assert(managerRotate !== pending.invite_code, "manager rotate_employee_invite reused the same code");
+  }
+
   if (failures.length > 0) {
     throw new Error(`Authorization verification failed:\n- ${failures.join("\n- ")}`);
   }
 
   console.log("Authorization verification passed.");
-  console.log("  staff denied: invoices, aliases, wage columns, inventory writes, org update");
-  console.log("  staff allowed: employee names, inventory read");
-  console.log("  manager allowed: list_employees_full with hourly_rate");
+  console.log("  staff denied: invoices, aliases, wage columns, unit_cost, supplier contacts, invite codes");
+  console.log("  staff allowed: employee names, inventory qty, supplier names");
+  console.log("  manager allowed: full inventory/suppliers/employees RPCs and invite rotate");
 } finally {
   await client.query("rollback");
   await client.end();
