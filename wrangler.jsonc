@@ -14,5 +14,9 @@
   "build": {
     "command": "npm run build",
     "watch_dir": ["src", "workers", "public", "index.html"]
-  }
+  },
+  "routes": [
+    { "pattern": "berrify.app", "custom_domain": true },
+    { "pattern": "www.berrify.app", "custom_domain": true }
+  ]
 }

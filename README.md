@@ -8,7 +8,7 @@ Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 
 How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
-**Live demo:** [https://mellow-walnut-232.harvis.page](https://mellow-walnut-232.harvis.page) — production Vite build against the hosted Supabase project. Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). A `gh-pages` branch is already published; turn on GitHub Pages (Deploy from branch → `gh-pages` / root) to also serve [https://ggomez-cmd.github.io/berrify/](https://ggomez-cmd.github.io/berrify/). If email confirmation links fail, add the demo origin under Supabase Auth → URL configuration → Redirect URLs.
+**Production:** [https://berrify.app](https://berrify.app) (also [www.berrify.app](https://www.berrify.app) and [berrify.ggomez-fd2.workers.dev](https://berrify.ggomez-fd2.workers.dev)). Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). Add each origin under Supabase Auth → URL configuration → Redirect URLs.
 
 ## Stack
 
@@ -147,8 +147,9 @@ npx wrangler login
 npm run workers:deploy
 ```
 
-The Worker URL is `https://berrify.<your-subdomain>.workers.dev`. Add that
-origin under Supabase Auth → URL configuration → Redirect URLs.
+The Worker also stays on `https://berrify.ggomez-fd2.workers.dev`. Custom
+domains `berrify.app` and `www.berrify.app` are declared in `wrangler.jsonc`.
+Add those origins under Supabase Auth → URL configuration → Redirect URLs.
 
 GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 `main` when these repository secrets exist:
