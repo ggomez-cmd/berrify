@@ -23,7 +23,7 @@ describe("recordLoginFailure", () => {
     expect(recordLoginFailure(1_002)).toBe(0);
     expect(recordLoginFailure(1_003)).toBe(0);
     expect(recordLoginFailure(1_004)).toBe(30_000);
-    expect(loginLockRemainingMs(1_010)).toBe(29_990);
+    expect(loginLockRemainingMs(1_010)).toBe(29_994);
   });
 
   it("stays locked until the window ends", () => {

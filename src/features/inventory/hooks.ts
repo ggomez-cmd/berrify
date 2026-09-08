@@ -43,7 +43,7 @@ export function useInventoryItems() {
         .eq("org_id", org!.id)
         .order("name");
       if (error) throw error;
-      return (data ?? []) as InventoryItemWithSupplier[];
+      return (data ?? []) as unknown as InventoryItemWithSupplier[];
     },
   });
 }
