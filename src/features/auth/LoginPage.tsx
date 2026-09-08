@@ -1,10 +1,10 @@
+import { Eye, EyeOff, Lock, Mail, User, Users } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { BrandMark } from "../../components/ui/brand-mark";
-import { Field } from "../../components/ui/label";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_STAFF_EMAIL } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
 
@@ -16,6 +16,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [orgName, setOrgName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,59 +58,63 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-paper">
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
-        <div className="mb-8">
-          <BrandMark className="h-10 w-[9.25rem] text-wine" />
-          <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted">Restaurant ERP</p>
-        </div>
-
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="rounded-2xl border border-line bg-white p-6 shadow-sm"
+          className="rounded-2xl border border-line bg-white p-8 shadow-sm"
         >
-          <h1 className="mb-1 text-xl font-semibold text-navy">
-            {mode === "signin" ? "Sign in" : "Create your workspace"}
-          </h1>
-          <p className="mb-5 text-sm text-muted">
-            Inventory, weekly scheduling, and supplier bills for one restaurant.
-          </p>
+          <div className="mb-6 text-center">
+            <BrandMark className="mx-auto h-10 w-[9.25rem] text-wine" />
+            <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-muted">Restaurant ERP</p>
+          </div>
 
           {mode === "signup" ? (
             <div className="mb-3">
-              <Field label="Restaurant name" htmlFor="org">
-                <Input
-                  id="org"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Pacifico Kitchen"
-                />
-              </Field>
+              <Input
+                id="org"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="Restaurant name"
+                aria-label="Restaurant name"
+              />
             </div>
           ) : null}
 
-          <div className="mb-3">
-            <Field label="Email" htmlFor="email">
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </Field>
+          <div className="relative mb-3">
+            <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="pl-9"
+              aria-label="Email"
+            />
           </div>
-          <div className="mb-4">
-            <Field label="Password" htmlFor="password">
-              <Input
-                id="password"
-                type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
+          <div className="relative mb-4">
+            <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="px-9"
+              aria-label="Password"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
           </div>
 
           {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
@@ -119,43 +124,67 @@ export function LoginPage() {
             {busy ? "Working…" : mode === "signin" ? "Sign in" : "Create account"}
           </Button>
 
-          <button
-            type="button"
-            className="mt-3 w-full text-center text-sm text-muted hover:text-ink"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-              setInfo(null);
-            }}
-          >
-            {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-          </button>
+          {mode === "signin" ? (
+            <div className="mt-3 grid gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setEmail(demoEmail);
+                  setPassword(demoPassword);
+                }}
+              >
+                <User className="size-4" />
+                Fill manager demo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setEmail(import.meta.env.NEXT_PUBLIC_DEMO_STAFF_EMAIL ?? DEMO_STAFF_EMAIL);
+                  setPassword(demoPassword);
+                }}
+              >
+                <Users className="size-4" />
+                Fill staff demo
+              </Button>
+            </div>
+          ) : null}
 
-          <div className="mt-4 grid gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setMode("signin");
-                setEmail(demoEmail);
-                setPassword(demoPassword);
-              }}
-            >
-              Fill manager demo
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setMode("signin");
-                setEmail(import.meta.env.NEXT_PUBLIC_DEMO_STAFF_EMAIL ?? DEMO_STAFF_EMAIL);
-                setPassword(demoPassword);
-              }}
-            >
-              Fill staff demo
-            </Button>
+          <div className="mt-5 border-t border-line pt-4 text-center text-sm">
+            {mode === "signin" ? (
+              <>
+                <span className="text-muted">Need an account? </span>
+                <button
+                  type="button"
+                  className="font-medium text-wine hover:underline"
+                  onClick={() => {
+                    setMode("signup");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  Sign up
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-muted">Already have an account? </span>
+                <button
+                  type="button"
+                  className="font-medium text-wine hover:underline"
+                  onClick={() => {
+                    setMode("signin");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  Sign in
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>

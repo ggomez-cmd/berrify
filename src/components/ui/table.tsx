@@ -10,15 +10,13 @@ export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>)
 }
 
 export function THead(props: HTMLAttributes<HTMLTableSectionElement>) {
-  return (
-    <thead className="bg-navy text-xs uppercase tracking-wide text-white" {...props} />
-  );
+  return <thead className="bg-[#f8f8fa] text-xs font-medium uppercase tracking-wide text-muted" {...props} />;
 }
 
 export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
-  return <th className={cn("px-3 py-2.5 font-medium", className)} {...props} />;
+  return <th className={cn("px-4 py-3 font-medium", className)} {...props} />;
 }
 
 export function Td({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("border-t border-line px-3 py-2.5", className)} {...props} />;
+  return <td className={cn("border-t border-line px-4 py-3", className)} {...props} />;
 }

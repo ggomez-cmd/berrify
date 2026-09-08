@@ -4,6 +4,20 @@ export function isLowStock(item: Pick<InventoryItem, "quantity" | "reorder_level
   return Number(item.quantity) <= Number(item.reorder_level);
 }
 
+export function isOutOfStock(item: Pick<InventoryItem, "quantity">): boolean {
+  return Number(item.quantity) <= 0;
+}
+
+export type StockStatus = "ok" | "low" | "out";
+
+export function stockStatus(
+  item: Pick<InventoryItem, "quantity" | "reorder_level">,
+): StockStatus {
+  if (isOutOfStock(item)) return "out";
+  if (isLowStock(item)) return "low";
+  return "ok";
+}
+
 export function inventoryValue(
   items: Array<Pick<InventoryItem, "quantity" | "unit_cost">>,
 ): number {

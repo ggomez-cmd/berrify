@@ -367,3 +367,74 @@ export function formatInTimeZone(iso: string, timeZone: string): string {
     minute: "2-digit",
   });
 }
+
+export function formatTimeInZone(iso: string, timeZone: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export type PunchRow = {
+  key: string;
+  clockIn: string | null;
+  breakStart: string | null;
+  breakEnd: string | null;
+  clockOut: string | null;
+};
+
+function applyPunchEvent(
+  row: PunchRow,
+  event: { event_type: ClockEventType; occurred_at: string },
+): void {
+  switch (event.event_type) {
+    case "clock_in":
+      row.clockIn = event.occurred_at;
+      return;
+    case "break_start":
+      row.breakStart = event.occurred_at;
+      return;
+    case "break_end":
+      row.breakEnd = event.occurred_at;
+      return;
+    case "clock_out":
+      row.clockOut = event.occurred_at;
+      return;
+    default: {
+      const exhaustive: never = event.event_type;
+      void exhaustive;
+    }
+  }
+}
+
+export function groupPunchRows(
+  events: Array<{ id: string; event_type: ClockEventType; occurred_at: string }>,
+): PunchRow[] {
+  const chronological = [...events].sort((a, b) => {
+    const byTime = a.occurred_at.localeCompare(b.occurred_at);
+    return byTime !== 0 ? byTime : a.id.localeCompare(b.id);
+  });
+  const rows: PunchRow[] = [];
+  let current: PunchRow | null = null;
+
+  for (const event of chronological) {
+    if (event.event_type === "clock_in" || !current) {
+      if (current) rows.push(current);
+      current = {
+        key: event.id,
+        clockIn: null,
+        breakStart: null,
+        breakEnd: null,
+        clockOut: null,
+      };
+    }
+    applyPunchEvent(current, event);
+    if (event.event_type === "clock_out") {
+      rows.push(current);
+      current = null;
+    }
+  }
+  if (current) rows.push(current);
+  return rows.reverse();
+}

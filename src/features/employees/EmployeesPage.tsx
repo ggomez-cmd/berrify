@@ -2,9 +2,10 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatMoney } from "../../lib/format";
 import { isManager } from "../../lib/schedule";
@@ -34,10 +35,9 @@ export function EmployeesPage() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-xs"
-          placeholder="Search roster"
+      <div className="mb-4 flex items-center gap-2">
+        <SearchInput
+          placeholder="Search roster…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -62,8 +62,7 @@ export function EmployeesPage() {
           <THead>
             <tr>
               <Th>Name</Th>
-              <Th>Station</Th>
-              <Th>Email</Th>
+              <Th>Position</Th>
               <Th>Phone</Th>
               <Th>Rate</Th>
               <Th>Login</Th>
@@ -74,25 +73,32 @@ export function EmployeesPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-muted">
+                <Td colSpan={7} className="py-10 text-center text-muted">
                   No employees yet.
                 </Td>
               </tr>
             ) : (
               filtered.map((employee) => (
                 <tr key={employee.id} className="hover:bg-paper">
-                  <Td className="font-medium">{employee.full_name}</Td>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={employee.full_name} />
+                      <div>
+                        <div className="font-medium">{employee.full_name}</div>
+                        <div className="text-xs text-muted">{employee.email ?? "No email"}</div>
+                      </div>
+                    </div>
+                  </Td>
                   <Td>{employee.position}</Td>
-                  <Td>{employee.email ?? "—"}</Td>
                   <Td>{employee.phone ?? "—"}</Td>
                   <Td>{formatMoney(employee.hourly_rate)}</Td>
                   <Td>
-                    <Badge tone={employee.user_id ? "ok" : "neutral"}>
+                    <Badge tone={employee.user_id ? "ok" : "neutral"} dot>
                       {employee.user_id ? "Linked" : "Invite pending"}
                     </Badge>
                   </Td>
                   <Td>
-                    <Badge tone={employee.active ? "ok" : "warn"}>
+                    <Badge tone={employee.active ? "ok" : "neutral"} dot>
                       {employee.active ? "Active" : "Inactive"}
                     </Badge>
                   </Td>

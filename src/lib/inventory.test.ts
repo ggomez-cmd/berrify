@@ -5,6 +5,8 @@ import {
   filterItems,
   inventoryValue,
   isLowStock,
+  isOutOfStock,
+  stockStatus,
 } from "./inventory";
 
 describe("isLowStock", () => {
@@ -15,6 +17,18 @@ describe("isLowStock", () => {
 
   it("is false when quantity is above reorder level", () => {
     expect(isLowStock({ quantity: 11, reorder_level: 10 })).toBe(false);
+  });
+});
+
+describe("stockStatus", () => {
+  it("marks empty quantity as out of stock", () => {
+    expect(isOutOfStock({ quantity: 0 })).toBe(true);
+    expect(stockStatus({ quantity: 0, reorder_level: 5 })).toBe("out");
+  });
+
+  it("marks at-reorder quantity as low when still on hand", () => {
+    expect(stockStatus({ quantity: 2, reorder_level: 5 })).toBe("low");
+    expect(stockStatus({ quantity: 8, reorder_level: 5 })).toBe("ok");
   });
 });
 
