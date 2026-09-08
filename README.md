@@ -8,6 +8,8 @@ Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 
 How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
+**Live demo:** [https://mellow-walnut-232.harvis.page](https://mellow-walnut-232.harvis.page) — production Vite build against the hosted Supabase project. Sign in with `demo@berrify.local` / `BerrifyDemo2026!` (manager) or `server@berrify.local` / `BerrifyDemo2026!` (staff). After GitHub Pages is enabled on this repo, the durable URL is [https://ggomez-cmd.github.io/berrify/](https://ggomez-cmd.github.io/berrify/). If email confirmation links fail, add the demo origin under Supabase Auth → URL configuration → Redirect URLs.
+
 ## Stack
 
 - React 18 + TypeScript + Vite

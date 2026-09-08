@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+harvis.json
+.netlify/
 
 # Tesseract language packs downloaded at runtime
 *.traineddata
