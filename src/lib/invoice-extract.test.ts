@@ -7,6 +7,7 @@ import {
   extractInvoicesFromText,
   rollupExpenses,
   stripPriceSuffix,
+  toQuickBooksBillCsv,
   toQuickBooksBillIif,
 } from "./invoice-extract";
 import {
@@ -303,5 +304,37 @@ describe("toQuickBooksBillIif", () => {
     expect(iif).toContain("60025 · Sales tax expense");
     expect(iif).toContain("50000 · Food Purchases");
     expect(iif).toContain("ENDTRNS");
+  });
+
+  it("strips tabs and newlines from IIF fields", () => {
+    const iif = toQuickBooksBillIif({
+      vendor: "Jose\tSantiago\nInc",
+      invoiceNumber: "651\n2495",
+      invoiceDate: "2026-08-12",
+      dueDate: "2026-08-27",
+      terms: "Net 15",
+      apAccount: ACCOUNTS.ap,
+      expenses: [{ account: ACCOUNTS.food, amount: 10, memo: "line\tbreak" }],
+      total: 10,
+    });
+    const dataLines = iif.split("\n").filter((line) => line.startsWith("TRNS") || line.startsWith("SPL"));
+    expect(dataLines.every((line) => !line.includes("Santiago\n"))).toBe(true);
+    expect(iif).toContain("Jose Santiago Inc");
+    expect(iif).toContain("line break");
+  });
+});
+
+describe("toQuickBooksBillCsv", () => {
+  it("neutralizes spreadsheet formula prefixes", () => {
+    const csv = toQuickBooksBillCsv({
+      vendor: "=cmd|'/c calc'!A1",
+      invoiceNumber: "+123",
+      invoiceDate: "2026-08-12",
+      dueDate: "2026-08-27",
+      expenses: [{ account: ACCOUNTS.food, amount: 10, memo: "@SUM(A1)" }],
+    });
+    expect(csv).toContain("'=cmd|'/c calc'!A1");
+    expect(csv).toContain("'+123");
+    expect(csv).toContain("'@SUM(A1)");
   });
 });

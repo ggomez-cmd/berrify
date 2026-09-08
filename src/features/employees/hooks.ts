@@ -1,21 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { Employee, Station } from "../../lib/types";
 
 export function useEmployees() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["employees", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("org_id", org!.id)
-        .order("full_name");
+      const { data, error } = await supabase.rpc("list_employees_full");
       if (error) throw error;
-      return (data ?? []) as Employee[];
+      return ((data ?? []) as Employee[]).sort((a, b) => a.full_name.localeCompare(b.full_name));
     },
   });
 }

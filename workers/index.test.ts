@@ -15,6 +15,9 @@ describe("Worker API", () => {
     const response = await api("/api/health");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, service: "berrify" });
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
   });
 
   it("treats a trailing slash as the same health route", async () => {

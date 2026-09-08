@@ -23,6 +23,7 @@ import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
+  assertInvoiceImage,
   fileToDataUrl,
   useAccountRules,
   useCreateInvoice,
@@ -72,6 +73,7 @@ export function InvoicesPage() {
     setBusy(true);
     setMessage("Reading invoice photo…");
     try {
+      assertInvoiceImage(file);
       const { data, mime } = await fileToDataUrl(file);
       setMessage("Running OCR (trying rotations)…");
       const ocr = await ocrImage(data);
