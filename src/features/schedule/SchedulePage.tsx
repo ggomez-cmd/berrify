@@ -99,7 +99,7 @@ export function SchedulePage() {
         <table className="w-full min-w-[1080px] border-collapse text-sm">
           <thead className="bg-[#f8f8fa] text-xs font-medium uppercase tracking-wide text-muted">
             <tr>
-              <th className="sticky left-0 z-10 w-44 bg-[#f8f8fa] px-4 py-3 text-left">Staff</th>
+              <th className="sticky left-0 z-10 w-44 bg-[#f8f8fa] px-4 py-3 text-left shadow-[4px_0_8px_-6px_rgba(15,23,42,0.25)]">Staff</th>
               {weekDays.map((day) => (
                 <th key={day.toISOString()} className="px-2 py-3 text-left">
                   <div className="font-semibold normal-case text-ink">
@@ -211,7 +211,7 @@ function EmployeeRow({
   const name = employee?.full_name ?? "Open shifts";
   return (
     <tr className="align-top">
-      <td className="sticky left-0 z-10 border-t border-line bg-white px-4 py-3">
+      <td className="sticky left-0 z-10 border-t border-line bg-white px-4 py-3 shadow-[4px_0_8px_-6px_rgba(15,23,42,0.25)]">
         <div className="font-medium">{name}</div>
         <div className="text-xs text-muted">{employee?.position ?? "Unassigned"}</div>
       </td>
