@@ -1,8 +1,10 @@
-import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   server: {
     host: true,
     port: 5173,
@@ -10,5 +12,9 @@ export default defineConfig({
   preview: {
     host: true,
     port: 4173,
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
   },
 });
