@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
+  // GitHub project Pages is served from /<repo>/, not the site root.
+  base: process.env.GITHUB_PAGES === "true" ? "/berrify/" : "/",
   server: {
     host: true,
     port: 5173,
