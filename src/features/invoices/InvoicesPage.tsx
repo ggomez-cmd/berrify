@@ -147,7 +147,7 @@ export function InvoicesPage() {
         Rum Bar), then rolls SKUs into that restaurant’s QuickBooks Desktop Expenses tab.
       </p>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap">
         <label className="inline-flex">
           <input
             className="hidden"
@@ -212,7 +212,7 @@ export function InvoicesPage() {
             WhatsApp
           </Button>
         </label>
-        <div className="ml-auto w-56 shrink-0">
+        <div className="ml-auto w-full shrink-0 sm:w-56">
           <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
             <option value="">All restaurants</option>
             {restaurants.map((restaurant) => (

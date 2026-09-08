@@ -173,13 +173,14 @@ function EmployeeClockPanel({ timeZone }: { timeZone: string }) {
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             {CLOCK_EVENT_TYPES.map((event) => {
               const enabled = actions.includes(event) && !punch.isPending && Boolean(me.data?.active);
               const Icon = eventIcon(event);
               return (
                 <Button
                   key={event}
+                  className="w-full sm:w-auto"
                   variant={
                     (event === "clock_in" && state === "off_clock") ||
                     (event === "clock_out" && state === "working")
@@ -262,17 +263,17 @@ function WhosWorkingPanel({ manager, timeZone }: { manager: boolean; timeZone: s
         ) : (
           <ul className="mt-4 divide-y divide-line">
             {rows.map((row) => (
-              <li key={row.employee_id} className="flex items-center justify-between gap-3 py-3">
-                <div className="flex items-center gap-3">
+              <li key={row.employee_id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={row.full_name} />
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{row.full_name}</p>
                     <Badge tone={row.state === "working" ? "ok" : "warn"} dot>
                       {row.state === "working" ? "Working" : "On break"}
                     </Badge>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 text-sm text-muted">
+                <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
                   {row.clocked_in_at ? `Since ${formatTimeInZone(row.clocked_in_at, timeZone)}` : null}
                   {manager ? (
                     <button
@@ -293,7 +294,7 @@ function WhosWorkingPanel({ manager, timeZone }: { manager: boolean; timeZone: s
         <Card>
           <p className="mb-2 text-sm font-medium">Force clock-out reason</p>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Required reason" />
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button
               disabled={!reason.trim() || forceOut.isPending}
               onClick={() =>
@@ -368,6 +369,7 @@ function AttendancePanel({ timeZone }: { timeZone: string }) {
         </div>
         <div className="mt-4 flex justify-end">
           <Button
+            className="w-full sm:w-auto"
             disabled={!employeeId || !occurredAt || !reason.trim() || recordPunch.isPending}
             onClick={() =>
               recordPunch.mutate({

@@ -60,7 +60,7 @@ export function LoginPage() {
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="rounded-2xl border border-line bg-white p-8 shadow-sm"
+          className="rounded-2xl border border-line bg-white p-6 shadow-sm sm:p-8"
         >
           <div className="mb-6 text-center">
             <BrandMark className="mx-auto h-10 w-[9.25rem] text-wine" />

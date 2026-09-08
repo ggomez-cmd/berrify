@@ -29,7 +29,7 @@ export function Dialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-navy/40 backdrop-blur-sm" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-white p-6 shadow-xl focus:outline-none",
+            "fixed left-1/2 top-1/2 z-50 max-h-[min(92vh,calc(100dvh-1.5rem))] w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-xl focus:outline-none sm:p-6",
             className,
           )}
         >
@@ -55,7 +55,7 @@ export function Dialog({
             </DialogPrimitive.Close>
           </div>
           {children}
-          {footer ? <div className="mt-5 flex justify-end gap-2">{footer}</div> : null}
+          {footer ? <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div> : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

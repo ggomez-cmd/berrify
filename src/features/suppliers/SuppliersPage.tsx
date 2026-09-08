@@ -24,14 +24,16 @@ export function SuppliersPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap">
         <SearchInput
           placeholder="Search suppliers"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          className="min-w-0 flex-1 md:flex-none"
         />
-        <div className="ml-auto">
+        <div className="ml-auto w-full sm:w-auto">
           <Button
+            className="w-full sm:w-auto"
             onClick={() => {
               setEditing(null);
               setOpen(true);

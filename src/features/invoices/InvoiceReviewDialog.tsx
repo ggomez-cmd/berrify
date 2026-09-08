@@ -225,9 +225,9 @@ export function InvoiceReviewDialog({
           <h3 className="mb-2 text-sm font-semibold">SKU lines</h3>
           <div className="space-y-2">
             {lines.map((line, i) => (
-              <div key={`${line.code ?? "sku"}-${i}`} className="grid grid-cols-12 gap-1.5">
+              <div key={`${line.code ?? "sku"}-${i}`} className="grid grid-cols-1 gap-1.5 sm:grid-cols-12">
                 <Input
-                  className="col-span-5"
+                  className="sm:col-span-5"
                   value={line.description}
                   onChange={(e) =>
                     setLines((rows) =>
@@ -236,7 +236,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="col-span-2"
+                  className="sm:col-span-2"
                   type="number"
                   title="Qty shipped (Desp)"
                   value={line.qty_shipped}
@@ -251,7 +251,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="col-span-2"
+                  className="sm:col-span-2"
                   type="number"
                   value={line.amount}
                   onChange={(e) =>
@@ -261,7 +261,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Select
-                  className="col-span-2"
+                  className="sm:col-span-2"
                   value={line.category}
                   onChange={(e) =>
                     setLines((rows) =>
@@ -279,7 +279,7 @@ export function InvoiceReviewDialog({
                 </Select>
                 <Button
                   variant="subtle"
-                  className="col-span-1 px-2"
+                  className="sm:col-span-1 px-2"
                   onClick={() => setLines((rows) => rows.filter((_, idx) => idx !== i))}
                 >
                   ×
@@ -311,7 +311,7 @@ export function InvoiceReviewDialog({
         </div>
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">QuickBooks expenses</h3>
             <Button variant="subtle" onClick={() => setExpenses(rollupExpenses(lines, tax))}>
               Recalc rollup
@@ -319,9 +319,9 @@ export function InvoiceReviewDialog({
           </div>
           <div className="space-y-2">
             {expenses.map((line, i) => (
-              <div key={`${line.account}-${i}`} className="grid grid-cols-12 gap-1.5">
+              <div key={`${line.account}-${i}`} className="grid grid-cols-1 gap-1.5 sm:grid-cols-12">
                 <Input
-                  className="col-span-6"
+                  className="sm:col-span-6"
                   value={line.account}
                   onChange={(e) =>
                     setExpenses((rows) =>
@@ -330,7 +330,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="col-span-3"
+                  className="sm:col-span-3"
                   type="number"
                   value={line.amount}
                   onChange={(e) =>
@@ -340,7 +340,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="col-span-3"
+                  className="sm:col-span-3"
                   value={line.memo}
                   onChange={(e) =>
                     setExpenses((rows) =>
@@ -357,7 +357,7 @@ export function InvoiceReviewDialog({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+      <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
         <Field label="Tax (Municipal + PR Territory)" htmlFor="inv-tax">
           <Input
             id="inv-tax"
