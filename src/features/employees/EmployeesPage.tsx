@@ -105,7 +105,7 @@ export function EmployeesPage() {
                     ) : employee.invite_code ? (
                       <div className="flex items-center gap-1">
                         <code className="rounded bg-paper px-1.5 py-0.5 text-[11px]">
-                          {employee.invite_code}
+                          {employee.invite_code.slice(0, 8)}…
                         </code>
                         <Button
                           variant="subtle"
