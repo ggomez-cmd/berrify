@@ -4,6 +4,8 @@
 !.env.example
 harvis.json
 .netlify/
+.wrangler/
+.dev.vars
 
 # Tesseract language packs downloaded at runtime
 *.traineddata
