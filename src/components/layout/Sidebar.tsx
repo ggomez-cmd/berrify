@@ -15,6 +15,7 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
 import { isManager } from "../../lib/schedule";
+import { BrandMark } from "../ui/brand-mark";
 
 export function Sidebar() {
   const { role, user, signOut } = useAuth();
@@ -38,12 +39,8 @@ export function Sidebar() {
 
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto bg-wine px-3 py-4 text-white">
-      <div className="mb-6 flex items-center gap-2.5 px-2">
-        <img src="/berry.svg" alt="" className="size-7 brightness-0 invert" />
-        <div>
-          <p className="text-sm font-bold lowercase leading-none tracking-tight">berrify</p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/65">ERP</p>
-        </div>
+      <div className="mb-6 px-2">
+        <BrandMark className="text-white" />
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">

@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { BrandMark } from "../../components/ui/brand-mark";
 import { Field } from "../../components/ui/label";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_STAFF_EMAIL } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
@@ -56,12 +57,9 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-paper">
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
-        <div className="mb-8 flex items-center gap-3">
-          <img src="/berry.svg" alt="" className="size-9" />
-          <div>
-            <p className="text-lg font-bold lowercase tracking-tight text-navy">berrify</p>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted">Restaurant ERP</p>
-          </div>
+        <div className="mb-8">
+          <BrandMark className="h-10 w-[9.25rem] text-wine" />
+          <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted">Restaurant ERP</p>
         </div>
 
         <form
