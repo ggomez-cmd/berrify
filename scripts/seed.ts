@@ -13,7 +13,7 @@ dotenv.config();
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const email = process.env.DEMO_EMAIL ?? process.env.NEXT_PUBLIC_DEMO_EMAIL ?? "demo@berrify.local";
-const password = process.env.DEMO_PASSWORD ?? process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "BerrifyDemo2026!";
+const password = process.env.DEMO_PASSWORD ?? process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "12345678";
 const staffPassword = password;
 
 if (!url || !serviceRole) {
@@ -97,7 +97,13 @@ async function findOrCreateUser(
   orgName?: string,
 ): Promise<string> {
   const existing = await findUserId(lookupEmail);
-  if (existing) return existing;
+  if (existing) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(existing, {
+      password: userPassword,
+    });
+    if (updateError) throw updateError;
+    return existing;
+  }
 
   const { data, error } = await admin.auth.admin.createUser({
     email: lookupEmail,

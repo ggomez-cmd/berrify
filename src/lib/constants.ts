@@ -14,7 +14,7 @@ export const MOVEMENT_REASONS = ["purchase", "usage", "adjustment", "waste"] as 
 
 export const DEMO_EMAIL = "demo@berrify.local";
 export const DEMO_STAFF_EMAIL = "server@berrify.local";
-export const DEMO_PASSWORD = "BerrifyDemo2026!";
+export const DEMO_PASSWORD = "12345678";
 
 export const STATIONS = [
   "Server",
