@@ -5,7 +5,17 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", ".vite"] },
+  { ignores: ["dist", "coverage", ".vite", ".wrangler"] },
+  {
+    files: ["workers/**/*.ts"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        ...globals.serviceworker,
+      },
+    },
+  },
   {
     files: ["scripts/**/*.ts"],
     languageOptions: {
@@ -16,6 +26,7 @@ export default tseslint.config(
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
+    ignores: ["workers/**"],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,

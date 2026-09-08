@@ -1,0 +1,2 @@
+# Copied to .dev.vars for `npm run workers:dev` (gitignored).
+WHATSAPP_VERIFY_TOKEN=

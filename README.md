@@ -62,6 +62,8 @@ same email, they join the restaurant as staff instead of getting a new workspace
 | `npm run verify:db` | Assert tables, RLS, and policies exist.             |
 | `npm run db:seed`   | Create demo users, inventory, roster, shifts, and a Jose Santiago bill. |
 | `npm run db:fill`   | Fill empty screens (this week’s board, punches, invoice statuses). |
+| `npm run workers:dev` | Build the app and run it on Cloudflare Workers locally. |
+| `npm run workers:deploy` | Build and deploy the Worker (SPA + `/api`). |
 | `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
 
 ## Data model
@@ -122,6 +124,41 @@ and unofficial group bots are out of scope. OCR runs in the browser (and in
 `whatsapp:ingest` for image files) with `tesseract.js` — it tries 0/90/180/270
 and keeps the highest confidence. Pink carbonless photos that were shot
 sideways usually need a human pass in Review before you export.
+
+## Cloudflare Workers
+
+The production app is a Vite SPA plus a small Worker. Static files come from
+`dist/`. Unmatched routes serve `index.html` so React Router deep links work.
+`/api/*` hits the Worker first:
+
+- `GET /api/health` — liveness JSON
+- `GET /api/webhooks/whatsapp` — Meta verify-token handshake (`WHATSAPP_VERIFY_TOKEN`)
+- `POST /api/webhooks/whatsapp` — reserved (returns 501 until ingest is wired)
+
+```bash
+cp .dev.vars.example .dev.vars
+npm run workers:dev
+```
+
+That builds the client, then serves it at http://127.0.0.1:8787. Deploy:
+
+```bash
+npx wrangler login
+npm run workers:deploy
+```
+
+The Worker URL is `https://berrify.<your-subdomain>.workers.dev`. Add that
+origin under Supabase Auth → URL configuration → Redirect URLs.
+
+GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
+`main` when these repository secrets exist:
+
+- `CLOUDFLARE_API_TOKEN` — token with Edit Cloudflare Workers
+- `CLOUDFLARE_ACCOUNT_ID`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Optional Worker secret: `npx wrangler secret put WHATSAPP_VERIFY_TOKEN`.
 
 ## Cursor Cloud Agent environment
 
