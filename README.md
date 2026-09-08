@@ -160,6 +160,14 @@ GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 
 Optional Worker secret: `npx wrangler secret put WHATSAPP_VERIFY_TOKEN`.
 
+Cursor loads Cloudflare MCP servers from `.cursor/mcp.json` (docs, bindings,
+builds, observability, and the main API). Authenticate the account-scoped
+servers in Cursor Settings → MCP. Cloudflare agent skills:
+
+```bash
+npx -y skills add cloudflare/skills --skill '*' --yes --global
+```
+
 ## Cursor Cloud Agent environment
 
 `.cursor/environment.json` installs dependencies with `npm ci` and runs
