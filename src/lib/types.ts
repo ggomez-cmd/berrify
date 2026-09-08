@@ -51,7 +51,7 @@ export type InventoryItem = {
   unit: string;
   quantity: number;
   reorder_level: number;
-  unit_cost: number;
+  unit_cost?: number;
   supplier_id: string | null;
   created_at: string;
   updated_at: string;
@@ -90,6 +90,7 @@ export type Employee = {
   position: Station;
   hourly_rate: number;
   home_restaurant_id: string | null;
+  invite_code: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;

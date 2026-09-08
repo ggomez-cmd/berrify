@@ -122,7 +122,7 @@ export function InventoryPage() {
               <Th>Category</Th>
               <Th>On hand</Th>
               <Th>Reorder</Th>
-              <Th>Unit cost</Th>
+              {manager ? <Th>Unit cost</Th> : null}
               <Th>Supplier</Th>
               <Th>Status</Th>
               <Th />
@@ -131,7 +131,7 @@ export function InventoryPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-muted">
+                <Td colSpan={manager ? 8 : 7} className="py-10 text-center text-muted">
                   No items match.
                 </Td>
               </tr>
@@ -149,7 +149,7 @@ export function InventoryPage() {
                       {formatQty(item.quantity)} {item.unit}
                     </Td>
                     <Td>{formatQty(item.reorder_level)}</Td>
-                    <Td>{formatMoney(item.unit_cost)}</Td>
+                    {manager ? <Td>{formatMoney(item.unit_cost ?? 0)}</Td> : null}
                     <Td>{item.suppliers?.name ?? "—"}</Td>
                     <Td>{statusBadge(status)}</Td>
                     <Td>

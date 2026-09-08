@@ -62,7 +62,7 @@ export function EmployeeDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={employee ? "Edit employee" : "Add employee"}
-      description="Matching email on signup joins this restaurant as staff."
+      description="Staff need this email plus the invite code when they sign up."
     >
       <form id="employee-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
         <div className="col-span-2">
@@ -113,6 +113,13 @@ export function EmployeeDialog({
             onChange={(e) => setValues((v) => ({ ...v, hourly_rate: Number(e.target.value) }))}
           />
         </Field>
+        {employee && !employee.user_id && employee.invite_code ? (
+          <div className="col-span-2">
+            <Field label="Invite code" htmlFor="emp-invite">
+              <Input id="emp-invite" readOnly value={employee.invite_code} />
+            </Field>
+          </div>
+        ) : null}
         <div className="col-span-2">
           <label className="flex items-center gap-2 text-sm text-muted">
             <input

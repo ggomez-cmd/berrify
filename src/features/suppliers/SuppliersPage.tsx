@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { SearchInput } from "../../components/ui/search-input";
@@ -26,6 +27,10 @@ export function SuppliersPage() {
     );
   }, [suppliers, search]);
 
+  if (!manager) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-2">
@@ -34,19 +39,17 @@ export function SuppliersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        {manager ? (
-          <div className="ml-auto">
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setOpen(true);
-              }}
-            >
-              <Plus className="size-4" />
-              Add supplier
-            </Button>
-          </div>
-        ) : null}
+        <div className="ml-auto">
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setOpen(true);
+            }}
+          >
+            <Plus className="size-4" />
+            Add supplier
+          </Button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
@@ -78,29 +81,27 @@ export function SuppliersPage() {
                   <Td>{supplier.phone ?? "—"}</Td>
                   <Td className="max-w-xs truncate text-muted">{supplier.notes ?? "—"}</Td>
                   <Td>
-                    {manager ? (
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="subtle"
-                          onClick={() => {
-                            setEditing(supplier);
-                            setOpen(true);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          onClick={() => {
-                            if (window.confirm(`Delete ${supplier.name}?`)) {
-                              void remove.mutateAsync(supplier.id);
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    ) : null}
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="subtle"
+                        onClick={() => {
+                          setEditing(supplier);
+                          setOpen(true);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="subtle"
+                        onClick={() => {
+                          if (window.confirm(`Delete ${supplier.name}?`)) {
+                            void remove.mutateAsync(supplier.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))

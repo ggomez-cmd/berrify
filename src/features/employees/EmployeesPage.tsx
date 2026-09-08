@@ -11,12 +11,13 @@ import { formatMoney } from "../../lib/format";
 import { isManager } from "../../lib/schedule";
 import type { Employee } from "../../lib/types";
 import { EmployeeDialog } from "./EmployeeDialog";
-import { useDeleteEmployee, useEmployees } from "./hooks";
+import { useDeleteEmployee, useEmployees, useRotateInvite } from "./hooks";
 
 export function EmployeesPage() {
   const { role } = useAuth();
   const { data: employees = [], isLoading, error } = useEmployees();
   const remove = useDeleteEmployee();
+  const rotateInvite = useRotateInvite();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -66,6 +67,7 @@ export function EmployeesPage() {
               <Th>Phone</Th>
               <Th>Rate</Th>
               <Th>Login</Th>
+              <Th>Invite</Th>
               <Th>Status</Th>
               <Th />
             </tr>
@@ -73,7 +75,7 @@ export function EmployeesPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={7} className="py-10 text-center text-muted">
+                <Td colSpan={8} className="py-10 text-center text-muted">
                   No employees yet.
                 </Td>
               </tr>
@@ -96,6 +98,35 @@ export function EmployeesPage() {
                     <Badge tone={employee.user_id ? "ok" : "neutral"} dot>
                       {employee.user_id ? "Linked" : "Invite pending"}
                     </Badge>
+                  </Td>
+                  <Td>
+                    {employee.user_id ? (
+                      <span className="text-muted">—</span>
+                    ) : employee.invite_code ? (
+                      <div className="flex items-center gap-1">
+                        <code className="rounded bg-paper px-1.5 py-0.5 text-[11px]">
+                          {employee.invite_code}
+                        </code>
+                        <Button
+                          variant="subtle"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(employee.invite_code ?? "");
+                          }}
+                        >
+                          Copy
+                        </Button>
+                        <Button
+                          variant="subtle"
+                          onClick={() => {
+                            void rotateInvite.mutateAsync(employee.id);
+                          }}
+                        >
+                          Rotate
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted">Add an email</span>
+                    )}
                   </Td>
                   <Td>
                     <Badge tone={employee.active ? "ok" : "neutral"} dot>

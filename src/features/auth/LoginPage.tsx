@@ -16,6 +16,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [orgName, setOrgName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -41,7 +42,12 @@ export function LoginPage() {
         const { data, error: signError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { org_name: orgName || undefined } },
+          options: {
+            data: {
+              org_name: orgName || undefined,
+              invite_code: inviteCode.trim() || undefined,
+            },
+          },
         });
         if (signError) throw signError;
         if (!data.session) {
@@ -68,15 +74,27 @@ export function LoginPage() {
           </div>
 
           {mode === "signup" ? (
-            <div className="mb-3">
-              <Input
-                id="org"
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                placeholder="Restaurant name"
-                aria-label="Restaurant name"
-              />
-            </div>
+            <>
+              <div className="mb-3">
+                <Input
+                  id="org"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="Restaurant name"
+                  aria-label="Restaurant name"
+                />
+              </div>
+              <div className="mb-3">
+                <Input
+                  id="invite"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Invite code (staff join)"
+                  aria-label="Invite code"
+                  autoComplete="off"
+                />
+              </div>
+            </>
           ) : null}
 
           <div className="relative mb-3">

@@ -75,6 +75,20 @@ export function useUpsertEmployee() {
   });
 }
 
+export function useRotateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.rpc("rotate_employee_invite", { target_id: id });
+      if (error) throw error;
+      return data as string;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["employees"] });
+    },
+  });
+}
+
 export function useDeleteEmployee() {
   const qc = useQueryClient();
   return useMutation({

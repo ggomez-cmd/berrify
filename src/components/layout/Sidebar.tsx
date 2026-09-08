@@ -73,7 +73,7 @@ export function Sidebar() {
     ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
     { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
     ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),
-    { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
+    ...(manager ? [{ to: "/suppliers", label: "Suppliers", icon: Truck, end: false }] : []),
     { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
   ];
 
