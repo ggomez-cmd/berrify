@@ -78,7 +78,7 @@ create unique index if not exists employees_invite_code_uidx
 create or replace function public.ensure_employee_invite_code()
 returns trigger
 language plpgsql
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if new.user_id is not null then
@@ -92,12 +92,12 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
-    new.invite_code := encode(gen_random_bytes(12), 'hex');
+    new.invite_code := encode(extensions.gen_random_bytes(12), 'hex');
     return new;
   end if;
 
   if new.invite_code is null then
-    new.invite_code := encode(gen_random_bytes(12), 'hex');
+    new.invite_code := encode(extensions.gen_random_bytes(12), 'hex');
     return new;
   end if;
 
