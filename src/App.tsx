@@ -10,6 +10,7 @@ import { InvoicesPage } from "./features/invoices/InvoicesPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
+import { TimeClockPage } from "./features/time-clock/TimeClockPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<DashboardPage />} />
               <Route path="schedule" element={<SchedulePage />} />
+              <Route path="time-clock" element={<TimeClockPage />} />
               <Route path="employees" element={<EmployeesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="invoices" element={<InvoicesPage />} />

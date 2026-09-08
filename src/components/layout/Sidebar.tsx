@@ -3,6 +3,7 @@ import {
   Boxes,
   CalendarDays,
   ClipboardList,
+  Clock,
   LayoutDashboard,
   LogOut,
   Receipt,
@@ -22,6 +23,7 @@ export function Sidebar() {
   const links = [
     { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
     { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+    { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
     ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
     { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
     ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),

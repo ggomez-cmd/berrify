@@ -22,6 +22,11 @@ const requiredTables = [
   "account_rules",
   "restaurants",
   "restaurant_aliases",
+  "clock_events",
+  "clock_sessions",
+  "time_entries",
+  "time_breaks",
+  "time_exceptions",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -39,6 +44,11 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   account_rules: ["account_rules_all_member"],
   restaurants: ["restaurants_all_member"],
   restaurant_aliases: ["restaurant_aliases_all_member"],
+  clock_events: ["clock_events_select_own", "clock_events_select_manager"],
+  clock_sessions: ["clock_sessions_select_own", "clock_sessions_select_manager"],
+  time_entries: ["time_entries_select_own", "time_entries_select_manager"],
+  time_breaks: ["time_breaks_select_own", "time_breaks_select_manager"],
+  time_exceptions: ["time_exceptions_select_own", "time_exceptions_select_manager"],
 };
 
 const client = createPgClient();
@@ -101,7 +111,20 @@ try {
      join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.proname = any($1::text[])`,
-    [["is_org_member", "has_org_role", "handle_new_user", "apply_stock_movement", "set_updated_at"]],
+    [[
+      "is_org_member",
+      "has_org_role",
+      "handle_new_user",
+      "apply_stock_movement",
+      "set_updated_at",
+      "record_clock_event",
+      "manager_force_clock_out",
+      "manager_record_punch",
+      "list_whos_working",
+      "reconcile_attendance",
+      "resolve_time_exception",
+      "update_org_clock_settings",
+    ]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
   for (const name of [
@@ -110,6 +133,13 @@ try {
     "handle_new_user",
     "apply_stock_movement",
     "set_updated_at",
+    "record_clock_event",
+    "manager_force_clock_out",
+    "manager_record_punch",
+    "list_whos_working",
+    "reconcile_attendance",
+    "resolve_time_exception",
+    "update_org_clock_settings",
   ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);
