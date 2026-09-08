@@ -13,4 +13,15 @@ export const ITEM_UNITS = ["ea", "lb", "kg", "oz", "gal", "qt", "L", "case", "ba
 export const MOVEMENT_REASONS = ["purchase", "usage", "adjustment", "waste"] as const;
 
 export const DEMO_EMAIL = "demo@berrify.local";
+export const DEMO_STAFF_EMAIL = "server@berrify.local";
 export const DEMO_PASSWORD = "BerrifyDemo2026!";
+
+export const STATIONS = [
+  "Server",
+  "Cook",
+  "Bartender",
+  "Host",
+  "Dish",
+  "Manager",
+  "Other",
+] as const;

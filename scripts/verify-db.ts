@@ -13,6 +13,15 @@ const requiredTables = [
   "suppliers",
   "inventory_items",
   "stock_movements",
+  "employees",
+  "staff_shifts",
+  "invoices",
+  "invoice_lines",
+  "invoice_expense_lines",
+  "vendor_aliases",
+  "account_rules",
+  "restaurants",
+  "restaurant_aliases",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -21,6 +30,15 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   suppliers: ["suppliers_all_member"],
   inventory_items: ["inventory_items_all_member"],
   stock_movements: ["stock_movements_select_member", "stock_movements_insert_member"],
+  employees: ["employees_select_member", "employees_write_manager"],
+  staff_shifts: ["staff_shifts_select_member", "staff_shifts_write_manager"],
+  invoices: ["invoices_all_member"],
+  invoice_lines: ["invoice_lines_all_member"],
+  invoice_expense_lines: ["invoice_expenses_all_member"],
+  vendor_aliases: ["vendor_aliases_all_member"],
+  account_rules: ["account_rules_all_member"],
+  restaurants: ["restaurants_all_member"],
+  restaurant_aliases: ["restaurant_aliases_all_member"],
 };
 
 const client = createPgClient();
@@ -83,10 +101,16 @@ try {
      join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.proname = any($1::text[])`,
-    [["is_org_member", "handle_new_user", "apply_stock_movement", "set_updated_at"]],
+    [["is_org_member", "has_org_role", "handle_new_user", "apply_stock_movement", "set_updated_at"]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
-  for (const name of ["is_org_member", "handle_new_user", "apply_stock_movement", "set_updated_at"]) {
+  for (const name of [
+    "is_org_member",
+    "has_org_role",
+    "handle_new_user",
+    "apply_stock_movement",
+    "set_updated_at",
+  ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);
     }

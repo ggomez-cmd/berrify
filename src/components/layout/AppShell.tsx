@@ -6,6 +6,9 @@ function titleFor(path: string): string {
   if (path.startsWith("/inventory")) return "Inventory";
   if (path.startsWith("/suppliers")) return "Suppliers";
   if (path.startsWith("/movements")) return "Stock movements";
+  if (path.startsWith("/employees")) return "Employees";
+  if (path.startsWith("/schedule")) return "Schedule";
+  if (path.startsWith("/invoices")) return "Invoices";
   return "Dashboard";
 }
 
