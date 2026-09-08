@@ -8,7 +8,7 @@ Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 
 How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
-**Live demo:** [https://mellow-walnut-232.harvis.page](https://mellow-walnut-232.harvis.page) — production Vite build against the hosted Supabase project. Sign in with `demo@berrify.local` / `BerrifyDemo2026!` (manager) or `server@berrify.local` / `BerrifyDemo2026!` (staff). A `gh-pages` branch is already published; turn on GitHub Pages (Deploy from branch → `gh-pages` / root) to also serve [https://ggomez-cmd.github.io/berrify/](https://ggomez-cmd.github.io/berrify/). If email confirmation links fail, add the demo origin under Supabase Auth → URL configuration → Redirect URLs.
+**Live demo:** [https://mellow-walnut-232.harvis.page](https://mellow-walnut-232.harvis.page) — production Vite build against the hosted Supabase project. Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). A `gh-pages` branch is already published; turn on GitHub Pages (Deploy from branch → `gh-pages` / root) to also serve [https://ggomez-cmd.github.io/berrify/](https://ggomez-cmd.github.io/berrify/). If email confirmation links fail, add the demo origin under Supabase Auth → URL configuration → Redirect URLs.
 
 ## Stack
 
@@ -39,7 +39,7 @@ npm run dev
 
 The dev server runs at http://localhost:5173.
 
-Demo accounts (created by `npm run db:seed`), password `BerrifyDemo2026!`:
+Demo accounts (created by `npm run db:seed`), password `12345678`:
 
 - Manager: `demo@berrify.local`
 - Staff (server): `server@berrify.local`

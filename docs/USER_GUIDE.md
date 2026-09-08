@@ -33,8 +33,8 @@ Staff cannot open Employees or Invoices. Those routes send them back to Schedule
 
 | Button | Account | Password |
 | --- | --- | --- |
-| Fill manager demo | `demo@berrify.local` | `BerrifyDemo2026!` |
-| Fill staff demo | `server@berrify.local` | `BerrifyDemo2026!` |
+| Fill manager demo | `demo@berrify.local` | `12345678` |
+| Fill staff demo | `server@berrify.local` | `12345678` |
 
 There is also a cook demo at `cook@berrify.local` with the same password.
 
