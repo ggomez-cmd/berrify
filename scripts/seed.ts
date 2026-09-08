@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { demoWeekShifts } from "../src/lib/demo-fill.ts";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
@@ -7,6 +8,7 @@ import {
 } from "../src/lib/invoice-extract.ts";
 import { JOSE_SANTIAGO_OCR } from "../src/lib/invoice-fixtures.ts";
 import { matchRestaurant, type RestaurantAlias } from "../src/lib/restaurant-route.ts";
+import { weekEnd, weekStart } from "../src/lib/schedule.ts";
 
 dotenv.config();
 
@@ -141,15 +143,8 @@ async function orgForUser(userId: string): Promise<string> {
   return org.id as string;
 }
 
-function weekStart(date = new Date()): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - d.getDay());
-  return d;
-}
-
 function atHour(dayOffset: number, hour: number, minute = 0): string {
-  const d = weekStart();
+  const d = weekStart(new Date());
   d.setDate(d.getDate() + dayOffset);
   d.setHours(hour, minute, 0, 0);
   return d.toISOString();
@@ -284,7 +279,14 @@ async function seedSchedule(orgId: string, ownerId: string) {
     .eq("org_id", orgId);
   if (countError) throw countError;
   if ((count ?? 0) > 0) {
-    console.log(`Org already has ${count} employee(s); skipping schedule seed.`);
+    console.log(`Org already has ${count} employee(s); ensuring the current week has shifts.`);
+    const { data: roster, error: rosterError } = await admin
+      .from("employees")
+      .select("id, email")
+      .eq("org_id", orgId);
+    if (rosterError) throw rosterError;
+    const byEmail = Object.fromEntries((roster ?? []).map((row) => [row.email, row.id]));
+    await ensureCurrentWeekShifts(orgId, ownerId, byEmail);
     return;
   }
 
@@ -358,6 +360,43 @@ async function seedSchedule(orgId: string, ownerId: string) {
   );
   if (shiftError) throw shiftError;
   console.log("Seeded Pacifico Kitchen schedule.");
+  await ensureCurrentWeekShifts(orgId, ownerId, byEmail);
+}
+
+async function ensureCurrentWeekShifts(
+  orgId: string,
+  ownerId: string,
+  byEmail: Record<string, string>,
+) {
+  const start = weekStart(new Date()).toISOString();
+  const end = weekEnd(new Date()).toISOString();
+  const { count, error } = await admin
+    .from("staff_shifts")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .gte("starts_at", start)
+    .lte("starts_at", end);
+  if (error) throw error;
+  if ((count ?? 0) > 0) {
+    console.log("Current week already has shifts.");
+    return;
+  }
+
+  const drafts = demoWeekShifts();
+  const { error: insertError } = await admin.from("staff_shifts").insert(
+    drafts.map((row) => ({
+      org_id: orgId,
+      employee_id: row.email ? (byEmail[row.email] ?? null) : null,
+      position: row.position,
+      starts_at: row.startsAt,
+      ends_at: row.endsAt,
+      status: row.status,
+      note: row.note,
+      created_by: ownerId,
+    })),
+  );
+  if (insertError) throw insertError;
+  console.log(`Seeded ${drafts.length} shifts for the current week.`);
 }
 
 async function seedInvoices(orgId: string, userId: string) {

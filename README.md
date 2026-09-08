@@ -61,6 +61,7 @@ same email, they join the restaurant as staff instead of getting a new workspace
 | `npm run db:push`   | Apply `supabase/migrations/*.sql` via `DIRECT_URL`. |
 | `npm run verify:db` | Assert tables, RLS, and policies exist.             |
 | `npm run db:seed`   | Create demo users, inventory, roster, shifts, and a Jose Santiago bill. |
+| `npm run db:fill`   | Fill empty screens (this week’s board, punches, invoice statuses). |
 | `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
 
 ## Data model

@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "db:push": "tsx scripts/db-push.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:fill": "tsx scripts/fill-demo-data.ts",
     "verify:db": "tsx scripts/verify-db.ts",
     "verify:time-clock": "tsx scripts/verify-time-clock.ts",
     "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",
