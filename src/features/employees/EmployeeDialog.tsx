@@ -114,7 +114,7 @@ export function EmployeeDialog({
           />
         </Field>
         <div className="col-span-2">
-          <label className="flex items-center gap-2 text-sm text-mist">
+          <label className="flex items-center gap-2 text-sm text-muted">
             <input
               type="checkbox"
               checked={values.active}

@@ -7,7 +7,7 @@ export function ProtectedRoute() {
 
   if (loading) {
     return (
-      <div className="grid min-h-screen place-items-center text-mist">
+      <div className="grid min-h-screen place-items-center text-muted">
         Loading workspace…
       </div>
     );

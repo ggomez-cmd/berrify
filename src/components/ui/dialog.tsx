@@ -26,20 +26,20 @@ export function Dialog({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-navy/40 backdrop-blur-sm" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-ink-2 p-6 shadow-2xl focus:outline-none",
+            "fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-white p-6 shadow-xl focus:outline-none",
             className,
           )}
         >
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <DialogPrimitive.Title className="text-lg font-semibold text-fog">
+              <DialogPrimitive.Title className="text-lg font-semibold text-navy">
                 {title}
               </DialogPrimitive.Title>
               {description ? (
-                <DialogPrimitive.Description className="mt-1 text-sm text-mist">
+                <DialogPrimitive.Description className="mt-1 text-sm text-muted">
                   {description}
                 </DialogPrimitive.Description>
               ) : (

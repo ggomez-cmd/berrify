@@ -8,11 +8,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants: Record<Variant, string> = {
-  primary:
-    "bg-linear-to-r from-berry to-plum text-white shadow-[0_10px_30px_rgba(124,58,237,0.35)] hover:brightness-110",
-  ghost: "bg-white/6 border border-white/12 text-fog hover:bg-white/10",
-  danger: "bg-danger/15 text-danger border border-danger/30 hover:bg-danger/25",
-  subtle: "bg-transparent text-mist hover:text-fog hover:bg-white/6",
+  primary: "bg-wine text-white shadow-sm hover:bg-wine-deep",
+  ghost: "bg-white border border-line text-ink hover:bg-paper",
+  danger: "bg-danger/10 text-danger border border-danger/25 hover:bg-danger/15",
+  subtle: "bg-transparent text-muted hover:text-ink hover:bg-paper",
 };
 
 export function Button({ variant = "primary", className, type = "button", ...props }: ButtonProps) {
