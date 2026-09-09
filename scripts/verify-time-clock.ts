@@ -522,6 +522,43 @@ try {
   assert(kioskIn?.source === "kiosk", "kiosk punch source was not kiosk");
   assert(kioskIn?.actor_type === "employee", "kiosk punch actor was not employee");
 
+  const staffSetOwnerPin = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select public.set_owner_kiosk_pin('7777')`), /Not authorized/i),
+  );
+  assert(staffSetOwnerPin, "staff can set an owner kiosk PIN");
+
+  const ownerPinCollision = await asAuthenticated(ownerId, async () =>
+    expectReject(() => q(`select public.set_owner_kiosk_pin('9999')`), /PIN already in use/i),
+  );
+  assert(ownerPinCollision, "owner kiosk PIN can match an employee clock PIN");
+
+  await asAuthenticated(ownerId, async () => {
+    await q(`select public.set_owner_kiosk_pin('7777')`);
+  });
+
+  const staffOwnerHash = await asAuthenticated(staffId, async () =>
+    expectReject(
+      () => q(`select kiosk_exit_pin_hash from public.memberships where user_id = $1`, [ownerId]),
+      /permission denied|column/i,
+    ),
+  );
+  assert(staffOwnerHash, "staff can select kiosk_exit_pin_hash");
+
+  const employeePinExit = await asAuthenticated(cookUserId, async () =>
+    expectReject(() => q(`select public.kiosk_confirm_exit('9999')`), /Invalid PIN/i),
+  );
+  assert(employeePinExit, "employee clock PIN exits the kiosk");
+
+  const required = await asAuthenticated(cookUserId, async () => {
+    const { rows } = await q<{ kiosk_exit_required: boolean }>(`select public.kiosk_exit_required() as kiosk_exit_required`);
+    return rows[0]?.kiosk_exit_required;
+  });
+  assert(required === true, "kiosk_exit_required was false after owner set a PIN");
+
+  await asAuthenticated(cookUserId, async () => {
+    await q(`select public.kiosk_confirm_exit('7777')`);
+  });
+
   await become(cookUserId);
   const selfPunch = await punch("clock_in", crypto.randomUUID()).catch(() => null);
   assert(selfPunch === null || selfPunch.employee_id === marco.id, "record_clock_event punched someone other than the signed-in employee");
