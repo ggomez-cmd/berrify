@@ -15,7 +15,7 @@ import {
 import { formatMoney } from "../../lib/format";
 import { restaurantFileSlug } from "../../lib/restaurant-route";
 import type { InvoiceCategory, InvoiceWithSupplier, Restaurant, Supplier } from "../../lib/types";
-import { useUpdateInvoice } from "./hooks";
+import { useInvoiceMedia, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
 
@@ -43,6 +43,7 @@ export function InvoiceReviewDialog({
   restaurants: Restaurant[];
 }) {
   const save = useUpdateInvoice();
+  const media = useInvoiceMedia(open && invoice ? invoice.id : null);
   const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [vendorName, setVendorName] = useState("");
@@ -168,9 +169,13 @@ export function InvoiceReviewDialog({
       className="max-h-[92vh] w-[min(1100px,calc(100vw-1.5rem))] overflow-y-auto"
     >
       <div className="grid gap-4 lg:grid-cols-2">
-        {invoice.image_data ? (
+        {media.isLoading ? (
+          <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
+            Loading photo…
+          </div>
+        ) : media.data?.image_data ? (
           <img
-            src={invoice.image_data}
+            src={media.data.image_data}
             alt="Invoice photo"
             className="max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
           />
@@ -376,10 +381,10 @@ export function InvoiceReviewDialog({
         </div>
       </div>
 
-      {invoice.ocr_text ? (
+      {media.data?.ocr_text ? (
         <details className="mt-3 text-xs text-muted">
           <summary>OCR text</summary>
-          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">{invoice.ocr_text}</pre>
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">{media.data.ocr_text}</pre>
         </details>
       ) : null}
 

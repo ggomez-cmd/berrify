@@ -1,21 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { Supplier } from "../../lib/types";
 
 export function useSuppliers() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["suppliers", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("suppliers")
-        .select("*")
-        .eq("org_id", org!.id)
-        .order("name");
+      const { data, error } = await supabase.rpc("list_suppliers_full");
       if (error) throw error;
-      return (data ?? []) as Supplier[];
+      return ((data ?? []) as Supplier[]).sort((a, b) => a.name.localeCompare(b.name));
     },
   });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleApi, type WorkerEnv } from "./index";
+import worker, { handleApi, redirectToHttps, type WorkerEnv } from "./index";
 
 const env: WorkerEnv = {
   ASSETS: { fetch: async () => new Response("assets") },
@@ -15,6 +15,9 @@ describe("Worker API", () => {
     const response = await api("/api/health");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, service: "berrify" });
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
   });
 
   it("treats a trailing slash as the same health route", async () => {
@@ -50,5 +53,23 @@ describe("Worker API", () => {
   it("rejects non-GET health requests", async () => {
     const response = await api("/api/health", { method: "POST" });
     expect(response.status).toBe(405);
+  });
+});
+
+describe("HTTPS redirect", () => {
+  it("upgrades public http requests", () => {
+    const response = redirectToHttps(new Request("http://berrify.app/login"));
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("Location")).toBe("https://berrify.app/login");
+  });
+
+  it("leaves localhost http alone", () => {
+    expect(redirectToHttps(new Request("http://localhost:5180/"))).toBeNull();
+  });
+
+  it("runs before asset fetch", async () => {
+    const response = await worker.fetch(new Request("http://berrify.app/"), env);
+    expect(response.status).toBe(301);
+    expect(response.headers.get("Location")).toBe("https://berrify.app/");
   });
 });

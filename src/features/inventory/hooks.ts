@@ -1,21 +1,49 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
-import type { InventoryItem, InventoryItemWithSupplier, MovementReason } from "../../lib/types";
+import type { InventoryItem, InventoryItemWithSupplier, MovementReason, Supplier } from "../../lib/types";
+
+const STAFF_ITEM_COLUMNS =
+  "id, org_id, name, sku, category, unit, quantity, reorder_level, supplier_id, created_at, updated_at, suppliers(id, name)";
+
+function withSupplierNames(
+  items: InventoryItem[],
+  suppliers: Array<Pick<Supplier, "id" | "name">>,
+): InventoryItemWithSupplier[] {
+  const byId = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+  return items
+    .map((item) => ({
+      ...item,
+      suppliers: item.supplier_id
+        ? { id: item.supplier_id, name: byId.get(item.supplier_id)?.name ?? "—" }
+        : null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export function useInventoryItems() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
+  const manager = isManager(role);
   return useQuery({
-    queryKey: ["inventory_items", org?.id],
+    queryKey: ["inventory_items", org?.id, manager ? "full" : "staff"],
     enabled: Boolean(org?.id),
     queryFn: async () => {
+      if (manager) {
+        const { data, error } = await supabase.rpc("list_inventory_full");
+        if (error) throw error;
+        const { data: suppliers, error: supplierError } = await supabase.rpc("list_suppliers_full");
+        if (supplierError) throw supplierError;
+        return withSupplierNames((data ?? []) as InventoryItem[], (suppliers ?? []) as Supplier[]);
+      }
+
       const { data, error } = await supabase
         .from("inventory_items")
-        .select("*, suppliers(id, name)")
+        .select(STAFF_ITEM_COLUMNS)
         .eq("org_id", org!.id)
         .order("name");
       if (error) throw error;
-      return (data ?? []) as InventoryItemWithSupplier[];
+      return (data ?? []) as unknown as InventoryItemWithSupplier[];
     },
   });
 }

@@ -487,20 +487,32 @@ export function toQuickBooksBillIif(input: {
     "",
     "BILL",
     date,
-    input.apAccount,
-    input.vendor,
+    iifField(input.apAccount),
+    iifField(input.vendor),
     "",
     String(-round2(input.total)),
-    input.invoiceNumber,
+    iifField(input.invoiceNumber),
     "",
     "N",
     "N",
-    input.vendor,
+    iifField(input.vendor),
     due,
-    input.terms,
+    iifField(input.terms),
   ].join("\t");
   const spls = input.expenses.map((e) =>
-    ["SPL", "", "BILL", date, e.account, "", "", String(round2(e.amount)), "", e.memo, "N"].join("\t"),
+    [
+      "SPL",
+      "",
+      "BILL",
+      date,
+      iifField(e.account),
+      "",
+      "",
+      String(round2(e.amount)),
+      "",
+      iifField(e.memo),
+      "N",
+    ].join("\t"),
   );
   return [...header, trns, ...spls, "ENDTRNS", ""].join("\n");
 }
@@ -770,8 +782,18 @@ function toQbDate(iso: string): string {
   return `${m}/${d}/${y}`;
 }
 
-function csv(value: string): string {
+function neutralizeFormula(value: string): string {
   const safe = value ?? "";
-  if (/[",\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  if (/^[=+\-@\t\r]/.test(safe)) return `'${safe}`;
+  return safe;
+}
+
+function iifField(value: string): string {
+  return neutralizeFormula(String(value ?? "").replace(/[\t\r\n]+/g, " "));
+}
+
+function csv(value: string): string {
+  const safe = neutralizeFormula(value ?? "");
+  if (/[",\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
   return safe;
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import type { ExpenseLine, ExtractedSku } from "../../lib/invoice-extract";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type {
   AccountRuleRow,
@@ -15,28 +16,53 @@ import type {
   VendorAliasRow,
 } from "../../lib/types";
 
+const INVOICE_LIST_SELECT =
+  "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, caption, image_mime, created_by, exported_at, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
+
 export function useInvoices() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["invoices", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("*, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)")
+        .select(INVOICE_LIST_SELECT)
         .eq("org_id", org!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(sortInvoiceChildren) as InvoiceWithSupplier[];
+      return (data ?? []).map((row) =>
+        sortInvoiceChildren({
+          ...(row as unknown as InvoiceWithSupplier),
+          image_data: null,
+          ocr_text: null,
+        }),
+      );
+    },
+  });
+}
+
+export function useInvoiceMedia(invoiceId: string | null) {
+  return useQuery({
+    queryKey: ["invoice_media", invoiceId],
+    enabled: Boolean(invoiceId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("image_data, image_mime, ocr_text")
+        .eq("id", invoiceId!)
+        .single();
+      if (error) throw error;
+      return data as Pick<Invoice, "image_data" | "image_mime" | "ocr_text">;
     },
   });
 }
 
 export function useVendorAliases() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["vendor_aliases", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vendor_aliases")
@@ -66,10 +92,10 @@ export function useRestaurants() {
 }
 
 export function useRestaurantAliases() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["restaurant_aliases", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("restaurant_aliases")
@@ -82,10 +108,10 @@ export function useRestaurantAliases() {
 }
 
 export function useAccountRules() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["account_rules", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("account_rules")
