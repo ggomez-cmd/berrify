@@ -4,6 +4,8 @@
 alter table public.memberships
   add column if not exists kiosk_exit_pin_hash text;
 
+revoke select on public.memberships from authenticated;
+grant select (user_id, org_id, role, created_at) on public.memberships to authenticated;
 revoke select (kiosk_exit_pin_hash) on public.memberships from authenticated;
 
 create or replace function public.kiosk_pin_conflicts(

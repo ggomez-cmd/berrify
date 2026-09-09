@@ -538,11 +538,11 @@ try {
 
   const staffOwnerHash = await asAuthenticated(staffId, async () =>
     expectReject(
-      () => q(`select kiosk_exit_pin_hash from public.memberships where user_id = $1`, [ownerId]),
+      () => q(`select kiosk_exit_pin_hash from public.memberships where user_id = $1`, [staffId]),
       /permission denied|column/i,
     ),
   );
-  assert(staffOwnerHash, "staff can select kiosk_exit_pin_hash");
+  assert(staffOwnerHash, "authenticated can select kiosk_exit_pin_hash");
 
   const employeePinExit = await asAuthenticated(cookUserId, async () =>
     expectReject(() => q(`select public.kiosk_confirm_exit('9999')`), /Invalid PIN/i),
