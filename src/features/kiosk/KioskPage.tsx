@@ -1,13 +1,13 @@
 import { Coffee, LogIn, LogOut, Pause } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { BrandMark } from "../../components/ui/brand-mark";
 import { Button } from "../../components/ui/button";
+import { KIOSK_CONFIRM_MS, KIOSK_IDLE_MS, shouldPromptKioskExit } from "../../lib/kiosk";
 import { MAX_CLOCK_PIN_LENGTH, isValidClockPin, pinError } from "../../lib/pin";
-import { KIOSK_CONFIRM_MS, KIOSK_IDLE_MS } from "../../lib/kiosk";
 import {
   CLOCK_EVENT_TYPES,
   allowedEvents,
@@ -15,7 +15,13 @@ import {
   type ClockEventType,
   type ClockState,
 } from "../../lib/time-clock";
-import { useKioskPunch, useKioskUnlock, type KioskUnlock } from "./hooks";
+import {
+  useKioskConfirmExit,
+  useKioskExitRequired,
+  useKioskPunch,
+  useKioskUnlock,
+  type KioskUnlock,
+} from "./hooks";
 import { PinPad } from "./PinPad";
 
 function stateLabel(state: ClockState): string {
@@ -106,17 +112,38 @@ function useNow(timeZone: string): string {
   });
 }
 
+function PinDots({ pin }: { pin: string }) {
+  return (
+    <div className="mt-6 flex justify-center gap-3">
+      {Array.from({ length: Math.max(4, pin.length) }, (_, index) => (
+        <span
+          key={index}
+          className={`size-3.5 rounded-full ${index < pin.length ? "bg-wine" : "border-2 border-line"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function KioskPage() {
   const { org } = useAuth();
+  const navigate = useNavigate();
   const timeZone = org?.timezone ?? "America/Puerto_Rico";
   const clockLabel = useNow(timeZone);
   const unlock = useKioskUnlock();
   const punch = useKioskPunch();
+  const exitRequired = useKioskExitRequired();
+  const confirmExit = useKioskConfirmExit();
   const [pin, setPin] = useState("");
   const [session, setSession] = useState<KioskUnlock | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [activity, setActivity] = useState(0);
+  const [exitOpen, setExitOpen] = useState(false);
+  const [exitPin, setExitPin] = useState("");
+  const [exitError, setExitError] = useState<string | null>(null);
+  const allowLeave = useRef(false);
+  const promptExit = shouldPromptKioskExit(exitRequired.data);
 
   const touch = useCallback(() => setActivity((n) => n + 1), []);
 
@@ -129,11 +156,45 @@ export function KioskPage() {
     punch.reset();
   }, [punch, unlock]);
 
+  const closeExitPad = useCallback(() => {
+    setExitOpen(false);
+    setExitPin("");
+    setExitError(null);
+    confirmExit.reset();
+  }, [confirmExit]);
+
+  const openExitPad = useCallback(() => {
+    setExitOpen(true);
+    setExitPin("");
+    setExitError(null);
+  }, []);
+
+  const leaveKiosk = useCallback(() => {
+    allowLeave.current = true;
+    navigate("/");
+  }, [navigate]);
+
   useEffect(() => {
     if (!session && !confirm) return;
+    if (exitOpen) return;
     const id = window.setTimeout(resetPad, KIOSK_IDLE_MS);
     return () => window.clearTimeout(id);
-  }, [session, confirm, activity, resetPad]);
+  }, [session, confirm, activity, resetPad, exitOpen]);
+
+  useEffect(() => {
+    if (!promptExit) return;
+    const lock = () => {
+      window.history.pushState({ kioskExitLock: true }, "", window.location.href);
+    };
+    lock();
+    const onPop = () => {
+      if (allowLeave.current) return;
+      lock();
+      openExitPad();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [promptExit, openExitPad]);
 
   const submitPin = async () => {
     const message = pinError(pin);
@@ -166,13 +227,37 @@ export function KioskPage() {
     }
   };
 
+  const onExit = () => {
+    if (!promptExit) {
+      leaveKiosk();
+      return;
+    }
+    openExitPad();
+  };
+
+  const submitExitPin = async () => {
+    const message = pinError(exitPin);
+    if (message) {
+      setExitError(message);
+      return;
+    }
+    setExitError(null);
+    try {
+      await confirmExit.mutateAsync(exitPin);
+      leaveKiosk();
+    } catch (err) {
+      setExitPin("");
+      setExitError(err instanceof Error ? err.message : "Invalid PIN");
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-paper px-6 py-5 text-ink">
       <header className="flex items-center justify-between">
         <BrandMark className="h-8 w-[7.4rem] text-wine" />
-        <Link to="/" className="text-sm font-medium text-muted hover:text-ink">
+        <button type="button" className="text-sm font-medium text-muted hover:text-ink" onClick={onExit}>
           Exit kiosk
-        </Link>
+        </button>
       </header>
 
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center py-6">
@@ -200,14 +285,7 @@ export function KioskPage() {
               Time clock
             </p>
             <p className="mt-3 text-center text-3xl font-semibold tracking-tight">{clockLabel}</p>
-            <div className="mt-6 flex justify-center gap-3">
-              {Array.from({ length: Math.max(4, pin.length) }, (_, index) => (
-                <span
-                  key={index}
-                  className={`size-3.5 rounded-full ${index < pin.length ? "bg-wine" : "border-2 border-line"}`}
-                />
-              ))}
-            </div>
+            <PinDots pin={pin} />
             {error ? <p className="mt-4 text-center text-sm text-danger">{error}</p> : null}
             <div className="mx-auto mt-6 max-w-sm">
               <PinPad
@@ -236,6 +314,47 @@ export function KioskPage() {
       <footer className="text-center text-xs text-muted">
         {org?.name ?? "Workspace"} · signed in as device
       </footer>
+
+      {exitOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-paper/90 px-6">
+          <div className="w-full max-w-sm rounded-3xl border border-line bg-white px-8 py-8 shadow-sm">
+            <p className="text-center text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
+              Exit kiosk
+            </p>
+            <p className="mt-3 text-center text-xl font-semibold tracking-tight">Owner PIN</p>
+            <p className="mt-1 text-center text-sm text-muted">Enter an owner PIN to leave this tablet.</p>
+            <PinDots pin={exitPin} />
+            {exitError ? <p className="mt-4 text-center text-sm text-danger">{exitError}</p> : null}
+            <div className="mx-auto mt-6">
+              <PinPad
+                pin={exitPin}
+                maxLength={MAX_CLOCK_PIN_LENGTH}
+                disabled={confirmExit.isPending}
+                onDigit={(digit) => {
+                  setExitError(null);
+                  setExitPin((current) =>
+                    current.length >= MAX_CLOCK_PIN_LENGTH ? current : `${current}${digit}`,
+                  );
+                }}
+                onBackspace={() => {
+                  setExitError(null);
+                  setExitPin((current) => current.slice(0, -1));
+                }}
+                onSubmit={() => void submitExitPin()}
+              />
+            </div>
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                className="text-sm font-medium text-muted hover:text-ink"
+                onClick={closeExitPad}
+              >
+                Stay in kiosk
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
