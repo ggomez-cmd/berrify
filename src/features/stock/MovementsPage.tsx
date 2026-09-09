@@ -44,13 +44,14 @@ export function MovementsPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap">
         <SearchInput
           placeholder="Search item or note"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          className="min-w-0 flex-1 md:flex-none"
         />
-        <div className="w-44 shrink-0">
+        <div className="w-full shrink-0 sm:w-44">
           <Select
             value={reason}
             onChange={(e) => setReason(e.target.value as "" | MovementReason)}

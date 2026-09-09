@@ -161,21 +161,22 @@ export function DashboardPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">
             Welcome back, {org?.name ?? "Workspace"}
           </h1>
           <p className="mt-0.5 text-sm text-muted">{dateLabel}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
           <SearchInput
             placeholder="Search…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            className="min-w-0 flex-1 md:flex-none"
           />
           {manager ? (
-            <Link to="/invoices">
-              <Button>
+            <Link to="/invoices" className="w-full sm:w-auto">
+              <Button className="w-full sm:w-auto">
                 <Plus className="size-4" />
                 New invoice
               </Button>
@@ -269,11 +270,11 @@ export function DashboardPage() {
               <ul className="space-y-2">
                 {onToday.slice(0, 8).map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                    <span>
+                    <span className="min-w-0 truncate">
                       <span className="font-medium">{s.employees?.full_name ?? "Open"}</span>
                       <span className="ml-2 text-muted">{s.position}</span>
                     </span>
-                    <span className="text-muted">{formatTimeRange(s.starts_at, s.ends_at)}</span>
+                    <span className="shrink-0 text-muted">{formatTimeRange(s.starts_at, s.ends_at)}</span>
                   </li>
                 ))}
               </ul>
@@ -315,7 +316,7 @@ export function DashboardPage() {
             <ul className="space-y-2">
               {low.slice(0, 8).map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span>
+                  <span className="min-w-0 truncate">
                     <span className="font-medium">{item.name}</span>
                     <span className="ml-2 text-muted">
                       {formatQty(item.quantity)} / {formatQty(item.reorder_level)} {item.unit}

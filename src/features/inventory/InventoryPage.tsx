@@ -74,13 +74,14 @@ export function InventoryPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap">
         <SearchInput
           placeholder="Search inventory…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          className="min-w-0 flex-1 md:flex-none"
         />
-        <div className="w-40 shrink-0">
+        <div className="w-full shrink-0 sm:w-40">
           <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             {ITEM_CATEGORIES.map((c) => (
@@ -91,8 +92,8 @@ export function InventoryPage() {
           </Select>
         </div>
         {manager ? (
-          <div className="ml-auto">
-            <Button onClick={openCreate}>
+          <div className="ml-auto w-full sm:w-auto">
+            <Button className="w-full sm:w-auto" onClick={openCreate}>
               <Plus className="size-4" />
               Add item
             </Button>

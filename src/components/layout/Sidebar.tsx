@@ -12,6 +12,7 @@ import {
   Truck,
   Users,
   Wallet,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -27,7 +28,15 @@ type NavItem = {
   end: boolean;
 };
 
-function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+function NavGroup({
+  label,
+  items,
+  onNavigate,
+}: {
+  label: string;
+  items: NavItem[];
+  onNavigate?: () => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="mb-4">
@@ -42,6 +51,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
               key={item.to}
               to={item.to}
               end={item.end}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
                   "relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-ink/75 hover:bg-paper hover:text-ink",
@@ -60,7 +70,21 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({
+  className,
+  onNavigate,
+  onClose,
+  id,
+  label,
+  hidden,
+}: {
+  className?: string;
+  onNavigate?: () => void;
+  onClose?: () => void;
+  id?: string;
+  label?: string;
+  hidden?: boolean;
+}) {
   const { role, user, signOut } = useAuth();
   const manager = isManager(role);
 
@@ -85,14 +109,32 @@ export function Sidebar() {
   ] as const;
 
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-white px-3 py-5">
-      <div className="mb-6 px-2">
+    <aside
+      id={id}
+      aria-label={label}
+      aria-hidden={hidden || undefined}
+      className={cn(
+        "flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-white px-3 py-5",
+        className,
+      )}
+    >
+      <div className="mb-6 flex items-start justify-between gap-2 px-2">
         <BrandMark className="text-wine" />
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted hover:bg-paper hover:text-ink"
+            aria-label="Close menu"
+          >
+            <X className="size-4" />
+          </button>
+        ) : null}
       </div>
 
       <nav className="flex flex-1 flex-col">
-        <NavGroup label="Overview" items={overview} />
-        <NavGroup label="Operations" items={operations} />
+        <NavGroup label="Overview" items={overview} onNavigate={onNavigate} />
+        <NavGroup label="Operations" items={operations} onNavigate={onNavigate} />
 
         <div>
           <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
@@ -118,7 +160,10 @@ export function Sidebar() {
         <p className="mb-1 truncate px-1 text-[11px] text-muted">{user?.email}</p>
         <button
           type="button"
-          onClick={() => void signOut()}
+          onClick={() => {
+            onNavigate?.();
+            void signOut();
+          }}
           className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-muted hover:bg-paper hover:text-ink"
         >
           <LogOut className="size-4" />

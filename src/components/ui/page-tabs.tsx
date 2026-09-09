@@ -10,14 +10,14 @@ export function PageTabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 border-b border-line">
+    <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-line px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {items.map((item) => (
         <button
           key={item.id}
           type="button"
           onClick={() => onChange(item.id)}
           className={cn(
-            "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition",
+            "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition",
             value === item.id ? "border-wine text-wine" : "border-transparent text-muted hover:text-ink",
           )}
         >
