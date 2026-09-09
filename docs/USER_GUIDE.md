@@ -27,24 +27,24 @@ Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movement
 1. Open Berrify and land on **Sign in**.
 2. Enter email and password, then **Sign in**.
 3. Use the eye icon to show or hide the password.
-4. Need a new workspace? Click **Sign up**, enter a restaurant name, email, and password (at least 6 characters). If email confirmation is on, check your inbox before signing in.
+4. New restaurants cannot be created from this screen. An admin adds people on **Employees**.
 
-**Demo buttons** fill credentials only. They do not sign you in until you click **Sign in**.
+### Forgot password
 
-| Button | Account | Password |
-| --- | --- | --- |
-| Fill admin demo | `demo@berrify.local` | `12345678` |
-| Fill staff demo | `server@berrify.local` | `12345678` |
+1. On **Sign in**, click **Forgot password?**
+2. Enter your email and click **Send reset link**.
+3. Berrify always shows the same confirmation so it does not reveal whether that email has an account.
+4. Open the email, set a new password (at least 6 characters) on **Reset password**, then sign in again.
+5. If the link is stale, the reset page says **This link expired. Request a new one.**
 
-There is also a cook demo at `cook@berrify.local` with the same password.
+Email delivery uses the project’s existing Supabase mail settings.
 
-**Important:** `demo@berrify.local` is an admin login and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use `server@berrify.local` or `cook@berrify.local` to try Clock in / Clock out.
+**Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use a staff seed account such as `server@berrify.local` to try Clock in / Clock out. Seed passwords live in the README, not on the sign-in screen.
 
 ### Joining an existing restaurant (staff or manager)
 
-1. An admin adds you on **Employees** with the **same email** you will use to sign up, and sets App access to **Staff** or **Manager**.
-2. You create an account with that email and the invite code.
-3. Berrify attaches you to that restaurant with the access the admin chose, instead of creating a second workspace.
+1. An admin adds you on **Employees**, sets App access to **Staff** or **Manager**, and shares how you will sign in.
+2. You cannot create a restaurant or join from **Sign in**. Invite join from this screen is not available yet.
 
 ### Sign out
 
@@ -210,7 +210,7 @@ Time Clock has no pay period, payroll export, or employee timesheet approval yet
 
 Employees is where admins create accounts: name, station (job), app access (manager or staff), phone, hourly rate, whether a login is linked, and active/inactive.
 
-A roster row can exist **before** the person has an account. **Login = Linked** means `user_id` is set. **Invite pending** means they are on the roster but have not signed up with that email yet.
+A roster row can exist **before** the person has an account. **Login = Linked** means `user_id` is set. **Invite pending** means they are on the roster but have not signed in with that email yet.
 
 ### How to use it
 
@@ -218,7 +218,7 @@ A roster row can exist **before** the person has an account. **Login = Linked** 
 2. Search the roster by name, email, or station.
 3. Click **Add account**. Fill:
    - Full name (required)
-   - Email (use the address they will sign up with)
+   - Email (use the address they will sign in with)
    - Phone
    - Station
    - **App access** — Manager or Staff

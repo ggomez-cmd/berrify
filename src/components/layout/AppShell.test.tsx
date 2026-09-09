@@ -22,6 +22,7 @@ const auth: AuthState = {
   org,
   role: "admin",
   loading: false,
+  recovery: false,
   signOut: async () => undefined,
 };
 

@@ -8,6 +8,7 @@ export type AuthState = {
   org: Organization | null;
   role: MembershipRole | null;
   loading: boolean;
+  recovery: boolean;
   signOut: () => Promise<void>;
 };
 
