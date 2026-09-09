@@ -4,8 +4,9 @@ import { Dialog } from "../../components/ui/dialog";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { STATIONS } from "../../lib/constants";
+import { isValidClockPin } from "../../lib/pin";
 import type { Employee, Station } from "../../lib/types";
-import { useUpsertEmployee, type EmployeeInput } from "./hooks";
+import { useSetClockPin, useUpsertEmployee, type EmployeeInput } from "./hooks";
 
 const empty: EmployeeInput = {
   full_name: "",
@@ -26,7 +27,9 @@ export function EmployeeDialog({
   employee: Employee | null;
 }) {
   const upsert = useUpsertEmployee();
+  const setPin = useSetClockPin();
   const [values, setValues] = useState<EmployeeInput>(empty);
+  const [clockPin, setClockPin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export function EmployeeDialog({
     } else {
       setValues(empty);
     }
+    setClockPin("");
     setError(null);
   }, [open, employee]);
 
@@ -50,7 +54,13 @@ export function EmployeeDialog({
     event.preventDefault();
     setError(null);
     try {
-      await upsert.mutateAsync({ id: employee?.id, values });
+      if (clockPin && !isValidClockPin(clockPin)) {
+        throw new Error("Clock PIN must be 4 to 8 digits");
+      }
+      const savedId = await upsert.mutateAsync({ id: employee?.id, values });
+      if (clockPin) {
+        await setPin.mutateAsync({ id: savedId, pin: clockPin });
+      }
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save employee");
@@ -113,6 +123,16 @@ export function EmployeeDialog({
             onChange={(e) => setValues((v) => ({ ...v, hourly_rate: Number(e.target.value) }))}
           />
         </Field>
+        <Field label="Clock PIN" htmlFor="emp-pin">
+          <Input
+            id="emp-pin"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder={employee ? "Leave blank to keep" : "4–8 digits"}
+            value={clockPin}
+            onChange={(e) => setClockPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          />
+        </Field>
         {employee && !employee.user_id && employee.invite_code ? (
           <div className="col-span-2">
             <Field label="Invite code" htmlFor="emp-invite">
@@ -136,8 +156,8 @@ export function EmployeeDialog({
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button type="submit" form="employee-form" disabled={upsert.isPending}>
-          {upsert.isPending ? "Saving…" : "Save employee"}
+        <Button type="submit" form="employee-form" disabled={upsert.isPending || setPin.isPending}>
+          {upsert.isPending || setPin.isPending ? "Saving…" : "Save employee"}
         </Button>
       </div>
     </Dialog>

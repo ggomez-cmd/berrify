@@ -63,14 +63,27 @@ export function useUpsertEmployee() {
       if (id) {
         const { error } = await supabase.from("employees").update(payload).eq("id", id);
         if (error) throw error;
-      } else {
-        const { error } = await supabase.from("employees").insert(payload);
-        if (error) throw error;
+        return id;
       }
+      const { data, error } = await supabase.from("employees").insert(payload).select("id").single();
+      if (error || !data) throw error ?? new Error("Failed to save employee");
+      return data.id as string;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["employees"] });
       void qc.invalidateQueries({ queryKey: ["my_employee"] });
+    },
+  });
+}
+
+export function useSetClockPin() {
+  return useMutation({
+    mutationFn: async ({ id, pin }: { id: string; pin: string }) => {
+      const { error } = await supabase.rpc("set_employee_clock_pin", {
+        employee_id: id,
+        pin,
+      });
+      if (error) throw error;
     },
   });
 }

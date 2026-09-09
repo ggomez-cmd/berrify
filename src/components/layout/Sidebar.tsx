@@ -8,6 +8,7 @@ import {
   Lock,
   LogOut,
   Receipt,
+  Tablet,
   Truck,
   Users,
   Wallet,
@@ -67,6 +68,7 @@ export function Sidebar() {
     { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
     { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
     { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+    { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
   ];
 
   const operations: NavItem[] = [
