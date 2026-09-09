@@ -7,5 +7,5 @@
       "command": "npm run dev"
     }
   ],
-  "ports": [5173]
+  "ports": [{ "port": 5173 }]
 }
