@@ -620,16 +620,26 @@ async function ensureClockPins(orgId: string) {
   }
 }
 
+async function ensureOwnerKioskPin(userId: string) {
+  const { error } = await admin.rpc("set_owner_kiosk_pin", {
+    pin: "8642",
+    user_id: userId,
+  });
+  if (error) throw error;
+}
+
 async function main() {
   const userId = await findOrCreateUser(email, password, "Pacifico Kitchen");
   const orgId = await orgForUser(userId);
   await seedInventory(orgId, userId);
   await seedSchedule(orgId, userId);
   await ensureClockPins(orgId);
+  await ensureOwnerKioskPin(userId);
   await seedInvoices(orgId, userId);
   console.log(`Manager login: ${email}`);
   console.log("Staff login: server@berrify.local / cook@berrify.local");
   console.log("Kiosk PINs: Sofia 2580 · Marco 1470");
+  console.log("Kiosk exit PIN (owner): 8642");
 }
 
 await main();
