@@ -10,8 +10,10 @@ import { Label } from "../../components/ui/label";
 import { PageTabs } from "../../components/ui/page-tabs";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatDuration } from "../../lib/format";
+import { isValidClockPin } from "../../lib/pin";
 import { isManager } from "../../lib/schedule";
 import { cn } from "../../lib/cn";
+import { useSetOwnerKioskPin } from "../kiosk/hooks";
 import {
   allowedEvents,
   CLOCK_EVENT_TYPES,
@@ -548,20 +550,48 @@ function ExceptionsPanel({ timeZone }: { timeZone: string }) {
 function SettingsPanel() {
   const { org } = useAuth();
   const save = useUpdateOrgClockSettings();
+  const setExitPin = useSetOwnerKioskPin();
   const [timezone, setTimezone] = useState(org?.timezone ?? "America/Puerto_Rico");
   const [dow, setDow] = useState(String(org?.workweek_start_dow ?? 0));
   const [startTime, setStartTime] = useState((org?.workweek_start_time ?? "00:00").slice(0, 5));
   const [mealPaid, setMealPaid] = useState(org?.default_meal_break_paid ?? false);
   const [restPaid, setRestPaid] = useState(org?.default_rest_break_paid ?? true);
+  const [kioskExitPin, setKioskExitPin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
   const days = useMemo(
     () => ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
     [],
   );
 
+  const onSave = async () => {
+    setPinError(null);
+    if (kioskExitPin && !isValidClockPin(kioskExitPin)) {
+      setPinError("Kiosk exit PIN must be 4 to 8 digits");
+      return;
+    }
+    try {
+      await save.mutateAsync({
+        timezone,
+        workweek_start_dow: Number(dow),
+        workweek_start_time: startTime,
+        default_meal_break_paid: mealPaid,
+        default_rest_break_paid: restPaid,
+      });
+      if (kioskExitPin) {
+        await setExitPin.mutateAsync(kioskExitPin);
+        setKioskExitPin("");
+      }
+    } catch {
+      // mutation error banners handle this
+    }
+  };
+
   return (
     <Card>
       {save.error ? <p className="mb-3 text-sm text-danger">{save.error.message}</p> : null}
-      {save.isSuccess ? <p className="mb-3 text-sm text-ok">Saved.</p> : null}
+      {setExitPin.error ? <p className="mb-3 text-sm text-danger">{setExitPin.error.message}</p> : null}
+      {pinError ? <p className="mb-3 text-sm text-danger">{pinError}</p> : null}
+      {save.isSuccess && !setExitPin.error ? <p className="mb-3 text-sm text-ok">Saved.</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <div>
           <Label>Timezone</Label>
@@ -591,20 +621,20 @@ function SettingsPanel() {
             Rest breaks paid
           </label>
         </div>
+        <div>
+          <Label htmlFor="kiosk-exit-pin">Kiosk exit PIN</Label>
+          <Input
+            id="kiosk-exit-pin"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Leave blank to keep"
+            value={kioskExitPin}
+            onChange={(e) => setKioskExitPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          />
+        </div>
       </div>
       <div className="mt-4">
-        <Button
-          disabled={save.isPending}
-          onClick={() =>
-            save.mutate({
-              timezone,
-              workweek_start_dow: Number(dow),
-              workweek_start_time: startTime,
-              default_meal_break_paid: mealPaid,
-              default_rest_break_paid: restPaid,
-            })
-          }
-        >
+        <Button disabled={save.isPending || setExitPin.isPending} onClick={() => void onSave()}>
           Save settings
         </Button>
       </div>

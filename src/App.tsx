@@ -7,6 +7,7 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { EmployeesPage } from "./features/employees/EmployeesPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { InvoicesPage } from "./features/invoices/InvoicesPage";
+import { KioskPage } from "./features/kiosk/KioskPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
@@ -25,6 +26,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
+            <Route path="kiosk" element={<KioskPage />} />
             <Route element={<AppShell />}>
               <Route index element={<DashboardPage />} />
               <Route path="schedule" element={<SchedulePage />} />
