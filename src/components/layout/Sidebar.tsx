@@ -99,7 +99,6 @@ export function Sidebar({
     : [
         { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
         { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
-        { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
       ];
 
   const operations: NavItem[] = manager

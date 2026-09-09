@@ -1,7 +1,8 @@
 import { Coffee, LogIn, LogOut, Pause } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { BrandMark } from "../../components/ui/brand-mark";
@@ -126,6 +127,14 @@ function PinDots({ pin }: { pin: string }) {
 }
 
 export function KioskPage() {
+  const { role } = useAuth();
+  if (!isManager(role)) {
+    return <Navigate to="/schedule" replace />;
+  }
+  return <KioskScreen />;
+}
+
+function KioskScreen() {
   const { org } = useAuth();
   const navigate = useNavigate();
   const timeZone = org?.timezone ?? "America/Puerto_Rico";

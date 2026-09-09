@@ -229,6 +229,11 @@ try {
   });
   assert(managerSuppliers.length > 0, "manager list_suppliers_full returned no rows");
 
+  const staffKioskUnlock = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select public.kiosk_unlock('2580')`)),
+  );
+  assert(staffKioskUnlock, "staff can unlock the kiosk");
+
   const staffInviteCode = await asAuthenticated(staffId, async () =>
     expectReject(() => q(`select invite_code from public.employees where org_id = $1`, [orgId])),
   );
@@ -301,7 +306,7 @@ try {
   }
 
   console.log("Authorization verification passed.");
-  console.log("  staff denied: invoices, inventory, suppliers, movements, wages, invite codes");
+  console.log("  staff denied: invoices, inventory, suppliers, movements, wages, invite codes, kiosk");
   console.log("  staff allowed: employee directory names, schedule, clock");
   console.log("  manager allowed: inventory/suppliers/invoices; denied employee writes");
   console.log("  admin allowed: roster writes, invite rotate, full RPCs");

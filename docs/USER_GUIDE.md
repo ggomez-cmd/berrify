@@ -16,11 +16,11 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 
 | Role | Who it is | Extra access |
 | --- | --- | --- |
-| **Staff** | Line staff with a linked employee row | Schedule (own published shifts) and Time Clock (Clock in / Clock out), including the kiosk |
+| **Staff** | Line staff with a linked employee row | Schedule (own published shifts) and Time Clock (Clock in / Clock out). They punch on the tablet kiosk only after a manager or admin opens it. |
 | **Manager** | Day-to-day operator | Dashboard, schedule editing, Time Clock attendance, inventory, invoices, and suppliers. Cannot create accounts or edit pay. |
 | **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
 
-Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, or Movements. Those routes send them to Schedule.
+Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movements, or Kiosk. Those routes send them to Schedule.
 
 ### How to use it
 
@@ -56,7 +56,7 @@ Use **Sign out** at the bottom of the left sidebar.
 
 The left sidebar is always visible after sign-in.
 
-- **Overview:** Dashboard, Schedule, Time Clock, Kiosk (staff see Schedule, Time Clock, and Kiosk only)
+- **Overview:** Dashboard, Schedule, Time Clock, Kiosk (staff see Schedule and Time Clock only)
 - **Operations (admin / manager):** Employees (admin only), Inventory, Invoices, Suppliers, Movements
 - **Coming soon (admin / manager):** Payroll, Analytics (locked)
 
@@ -194,7 +194,11 @@ Sets organization clock rules:
 
 Click **Save settings**.
 
-Time Clock is Phase 1: there is no PIN pad, no pay period, no payroll export, and no employee timesheet approval.
+### Kiosk (manager / admin)
+
+Open **Kiosk** from the sidebar on the shared tablet. Staff do not see this item. They enter their clock PIN on that screen to punch. Leave the kiosk with the admin exit PIN.
+
+Time Clock has no pay period, payroll export, or employee timesheet approval yet.
 
 ---
 
@@ -380,6 +384,7 @@ Pink carbonless photos shot sideways usually need a human pass before export.
 | See own published shifts | Yes | Yes | Yes |
 | Edit / publish the week board | No | Yes | Yes |
 | Punch (if linked + active) | Yes | Yes | Yes |
+| Open tablet kiosk | No | Yes | Yes |
 | Who’s working | No | Yes (times + force out) | Yes |
 | Record missing punch, activity, exceptions | No | Yes | Yes |
 | Clock settings | No | No | Yes |
