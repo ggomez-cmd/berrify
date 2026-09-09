@@ -92,10 +92,16 @@ const imageData = imageExts.has(ext)
   ? `data:image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")};base64,${readFileSync(abs).toString("base64")}`
   : null;
 
-const { data: orgRow, error: orgError } = arg("org-id")
-  ? { data: { id: arg("org-id") }, error: null }
-  : await admin.from("organizations").select("id").order("created_at").limit(1).maybeSingle();
-if (orgError || !orgRow) throw orgError ?? new Error("No organization found. Pass --org-id.");
+const orgIdArg = arg("org-id");
+if (!orgIdArg) {
+  throw new Error("Pass --org-id <uuid>. Refusing to default to the first organization.");
+}
+const { data: orgRow, error: orgError } = await admin
+  .from("organizations")
+  .select("id")
+  .eq("id", orgIdArg)
+  .maybeSingle();
+if (orgError || !orgRow) throw orgError ?? new Error("Organization not found for --org-id.");
 
 const orgId = orgRow.id as string;
 const { data: aliasRows, error: aliasError } = await admin

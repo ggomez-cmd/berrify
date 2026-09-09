@@ -601,14 +601,45 @@ async function seedInvoices(orgId: string, userId: string) {
   console.log("Seeded Jose Santiago Inc aliases, account rules, and $1,155.59 sample bill.");
 }
 
+async function ensureClockPins(orgId: string) {
+  const { data, error } = await admin.from("employees").select("id, email").eq("org_id", orgId);
+  if (error) throw error;
+  const byEmail = Object.fromEntries((data ?? []).map((row) => [row.email as string, row.id as string]));
+  const pins: Record<string, string> = {
+    "server@berrify.local": "2580",
+    "cook@berrify.local": "1470",
+  };
+  for (const [empEmail, pin] of Object.entries(pins)) {
+    const id = byEmail[empEmail];
+    if (!id) continue;
+    const { error: pinError } = await admin.rpc("set_employee_clock_pin", {
+      employee_id: id,
+      pin,
+    });
+    if (pinError) throw pinError;
+  }
+}
+
+async function ensureOwnerKioskPin(userId: string) {
+  const { error } = await admin.rpc("set_owner_kiosk_pin", {
+    pin: "8642",
+    user_id: userId,
+  });
+  if (error) throw error;
+}
+
 async function main() {
   const userId = await findOrCreateUser(email, password, "Pacifico Kitchen");
   const orgId = await orgForUser(userId);
   await seedInventory(orgId, userId);
   await seedSchedule(orgId, userId);
+  await ensureClockPins(orgId);
+  await ensureOwnerKioskPin(userId);
   await seedInvoices(orgId, userId);
   console.log(`Manager login: ${email}`);
   console.log("Staff login: server@berrify.local / cook@berrify.local");
+  console.log("Kiosk PINs: Sofia 2580 · Marco 1470");
+  console.log("Kiosk exit PIN (owner): 8642");
 }
 
 await main();

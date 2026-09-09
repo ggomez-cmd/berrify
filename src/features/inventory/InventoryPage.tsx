@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/input";
@@ -9,6 +10,7 @@ import { Table, THead, Td, Th } from "../../components/ui/table";
 import { ITEM_CATEGORIES } from "../../lib/constants";
 import { formatMoney, formatQty } from "../../lib/format";
 import { filterItems, stockStatus, type StockStatus } from "../../lib/inventory";
+import { isManager } from "../../lib/schedule";
 import type { InventoryItem, InventoryItemWithSupplier } from "../../lib/types";
 import { AdjustStockDialog } from "./AdjustStockDialog";
 import { useDeleteItem, useInventoryItems } from "./hooks";
@@ -44,6 +46,8 @@ function statusBadge(status: StockStatus) {
 }
 
 export function InventoryPage() {
+  const { role } = useAuth();
+  const manager = isManager(role);
   const { data: items = [], isLoading, error } = useInventoryItems();
   const remove = useDeleteItem();
   const [search, setSearch] = useState("");
@@ -87,12 +91,14 @@ export function InventoryPage() {
             ))}
           </Select>
         </div>
-        <div className="ml-auto w-full sm:w-auto">
-          <Button className="w-full sm:w-auto" onClick={openCreate}>
-            <Plus className="size-4" />
-            Add item
-          </Button>
-        </div>
+        {manager ? (
+          <div className="ml-auto w-full sm:w-auto">
+            <Button className="w-full sm:w-auto" onClick={openCreate}>
+              <Plus className="size-4" />
+              Add item
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="mb-4">
@@ -117,7 +123,7 @@ export function InventoryPage() {
               <Th>Category</Th>
               <Th>On hand</Th>
               <Th>Reorder</Th>
-              <Th>Unit cost</Th>
+              {manager ? <Th>Unit cost</Th> : null}
               <Th>Supplier</Th>
               <Th>Status</Th>
               <Th />
@@ -126,7 +132,7 @@ export function InventoryPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-muted">
+                <Td colSpan={manager ? 8 : 7} className="py-10 text-center text-muted">
                   No items match.
                 </Td>
               </tr>
@@ -144,7 +150,7 @@ export function InventoryPage() {
                       {formatQty(item.quantity)} {item.unit}
                     </Td>
                     <Td>{formatQty(item.reorder_level)}</Td>
-                    <Td>{formatMoney(item.unit_cost)}</Td>
+                    {manager ? <Td>{formatMoney(item.unit_cost ?? 0)}</Td> : null}
                     <Td>{item.suppliers?.name ?? "—"}</Td>
                     <Td>{statusBadge(status)}</Td>
                     <Td>
@@ -152,19 +158,23 @@ export function InventoryPage() {
                         <Button variant="subtle" onClick={() => setAdjusting(item)}>
                           Adjust
                         </Button>
-                        <Button variant="subtle" onClick={() => openEdit(item)}>
-                          Edit
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          onClick={() => {
-                            if (window.confirm(`Delete ${item.name}?`)) {
-                              void remove.mutateAsync(item.id);
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
+                        {manager ? (
+                          <>
+                            <Button variant="subtle" onClick={() => openEdit(item)}>
+                              Edit
+                            </Button>
+                            <Button
+                              variant="subtle"
+                              onClick={() => {
+                                if (window.confirm(`Delete ${item.name}?`)) {
+                                  void remove.mutateAsync(item.id);
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        ) : null}
                       </div>
                     </Td>
                   </tr>

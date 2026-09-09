@@ -470,6 +470,99 @@ try {
     "staff cannot call update_org_clock_settings",
   );
 
+  const { rows: probe } = await q<{ id: string }>(
+    `insert into public.employees (org_id, full_name, email, position)
+     values ($1, 'Kiosk Probe', 'kiosk-probe@berrify.example', 'Other')
+     returning id`,
+    [sofia.org_id],
+  );
+  const probeId = probe[0]?.id;
+  assert(Boolean(probeId), "kiosk probe employee missing");
+
+  await asAuthenticated(ownerId, async () => {
+    await q(`select public.set_employee_clock_pin($1, '9999')`, [probeId]);
+  });
+
+  const staffSetPin = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select public.set_employee_clock_pin($1, '8888')`, [probeId]), /Not authorized/i),
+  );
+  assert(staffSetPin, "staff can set a clock PIN");
+
+  const staffHash = await asAuthenticated(staffId, async () =>
+    expectReject(
+      () => q(`select clock_pin_hash from public.employees where id = $1`, [probeId]),
+      /permission denied|column/i,
+    ),
+  );
+  assert(staffHash, "staff can select clock_pin_hash");
+
+  const badPin = await asAuthenticated(cookUserId, async () =>
+    expectReject(() => q(`select public.kiosk_unlock('0000')`), /Invalid PIN|PIN must be/i),
+  );
+  assert(badPin, "wrong PIN unlocks the kiosk");
+
+  const unlocked = await asAuthenticated(cookUserId, async () => {
+    const { rows } = await q<{ kiosk_unlock: { id: string; full_name: string; state: string } }>(
+      `select public.kiosk_unlock('9999') as kiosk_unlock`,
+    );
+    return rows[0]?.kiosk_unlock;
+  });
+  assert(unlocked?.id === probeId, "kiosk_unlock did not return the probe employee");
+  assert(unlocked?.full_name === "Kiosk Probe", "kiosk_unlock hid the employee name");
+  assert(unlocked?.state === "off_clock", "kiosk probe was not off clock");
+
+  const kioskIn = await asAuthenticated(cookUserId, async () => {
+    const { rows } = await q<ClockEvent>(
+      `select * from public.kiosk_record_clock_event('9999', 'clock_in', $1::uuid, null)`,
+      [crypto.randomUUID()],
+    );
+    return rows[0];
+  });
+  assert(kioskIn?.employee_id === probeId, "kiosk punch bound the tablet user, not the PIN employee");
+  assert(kioskIn?.source === "kiosk", "kiosk punch source was not kiosk");
+  assert(kioskIn?.actor_type === "employee", "kiosk punch actor was not employee");
+
+  const staffSetOwnerPin = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select public.set_owner_kiosk_pin('7777')`), /Not authorized/i),
+  );
+  assert(staffSetOwnerPin, "staff can set an owner kiosk PIN");
+
+  const ownerPinCollision = await asAuthenticated(ownerId, async () =>
+    expectReject(() => q(`select public.set_owner_kiosk_pin('9999')`), /PIN already in use/i),
+  );
+  assert(ownerPinCollision, "owner kiosk PIN can match an employee clock PIN");
+
+  await asAuthenticated(ownerId, async () => {
+    await q(`select public.set_owner_kiosk_pin('7777')`);
+  });
+
+  const staffOwnerHash = await asAuthenticated(staffId, async () =>
+    expectReject(
+      () => q(`select kiosk_exit_pin_hash from public.memberships where user_id = $1`, [staffId]),
+      /permission denied|column/i,
+    ),
+  );
+  assert(staffOwnerHash, "authenticated can select kiosk_exit_pin_hash");
+
+  const employeePinExit = await asAuthenticated(cookUserId, async () =>
+    expectReject(() => q(`select public.kiosk_confirm_exit('9999')`), /Invalid PIN/i),
+  );
+  assert(employeePinExit, "employee clock PIN exits the kiosk");
+
+  const required = await asAuthenticated(cookUserId, async () => {
+    const { rows } = await q<{ kiosk_exit_required: boolean }>(`select public.kiosk_exit_required() as kiosk_exit_required`);
+    return rows[0]?.kiosk_exit_required;
+  });
+  assert(required === true, "kiosk_exit_required was false after owner set a PIN");
+
+  await asAuthenticated(cookUserId, async () => {
+    await q(`select public.kiosk_confirm_exit('7777')`);
+  });
+
+  await become(cookUserId);
+  const selfPunch = await punch("clock_in", crypto.randomUUID()).catch(() => null);
+  assert(selfPunch === null || selfPunch.employee_id === marco.id, "record_clock_event punched someone other than the signed-in employee");
+
   await client.query("rollback");
 
   if (failures.length > 0) {

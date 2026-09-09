@@ -1,21 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { Employee, Station } from "../../lib/types";
 
 export function useEmployees() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["employees", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("org_id", org!.id)
-        .order("full_name");
+      const { data, error } = await supabase.rpc("list_employees_full");
       if (error) throw error;
-      return (data ?? []) as Employee[];
+      return ((data ?? []) as Employee[]).sort((a, b) => a.full_name.localeCompare(b.full_name));
     },
   });
 }
@@ -66,14 +63,41 @@ export function useUpsertEmployee() {
       if (id) {
         const { error } = await supabase.from("employees").update(payload).eq("id", id);
         if (error) throw error;
-      } else {
-        const { error } = await supabase.from("employees").insert(payload);
-        if (error) throw error;
+        return id;
       }
+      const { data, error } = await supabase.from("employees").insert(payload).select("id").single();
+      if (error || !data) throw error ?? new Error("Failed to save employee");
+      return data.id as string;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["employees"] });
       void qc.invalidateQueries({ queryKey: ["my_employee"] });
+    },
+  });
+}
+
+export function useSetClockPin() {
+  return useMutation({
+    mutationFn: async ({ id, pin }: { id: string; pin: string }) => {
+      const { error } = await supabase.rpc("set_employee_clock_pin", {
+        employee_id: id,
+        pin,
+      });
+      if (error) throw error;
+    },
+  });
+}
+
+export function useRotateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.rpc("rotate_employee_invite", { target_id: id });
+      if (error) throw error;
+      return data as string;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["employees"] });
     },
   });
 }

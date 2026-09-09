@@ -1,13 +1,18 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
+import { isManager } from "../../lib/schedule";
 import type { Supplier } from "../../lib/types";
 import { SupplierDialog } from "./SupplierDialog";
 import { useDeleteSupplier, useSuppliers } from "./hooks";
 
 export function SuppliersPage() {
+  const { role } = useAuth();
+  const manager = isManager(role);
   const { data: suppliers = [], isLoading, error } = useSuppliers();
   const remove = useDeleteSupplier();
   const [search, setSearch] = useState("");
@@ -21,6 +26,10 @@ export function SuppliersPage() {
       `${s.name} ${s.contact_email ?? ""} ${s.phone ?? ""}`.toLowerCase().includes(q),
     );
   }, [suppliers, search]);
+
+  if (!manager) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div>

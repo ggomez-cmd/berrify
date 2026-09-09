@@ -16,6 +16,7 @@ import {
   type VendorAlias,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
+import { assertInvoiceImage } from "../../lib/invoice-image";
 import { ocrImage } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
@@ -72,6 +73,7 @@ export function InvoicesPage() {
     setBusy(true);
     setMessage("Reading invoice photo…");
     try {
+      assertInvoiceImage(file);
       const { data, mime } = await fileToDataUrl(file);
       setMessage("Running OCR (trying rotations)…");
       const ocr = await ocrImage(data);
