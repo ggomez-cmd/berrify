@@ -137,7 +137,7 @@ async function orgForUser(userId: string): Promise<string> {
   const { error: memError } = await admin.from("memberships").insert({
     user_id: userId,
     org_id: org.id,
-    role: "owner",
+    role: "admin",
   });
   if (memError) throw memError;
   return org.id as string;
@@ -308,6 +308,7 @@ async function seedSchedule(orgId: string, ownerId: string) {
         phone: row.phone,
         position: row.position,
         hourly_rate: row.hourly_rate,
+        login_role: "staff",
         active: true,
       })),
     )
@@ -636,10 +637,10 @@ async function main() {
   await ensureClockPins(orgId);
   await ensureOwnerKioskPin(userId);
   await seedInvoices(orgId, userId);
-  console.log(`Manager login: ${email}`);
+  console.log(`Admin login: ${email}`);
   console.log("Staff login: server@berrify.local / cook@berrify.local");
   console.log("Kiosk PINs: Sofia 2580 · Marco 1470");
-  console.log("Kiosk exit PIN (owner): 8642");
+  console.log("Kiosk exit PIN (admin): 8642");
 }
 
 await main();

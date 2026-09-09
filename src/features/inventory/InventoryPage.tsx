@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -61,6 +62,10 @@ export function InventoryPage() {
     () => filterItems(items, { search, category, lowStockOnly: tab === "low" }),
     [items, search, category, tab],
   );
+
+  if (!manager) {
+    return <Navigate to="/schedule" replace />;
+  }
 
   const openCreate = () => {
     setEditing(null);

@@ -4,9 +4,6 @@ import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { InventoryItem, InventoryItemWithSupplier, MovementReason, Supplier } from "../../lib/types";
 
-const STAFF_ITEM_COLUMNS =
-  "id, org_id, name, sku, category, unit, quantity, reorder_level, supplier_id, created_at, updated_at, suppliers(id, name)";
-
 function withSupplierNames(
   items: InventoryItem[],
   suppliers: Array<Pick<Supplier, "id" | "name">>,
@@ -26,24 +23,14 @@ export function useInventoryItems() {
   const { org, role } = useAuth();
   const manager = isManager(role);
   return useQuery({
-    queryKey: ["inventory_items", org?.id, manager ? "full" : "staff"],
-    enabled: Boolean(org?.id),
+    queryKey: ["inventory_items", org?.id],
+    enabled: Boolean(org?.id) && manager,
     queryFn: async () => {
-      if (manager) {
-        const { data, error } = await supabase.rpc("list_inventory_full");
-        if (error) throw error;
-        const { data: suppliers, error: supplierError } = await supabase.rpc("list_suppliers_full");
-        if (supplierError) throw supplierError;
-        return withSupplierNames((data ?? []) as InventoryItem[], (suppliers ?? []) as Supplier[]);
-      }
-
-      const { data, error } = await supabase
-        .from("inventory_items")
-        .select(STAFF_ITEM_COLUMNS)
-        .eq("org_id", org!.id)
-        .order("name");
+      const { data, error } = await supabase.rpc("list_inventory_full");
       if (error) throw error;
-      return (data ?? []) as unknown as InventoryItemWithSupplier[];
+      const { data: suppliers, error: supplierError } = await supabase.rpc("list_suppliers_full");
+      if (supplierError) throw supplierError;
+      return withSupplierNames((data ?? []) as InventoryItem[], (suppliers ?? []) as Supplier[]);
     },
   });
 }

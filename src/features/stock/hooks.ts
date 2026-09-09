@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { StockMovementWithItem } from "../../lib/types";
 
 export function useStockMovements() {
-  const { org } = useAuth();
+  const { org, role } = useAuth();
   return useQuery({
     queryKey: ["stock_movements", org?.id],
-    enabled: Boolean(org?.id),
+    enabled: Boolean(org?.id) && isManager(role),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("stock_movements")

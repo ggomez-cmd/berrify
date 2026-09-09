@@ -197,7 +197,7 @@ export function LoginPage() {
                 }}
               >
                 <User className="size-4" />
-                Fill manager demo
+                Fill admin demo
               </Button>
               <Button
                 type="button"

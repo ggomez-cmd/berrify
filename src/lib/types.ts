@@ -9,7 +9,9 @@ import type {
   TimeExceptionType,
 } from "./time-clock";
 
-export type MembershipRole = "owner" | "manager" | "staff";
+export type LoginRole = "manager" | "staff";
+
+export type MembershipRole = "admin" | LoginRole;
 
 export type MovementReason = "purchase" | "usage" | "adjustment" | "waste";
 
@@ -88,6 +90,7 @@ export type Employee = {
   email: string | null;
   phone: string | null;
   position: Station;
+  login_role: LoginRole;
   hourly_rate: number;
   home_restaurant_id: string | null;
   invite_code: string | null;

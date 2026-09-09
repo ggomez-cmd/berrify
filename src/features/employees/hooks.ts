@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
-import type { Employee, Station } from "../../lib/types";
+import type { Employee, LoginRole, Station } from "../../lib/types";
 
 export function useEmployees() {
   const { org, role } = useAuth();
@@ -40,6 +40,7 @@ export type EmployeeInput = {
   email: string;
   phone: string;
   position: Station;
+  login_role: LoginRole;
   hourly_rate: number;
   active: boolean;
 };
@@ -57,6 +58,7 @@ export function useUpsertEmployee() {
         email: values.email || null,
         phone: values.phone || null,
         position: values.position,
+        login_role: values.login_role,
         hourly_rate: values.hourly_rate,
         active: values.active,
       };

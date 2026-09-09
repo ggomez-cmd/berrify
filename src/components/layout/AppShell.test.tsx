@@ -20,18 +20,19 @@ const auth: AuthState = {
   session: { access_token: "test" } as AuthState["session"],
   user: { id: "user-1", email: "demo@berrify.local" } as AuthState["user"],
   org,
-  role: "owner",
+  role: "admin",
   loading: false,
   signOut: async () => undefined,
 };
 
-function renderShell(path = "/inventory") {
+function renderShell(path = "/inventory", role: AuthState["role"] = "admin") {
   return render(
-    <AuthContext.Provider value={auth}>
+    <AuthContext.Provider value={{ ...auth, role }}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<div>Dashboard content</div>} />
+            <Route path="/schedule" element={<div>Schedule content</div>} />
             <Route path="/inventory" element={<div>Inventory content</div>} />
             <Route path="/time-clock" element={<div>Time clock content</div>} />
           </Route>
@@ -72,5 +73,26 @@ describe("AppShell mobile navigation", () => {
     openMenu();
     fireEvent.click(screen.getByRole("button", { name: "Close menu overlay" }));
     expect(drawer()).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("lets managers see inventory but not the roster", () => {
+    renderShell("/inventory", "manager");
+    openMenu();
+    const nav = drawer() as HTMLElement;
+    expect(within(nav).getByRole("link", { name: "Inventory" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Invoices" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Employees" })).toBeNull();
+  });
+
+  it("hides operations pages from staff", () => {
+    renderShell("/schedule", "staff");
+    openMenu();
+    const nav = drawer() as HTMLElement;
+    expect(within(nav).getByRole("link", { name: "Schedule" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Time Clock" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Dashboard" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Inventory" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Invoices" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Employees" })).toBeNull();
   });
 });

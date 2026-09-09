@@ -321,8 +321,8 @@ export function KioskPage() {
             <p className="text-center text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
               Exit kiosk
             </p>
-            <p className="mt-3 text-center text-xl font-semibold tracking-tight">Owner PIN</p>
-            <p className="mt-1 text-center text-sm text-muted">Enter an owner PIN to leave this tablet.</p>
+            <p className="mt-3 text-center text-xl font-semibold tracking-tight">Admin PIN</p>
+            <p className="mt-1 text-center text-sm text-muted">Enter an admin PIN to leave this tablet.</p>
             <PinDots pin={exitPin} />
             {exitError ? <p className="mt-4 text-center text-sm text-danger">{exitError}</p> : null}
             <div className="mx-auto mt-6">

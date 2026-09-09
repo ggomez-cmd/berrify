@@ -75,7 +75,8 @@ Multi-tenant by organization. Inventory and scheduling rows are scoped by
 - Low stock is `quantity <= reorder_level`. Adjusting stock writes a
   `stock_movements` row; a database trigger updates `inventory_items.quantity`.
 - Shifts may be `draft` or `published`. Staff can only read published shifts.
-  Owners and managers can edit the roster and the week board.
+  Admins and managers can edit the week board. Only admins can create accounts
+  and set pay. Staff cannot read inventory or invoices.
 - `employees.user_id` is optional. Roster rows can exist before the person has
   a login.
 - Invoices store raw SKU lines plus rolled-up `invoice_expense_lines` (Food,
