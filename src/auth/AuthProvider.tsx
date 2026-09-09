@@ -53,13 +53,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void boot();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      if (event === "INITIAL_SESSION") return;
       setSession(next);
-      if (next?.user.id) {
-        void loadWorkspace(next.user.id);
-      } else {
+      if (event === "SIGNED_OUT" || !next?.user.id) {
         setOrg(null);
         setRole(null);
+        setLoading(false);
+        return;
+      }
+      if (event === "SIGNED_IN") {
+        setLoading(true);
+        void loadWorkspace(next.user.id).finally(() => {
+          if (!cancelled) setLoading(false);
+        });
       }
     });
 

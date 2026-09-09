@@ -25,12 +25,20 @@ export function useMyEmployee() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("employees")
-        .select("*")
+        .select("id, org_id, user_id, full_name, position, active, home_restaurant_id, created_at, updated_at")
         .eq("org_id", org!.id)
         .eq("user_id", user!.id)
         .maybeSingle();
       if (error) throw error;
-      return (data as Employee | null) ?? null;
+      if (!data) return null;
+      return {
+        ...(data as Employee),
+        email: null,
+        phone: null,
+        login_role: "staff",
+        hourly_rate: 0,
+        invite_code: null,
+      } satisfies Employee;
     },
   });
 }
