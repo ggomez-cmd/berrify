@@ -173,7 +173,7 @@ try {
     const { rows } = await q<{ id: string }>(`select id from public.inventory_items where org_id = $1`, [orgId]);
     return rows;
   });
-  assert(staffInventory.length > 0, "staff cannot read inventory");
+  assert(staffInventory.length === 0, "staff can read inventory");
 
   const staffUnitCost = await asAuthenticated(staffId, async () =>
     expectReject(() => q(`select unit_cost from public.inventory_items where org_id = $1`, [orgId])),
@@ -207,7 +207,13 @@ try {
     const { rows } = await q<{ name: string }>(`select name from public.suppliers where org_id = $1`, [orgId]);
     return rows;
   });
-  assert(staffSupplierNames.length > 0, "staff cannot select supplier names");
+  assert(staffSupplierNames.length === 0, "staff can select supplier names");
+
+  const staffMovements = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ id: string }>(`select id from public.stock_movements where org_id = $1`, [orgId]);
+    return rows;
+  });
+  assert(staffMovements.length === 0, "staff can read stock movements");
 
   const staffSupplierRpc = await asAuthenticated(staffId, async () => {
     const { rows } = await q<{ contact_email: string }>(`select contact_email from public.list_suppliers_full()`);
@@ -260,8 +266,34 @@ try {
       );
       return rows[0]?.rotate_employee_invite;
     });
-    assert(Boolean(managerRotate), "manager rotate_employee_invite returned no code");
-    assert(managerRotate !== pending.invite_code, "manager rotate_employee_invite reused the same code");
+    assert(Boolean(managerRotate), "admin rotate_employee_invite returned no code");
+    assert(managerRotate !== pending.invite_code, "admin rotate_employee_invite reused the same code");
+  }
+
+  await q(`update public.memberships set role = 'manager' where user_id = $1`, [staffId]);
+
+  const managerTableInventory = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ id: string }>(`select id from public.inventory_items where org_id = $1`, [orgId]);
+    return rows;
+  });
+  assert(managerTableInventory.length > 0, "manager cannot read inventory");
+
+  const managerEmployeeInsert = await asAuthenticated(staffId, async () =>
+    expectReject(() =>
+      q(
+        `insert into public.employees (org_id, full_name, email, position, login_role)
+         values ($1, 'Manager Probe', 'manager-probe@berrify.example', 'Other', 'staff')`,
+        [orgId],
+      ),
+    ),
+  );
+  assert(managerEmployeeInsert, "manager can insert employees");
+
+  if (pending?.id) {
+    const managerRotateDenied = await asAuthenticated(staffId, async () =>
+      expectReject(() => q(`select public.rotate_employee_invite($1)`, [pending.id])),
+    );
+    assert(managerRotateDenied, "manager can rotate employee invite codes");
   }
 
   if (failures.length > 0) {
@@ -269,9 +301,10 @@ try {
   }
 
   console.log("Authorization verification passed.");
-  console.log("  staff denied: invoices, aliases, wage columns, unit_cost, supplier contacts, invite codes");
-  console.log("  staff allowed: employee names, inventory qty, supplier names");
-  console.log("  manager allowed: full inventory/suppliers/employees RPCs and invite rotate");
+  console.log("  staff denied: invoices, inventory, suppliers, movements, wages, invite codes");
+  console.log("  staff allowed: employee directory names, schedule, clock");
+  console.log("  manager allowed: inventory/suppliers/invoices; denied employee writes");
+  console.log("  admin allowed: roster writes, invite rotate, full RPCs");
 } finally {
   await client.query("rollback");
   await client.end();

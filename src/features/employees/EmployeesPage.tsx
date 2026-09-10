@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatMoney } from "../../lib/format";
-import { isManager } from "../../lib/schedule";
+import { isAdmin } from "../../lib/schedule";
 import type { Employee } from "../../lib/types";
 import { EmployeeDialog } from "./EmployeeDialog";
 import { useDeleteEmployee, useEmployees, useRotateInvite } from "./hooks";
@@ -30,7 +30,7 @@ export function EmployeesPage() {
     );
   }, [employees, search]);
 
-  if (!isManager(role)) {
+  if (!isAdmin(role)) {
     return <Navigate to="/schedule" replace />;
   }
 
@@ -52,7 +52,7 @@ export function EmployeesPage() {
             }}
           >
             <Plus className="size-4" />
-            Add employee
+            Add account
           </Button>
         </div>
       </div>
@@ -65,7 +65,8 @@ export function EmployeesPage() {
           <THead>
             <tr>
               <Th>Name</Th>
-              <Th>Position</Th>
+              <Th>Station</Th>
+              <Th>Access</Th>
               <Th>Phone</Th>
               <Th>Rate</Th>
               <Th>Login</Th>
@@ -77,7 +78,7 @@ export function EmployeesPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={8} className="py-10 text-center text-muted">
+                <Td colSpan={9} className="py-10 text-center text-muted">
                   No employees yet.
                 </Td>
               </tr>
@@ -94,6 +95,7 @@ export function EmployeesPage() {
                     </div>
                   </Td>
                   <Td>{employee.position}</Td>
+                  <Td>{employee.login_role === "manager" ? "Manager" : "Staff"}</Td>
                   <Td>{employee.phone ?? "—"}</Td>
                   <Td>{formatMoney(employee.hourly_rate)}</Td>
                   <Td>

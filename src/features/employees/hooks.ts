@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
-import type { Employee, Station } from "../../lib/types";
+import type { Employee, LoginRole, Station } from "../../lib/types";
 
 export function useEmployees() {
   const { org, role } = useAuth();
@@ -25,12 +25,20 @@ export function useMyEmployee() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("employees")
-        .select("*")
+        .select("id, org_id, user_id, full_name, position, active, home_restaurant_id, created_at, updated_at")
         .eq("org_id", org!.id)
         .eq("user_id", user!.id)
         .maybeSingle();
       if (error) throw error;
-      return (data as Employee | null) ?? null;
+      if (!data) return null;
+      return {
+        ...(data as Employee),
+        email: null,
+        phone: null,
+        login_role: "staff",
+        hourly_rate: 0,
+        invite_code: null,
+      } satisfies Employee;
     },
   });
 }
@@ -40,6 +48,7 @@ export type EmployeeInput = {
   email: string;
   phone: string;
   position: Station;
+  login_role: LoginRole;
   hourly_rate: number;
   active: boolean;
 };
@@ -57,6 +66,7 @@ export function useUpsertEmployee() {
         email: values.email || null,
         phone: values.phone || null,
         position: values.position,
+        login_role: values.login_role,
         hourly_rate: values.hourly_rate,
         active: values.active,
       };

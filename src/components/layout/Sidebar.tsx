@@ -18,7 +18,7 @@ import {
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
-import { isManager } from "../../lib/schedule";
+import { isAdmin, isManager } from "../../lib/schedule";
 import { BrandMark } from "../ui/brand-mark";
 
 type NavItem = {
@@ -87,21 +87,30 @@ export function Sidebar({
 }) {
   const { role, user, signOut } = useAuth();
   const manager = isManager(role);
+  const admin = isAdmin(role);
 
-  const overview: NavItem[] = [
-    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-    { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
-    { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
-    { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
-  ];
+  const overview: NavItem[] = manager
+    ? [
+        { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+        { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+        { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+        { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
+      ]
+    : [
+        { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+        { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+        { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
+      ];
 
-  const operations: NavItem[] = [
-    ...(manager ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
-    { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
-    ...(manager ? [{ to: "/invoices", label: "Invoices", icon: Receipt, end: false }] : []),
-    ...(manager ? [{ to: "/suppliers", label: "Suppliers", icon: Truck, end: false }] : []),
-    { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
-  ];
+  const operations: NavItem[] = manager
+    ? [
+        ...(admin ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
+        { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
+        { to: "/invoices", label: "Invoices", icon: Receipt, end: false },
+        { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
+        { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
+      ]
+    : [];
 
   const soon = [
     { label: "Payroll", icon: Wallet },
@@ -136,24 +145,26 @@ export function Sidebar({
         <NavGroup label="Overview" items={overview} onNavigate={onNavigate} />
         <NavGroup label="Operations" items={operations} onNavigate={onNavigate} />
 
-        <div>
-          <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
-            Coming soon
-          </p>
-          {soon.map((item) => {
-            const Icon = item.icon;
-            return (
-              <span
-                key={item.label}
-                className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-muted/70"
-              >
-                <Icon className="size-4" />
-                <span className="flex-1">{item.label}</span>
-                <Lock className="size-3.5" />
-              </span>
-            );
-          })}
-        </div>
+        {manager ? (
+          <div>
+            <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
+              Coming soon
+            </p>
+            {soon.map((item) => {
+              const Icon = item.icon;
+              return (
+                <span
+                  key={item.label}
+                  className="flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-muted/70"
+                >
+                  <Icon className="size-4" />
+                  <span className="flex-1">{item.label}</span>
+                  <Lock className="size-3.5" />
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
       </nav>
 
       <div className="mt-3 border-t border-line px-2 pt-3">

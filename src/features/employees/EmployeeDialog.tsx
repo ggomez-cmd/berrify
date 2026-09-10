@@ -5,7 +5,7 @@ import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { STATIONS } from "../../lib/constants";
 import { isValidClockPin } from "../../lib/pin";
-import type { Employee, Station } from "../../lib/types";
+import type { Employee, LoginRole, Station } from "../../lib/types";
 import { useSetClockPin, useUpsertEmployee, type EmployeeInput } from "./hooks";
 
 const empty: EmployeeInput = {
@@ -13,6 +13,7 @@ const empty: EmployeeInput = {
   email: "",
   phone: "",
   position: "Server",
+  login_role: "staff",
   hourly_rate: 0,
   active: true,
 };
@@ -40,6 +41,7 @@ export function EmployeeDialog({
         email: employee.email ?? "",
         phone: employee.phone ?? "",
         position: employee.position,
+        login_role: employee.login_role === "manager" ? "manager" : "staff",
         hourly_rate: Number(employee.hourly_rate),
         active: employee.active,
       });
@@ -63,7 +65,7 @@ export function EmployeeDialog({
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save employee");
+      setError(err instanceof Error ? err.message : "Could not save account");
     }
   };
 
@@ -71,8 +73,8 @@ export function EmployeeDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={employee ? "Edit employee" : "Add employee"}
-      description="Staff need this email plus the invite code when they sign up."
+      title={employee ? "Edit account" : "Create account"}
+      description="Admins set station, pay, and whether this person is a manager or staff. They sign up with this email and the invite code."
     >
       <form id="employee-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
         <div className="col-span-2">
@@ -111,6 +113,16 @@ export function EmployeeDialog({
                 {s}
               </option>
             ))}
+          </Select>
+        </Field>
+        <Field label="App access" htmlFor="emp-login-role">
+          <Select
+            id="emp-login-role"
+            value={values.login_role}
+            onChange={(e) => setValues((v) => ({ ...v, login_role: e.target.value as LoginRole }))}
+          >
+            <option value="staff">Staff</option>
+            <option value="manager">Manager</option>
           </Select>
         </Field>
         <Field label="Hourly rate" htmlFor="emp-rate">
@@ -157,7 +169,7 @@ export function EmployeeDialog({
           Cancel
         </Button>
         <Button type="submit" form="employee-form" disabled={upsert.isPending || setPin.isPending}>
-          {upsert.isPending || setPin.isPending ? "Saving…" : "Save employee"}
+          {upsert.isPending || setPin.isPending ? "Saving…" : "Save account"}
         </Button>
       </div>
     </Dialog>

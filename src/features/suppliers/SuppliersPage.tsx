@@ -28,7 +28,7 @@ export function SuppliersPage() {
   }, [suppliers, search]);
 
   if (!manager) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/schedule" replace />;
   }
 
   return (

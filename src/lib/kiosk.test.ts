@@ -9,7 +9,7 @@ describe("kiosk lock timing", () => {
 });
 
 describe("shouldPromptKioskExit", () => {
-  it("prompts unless the org has no owner PIN configured", () => {
+  it("prompts unless the org has no admin PIN configured", () => {
     expect(shouldPromptKioskExit(true)).toBe(true);
     expect(shouldPromptKioskExit(undefined)).toBe(true);
     expect(shouldPromptKioskExit(false)).toBe(false);

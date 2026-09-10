@@ -16,11 +16,11 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 
 | Role | Who it is | Extra access |
 | --- | --- | --- |
-| **Staff** | Line staff with a linked employee row | Dashboard, Schedule (own published shifts), Time Clock (Clock + Who’s working), Inventory, Suppliers, Movements |
-| **Manager** | Day-to-day operator | Everything staff can do, plus Employees, Invoices, and Time Clock Attendance / Activity / Exceptions |
-| **Owner** | Workspace owner | Everything a manager can do, plus Time Clock **Settings** |
+| **Staff** | Line staff with a linked employee row | Schedule (own published shifts) and Time Clock (Clock in / Clock out), including the kiosk |
+| **Manager** | Day-to-day operator | Dashboard, schedule editing, Time Clock attendance, inventory, invoices, and suppliers. Cannot create accounts or edit pay. |
+| **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
 
-Staff cannot open Employees or Invoices. Those routes send them back to Schedule or Dashboard.
+Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, or Movements. Those routes send them to Schedule.
 
 ### How to use it
 
@@ -33,18 +33,18 @@ Staff cannot open Employees or Invoices. Those routes send them back to Schedule
 
 | Button | Account | Password |
 | --- | --- | --- |
-| Fill manager demo | `demo@berrify.local` | `12345678` |
+| Fill admin demo | `demo@berrify.local` | `12345678` |
 | Fill staff demo | `server@berrify.local` | `12345678` |
 
 There is also a cook demo at `cook@berrify.local` with the same password.
 
-**Important:** `demo@berrify.local` is a manager/owner login and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use `server@berrify.local` or `cook@berrify.local` to try Clock in / Clock out.
+**Important:** `demo@berrify.local` is an admin login and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use `server@berrify.local` or `cook@berrify.local` to try Clock in / Clock out.
 
-### Joining an existing restaurant (staff)
+### Joining an existing restaurant (staff or manager)
 
-1. A manager adds you on **Employees** with the **same email** you will use to sign up.
-2. You create an account with that email.
-3. Berrify attaches you to that restaurant as staff instead of creating a second workspace.
+1. An admin adds you on **Employees** with the **same email** you will use to sign up, and sets App access to **Staff** or **Manager**.
+2. You create an account with that email and the invite code.
+3. Berrify attaches you to that restaurant with the access the admin chose, instead of creating a second workspace.
 
 ### Sign out
 
@@ -56,9 +56,9 @@ Use **Sign out** at the bottom of the left sidebar.
 
 The left sidebar is always visible after sign-in.
 
-- **Overview:** Dashboard, Schedule, Time Clock
-- **Operations:** Employees (manager+), Inventory, Invoices (manager+), Suppliers, Movements
-- **Coming soon:** Payroll, Analytics (locked)
+- **Overview:** Dashboard, Schedule, Time Clock, Kiosk (staff see Schedule, Time Clock, and Kiosk only)
+- **Operations (admin / manager):** Employees (admin only), Inventory, Invoices, Suppliers, Movements
+- **Coming soon (admin / manager):** Payroll, Analytics (locked)
 
 The current page is highlighted in burgundy. The restaurant name under the page title is your organization (for example Pacifico Kitchen).
 
@@ -68,7 +68,7 @@ The current page is highlighted in burgundy. The restaurant name under the page 
 
 ### What it does
 
-Dashboard is the home screen. It summarizes stock, who is on the clock, invoices waiting for review, and scheduled hours for the current week. It also lists recent activity, today’s published shifts (managers) or your next shifts (staff), and items at or below reorder.
+Dashboard is the home screen for **admins and managers**. It summarizes stock, who is on the clock, invoices waiting for review, and scheduled hours for the current week. Staff are sent to **Schedule** instead.
 
 ### How to use it
 
@@ -152,19 +152,17 @@ You can only punch if:
 
 Invalid actions stay disabled. You cannot clock in twice, or clock out while on break, without a manager force-out or a recorded missing punch.
 
-### Who’s working (everyone)
+### Who’s working (manager / admin)
 
 Shows people currently **Working** or **On break**, with time since clock-in.
 
-Managers also see **Force out**:
+Managers and admins can **Force out**:
 
 1. Click **Force out** on that person.
 2. Type a required reason.
 3. Confirm. That writes a manager clock-out. It does not invent a normal employee punch.
 
-Staff see names and state, not punch timestamps.
-
-### Attendance (manager / owner)
+### Attendance (manager / admin)
 
 Use this when someone forgot to punch.
 
@@ -173,11 +171,11 @@ Use this when someone forgot to punch.
 3. Click **Record punch**.
 4. **Derived time entries** lists closed sessions: started, ended, worked time (`h:mm`), unpaid break, and status (`pending` or `exception`).
 
-### Activity (manager / owner)
+### Activity (manager / admin)
 
 A log of clock events for the organization: when, who, event, actor (employee / manager / system), and source (web, and so on).
 
-### Exceptions (manager / owner)
+### Exceptions (manager / admin)
 
 Exceptions flag attendance problems. They are **not** a timesheet approval queue.
 
@@ -186,7 +184,7 @@ Exceptions flag attendance problems. They are **not** a timesheet approval queue
 
 Types you may see include missed in, missed out, early, late, long break, unscheduled, overlap, and a reserved `missing_employment_term` (no payroll terms yet).
 
-### Settings (owner only)
+### Settings (admin only)
 
 Sets organization clock rules:
 
@@ -202,11 +200,11 @@ Time Clock is Phase 1: there is no PIN pad, no pay period, no payroll export, an
 
 ## Employees
 
-**Managers and owners only.**
+**Admins only.**
 
 ### What it does
 
-Employees is the roster: name, station, phone, hourly rate, whether a login is linked, and active/inactive.
+Employees is where admins create accounts: name, station (job), app access (manager or staff), phone, hourly rate, whether a login is linked, and active/inactive.
 
 A roster row can exist **before** the person has an account. **Login = Linked** means `user_id` is set. **Invite pending** means they are on the roster but have not signed up with that email yet.
 
@@ -214,12 +212,14 @@ A roster row can exist **before** the person has an account. **Login = Linked** 
 
 1. Open **Employees**.
 2. Search the roster by name, email, or station.
-3. Click **Add employee**. Fill:
+3. Click **Add account**. Fill:
    - Full name (required)
    - Email (use the address they will sign up with)
    - Phone
    - Station
+   - **App access** — Manager or Staff
    - Hourly rate
+   - Clock PIN (optional)
    - **Active on the roster**
 4. **Edit** changes the same fields. Uncheck Active to keep history but block punches and new shifts on the active board.
 5. **Delete** removes the roster row after confirm.
@@ -229,6 +229,8 @@ Hourly rate is stored for the roster. Berrify does **not** run payroll from it y
 ---
 
 ## Inventory
+
+**Admins and managers only.**
 
 ### What it does
 
@@ -264,6 +266,8 @@ Units: ea, lb, kg, oz, gal, qt, L, case, bag, sleeve.
 
 ## Suppliers
 
+**Admins and managers only.**
+
 ### What it does
 
 Suppliers is the vendor list used on inventory items and invoice review (QuickBooks vendor).
@@ -280,6 +284,8 @@ Link a supplier to an item on Inventory so the item table shows who you buy it f
 ---
 
 ## Stock movements
+
+**Admins and managers only.**
 
 ### What it does
 
@@ -298,7 +304,7 @@ This page is view-only. To add a movement, go to Inventory → **Adjust**.
 
 ## Invoices
 
-**Managers and owners only.**
+**Admins and managers only.**
 
 ### What it does
 
@@ -367,18 +373,18 @@ Pink carbonless photos shot sideways usually need a human pass before export.
 
 ## What each role can do
 
-| Task | Staff | Manager | Owner |
+| Task | Staff | Manager | Admin |
 | --- | --- | --- | --- |
 | Sign in / sign out | Yes | Yes | Yes |
-| Dashboard | Yes | Yes | Yes |
+| Dashboard | No | Yes | Yes |
 | See own published shifts | Yes | Yes | Yes |
 | Edit / publish the week board | No | Yes | Yes |
 | Punch (if linked + active) | Yes | Yes | Yes |
-| Who’s working | Yes (names/state) | Yes (times + force out) | Yes |
+| Who’s working | No | Yes (times + force out) | Yes |
 | Record missing punch, activity, exceptions | No | Yes | Yes |
 | Clock settings | No | No | Yes |
-| Employees | No | Yes | Yes |
-| Inventory, suppliers, movements | Yes | Yes | Yes |
+| Employees (create accounts, pay, access) | No | No | Yes |
+| Inventory, suppliers, movements | No | Yes | Yes |
 | Capture / review / export invoices | No | Yes | Yes |
 | Payroll / Analytics | No | No | No |
 

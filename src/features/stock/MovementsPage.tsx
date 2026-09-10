@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
 import { Select } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -6,6 +8,7 @@ import { Table, THead, Td, Th } from "../../components/ui/table";
 import { MOVEMENT_REASONS } from "../../lib/constants";
 import { formatDateTime, formatQty } from "../../lib/format";
 import { reasonLabel } from "../../lib/inventory";
+import { isManager } from "../../lib/schedule";
 import type { MovementReason } from "../../lib/types";
 import { useStockMovements } from "./hooks";
 
@@ -27,6 +30,7 @@ function toneFor(reason: MovementReason) {
 }
 
 export function MovementsPage() {
+  const { role } = useAuth();
   const { data: movements = [], isLoading, error } = useStockMovements();
   const [search, setSearch] = useState("");
   const [reason, setReason] = useState<"" | MovementReason>("");
@@ -41,6 +45,10 @@ export function MovementsPage() {
       return `${name} ${sku} ${m.note ?? ""}`.toLowerCase().includes(q);
     });
   }, [movements, search, reason]);
+
+  if (!isManager(role)) {
+    return <Navigate to="/schedule" replace />;
+  }
 
   return (
     <div>

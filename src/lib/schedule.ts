@@ -1,7 +1,11 @@
 import type { MembershipRole, Shift, ShiftStatus, Station } from "./types";
 
+export function isAdmin(role: MembershipRole | null): boolean {
+  return role === "admin";
+}
+
 export function isManager(role: MembershipRole | null): boolean {
-  return role === "owner" || role === "manager";
+  return role === "admin" || role === "manager";
 }
 
 export function stationLabel(station: Station): string {

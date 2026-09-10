@@ -1,6 +1,6 @@
 import { AlertTriangle, CalendarDays, Clock, Plus, Receipt } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -18,7 +18,6 @@ import {
   sameDay,
   weekStart,
 } from "../../lib/schedule";
-import { useMyEmployee } from "../employees/hooks";
 import { useInventoryItems } from "../inventory/hooks";
 import { useInvoices } from "../invoices/hooks";
 import { useShifts } from "../schedule/hooks";
@@ -75,13 +74,19 @@ function kindLabel(kind: ActivityKind): string {
 }
 
 export function DashboardPage() {
-  const { role, org } = useAuth();
-  const manager = isManager(role);
+  const { role } = useAuth();
+  if (!isManager(role)) {
+    return <Navigate to="/schedule" replace />;
+  }
+  return <ManagerDashboard />;
+}
+
+function ManagerDashboard() {
+  const { org } = useAuth();
   const [search, setSearch] = useState("");
   const itemsQuery = useInventoryItems();
   const movementsQuery = useStockMovements();
   const shiftsQuery = useShifts();
-  const meQuery = useMyEmployee();
   const invoicesQuery = useInvoices();
   const workingQuery = useWhosWorking();
 
@@ -90,8 +95,6 @@ export function DashboardPage() {
   const shifts = shiftsQuery.data ?? [];
   const low = items.filter(isLowStock);
   const today = new Date();
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
   const onToday = shifts.filter((s) => s.status === "published" && sameDay(s.starts_at, today));
   const invoices = invoicesQuery.data ?? [];
   const toReview = invoices.filter((inv) => inv.status === "received" || inv.status === "extracted");
@@ -101,14 +104,6 @@ export function DashboardPage() {
   );
   const scheduledHours = weekShifts.reduce((sum, shift) => sum + hoursBetween(shift.starts_at, shift.ends_at), 0);
   const onClock = workingQuery.data ?? [];
-  const myUpcoming = shifts
-    .filter(
-      (s) =>
-        s.status === "published" &&
-        s.employee_id === meQuery.data?.id &&
-        new Date(s.starts_at).getTime() >= startOfToday.getTime(),
-    )
-    .slice(0, 5);
   const dateLabel = today.toLocaleDateString(undefined, {
     weekday: "long",
     day: "numeric",
@@ -174,14 +169,12 @@ export function DashboardPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="min-w-0 flex-1 md:flex-none"
           />
-          {manager ? (
-            <Link to="/invoices" className="w-full sm:w-auto">
-              <Button className="w-full sm:w-auto">
-                <Plus className="size-4" />
-                New invoice
-              </Button>
-            </Link>
-          ) : null}
+          <Link to="/invoices" className="w-full sm:w-auto">
+            <Button className="w-full sm:w-auto">
+              <Plus className="size-4" />
+              New invoice
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -203,7 +196,7 @@ export function DashboardPage() {
         <KpiCard
           title="Invoices to review"
           value={`${toReview.length} invoices`}
-          hint={manager ? `${invoices.length} captured` : "Staff view"}
+          hint={`${invoices.length} captured`}
           icon={Receipt}
           tone="warn"
         />
@@ -256,45 +249,24 @@ export function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">{manager ? "On today" : "My next shifts"}</h2>
+            <h2 className="font-semibold">On today</h2>
             <Link to="/schedule" className="text-xs font-medium text-wine hover:underline">
               Schedule
             </Link>
           </div>
           {shiftsQuery.isLoading ? (
             <p className="text-sm text-muted">Loading…</p>
-          ) : manager ? (
-            onToday.length === 0 ? (
-              <p className="text-sm text-muted">No published shifts today.</p>
-            ) : (
-              <ul className="space-y-2">
-                {onToday.slice(0, 8).map((s) => (
-                  <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate">
-                      <span className="font-medium">{s.employees?.full_name ?? "Open"}</span>
-                      <span className="ml-2 text-muted">{s.position}</span>
-                    </span>
-                    <span className="shrink-0 text-muted">{formatTimeRange(s.starts_at, s.ends_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            )
-          ) : myUpcoming.length === 0 ? (
-            <p className="text-sm text-muted">No upcoming published shifts.</p>
+          ) : onToday.length === 0 ? (
+            <p className="text-sm text-muted">No published shifts today.</p>
           ) : (
             <ul className="space-y-2">
-              {myUpcoming.map((s) => (
+              {onToday.slice(0, 8).map((s) => (
                 <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="font-medium">
-                    {new Date(s.starts_at).toLocaleDateString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })}
+                  <span className="min-w-0 truncate">
+                    <span className="font-medium">{s.employees?.full_name ?? "Open"}</span>
+                    <span className="ml-2 text-muted">{s.position}</span>
                   </span>
-                  <span className="text-muted">
-                    {formatTimeRange(s.starts_at, s.ends_at)} · {s.position}
-                  </span>
+                  <span className="shrink-0 text-muted">{formatTimeRange(s.starts_at, s.ends_at)}</span>
                 </li>
               ))}
             </ul>

@@ -4,15 +4,25 @@ import {
   employeeWeekHours,
   filterShiftsForWeek,
   hoursBetween,
+  isAdmin,
   isManager,
   shiftsOverlap,
   visibleShiftsForRole,
   weekStart,
 } from "./schedule";
 
+describe("isAdmin", () => {
+  it("treats only admin as admin", () => {
+    expect(isAdmin("admin")).toBe(true);
+    expect(isAdmin("manager")).toBe(false);
+    expect(isAdmin("staff")).toBe(false);
+    expect(isAdmin(null)).toBe(false);
+  });
+});
+
 describe("isManager", () => {
-  it("treats owner and manager as managers", () => {
-    expect(isManager("owner")).toBe(true);
+  it("treats admin and manager as managers", () => {
+    expect(isManager("admin")).toBe(true);
     expect(isManager("manager")).toBe(true);
     expect(isManager("staff")).toBe(false);
     expect(isManager(null)).toBe(false);
@@ -131,7 +141,7 @@ describe("visibleShiftsForRole", () => {
   ];
 
   it("lets managers see every shift", () => {
-    expect(visibleShiftsForRole(shifts, "owner", "me")).toHaveLength(3);
+    expect(visibleShiftsForRole(shifts, "admin", "me")).toHaveLength(3);
   });
 
   it("lets staff see only their published shifts", () => {

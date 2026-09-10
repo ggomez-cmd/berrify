@@ -11,7 +11,7 @@ import { PageTabs } from "../../components/ui/page-tabs";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatDuration } from "../../lib/format";
 import { isValidClockPin } from "../../lib/pin";
-import { isManager } from "../../lib/schedule";
+import { isAdmin, isManager } from "../../lib/schedule";
 import { cn } from "../../lib/cn";
 import { useSetOwnerKioskPin } from "../kiosk/hooks";
 import {
@@ -98,22 +98,22 @@ function eventIcon(event: ClockEventType) {
 export function TimeClockPage() {
   const { role, org } = useAuth();
   const manager = isManager(role);
-  const owner = role === "owner";
+  const admin = isAdmin(role);
   const timeZone = org?.timezone ?? "America/Puerto_Rico";
   const [tab, setTab] = useState<Tab>("clock");
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "clock", label: "Clock" },
-    { id: "working", label: "Who’s working" },
   ];
   if (manager) {
     tabs.push(
+      { id: "working", label: "Who’s working" },
       { id: "attendance", label: "Attendance" },
       { id: "activity", label: "Activity" },
       { id: "exceptions", label: "Exceptions" },
     );
   }
-  if (owner) {
+  if (admin) {
     tabs.push({ id: "settings", label: "Settings" });
   }
 
@@ -126,7 +126,7 @@ export function TimeClockPage() {
       {tab === "attendance" && manager ? <AttendancePanel timeZone={timeZone} /> : null}
       {tab === "activity" && manager ? <ActivityPanel timeZone={timeZone} /> : null}
       {tab === "exceptions" && manager ? <ExceptionsPanel timeZone={timeZone} /> : null}
-      {tab === "settings" && owner ? <SettingsPanel /> : null}
+      {tab === "settings" && admin ? <SettingsPanel /> : null}
     </div>
   );
 }

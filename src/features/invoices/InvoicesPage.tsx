@@ -66,7 +66,7 @@ export function InvoicesPage() {
   const [statusTab, setStatusTab] = useState<"all" | InvoiceWithSupplier["status"]>("all");
 
   if (!isManager(role)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/schedule" replace />;
   }
 
   const ingest = async (file: File, source: InvoiceSource, caption?: string) => {
