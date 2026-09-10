@@ -34,10 +34,10 @@ Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movement
 1. On **Sign in**, click **Forgot password?**
 2. Enter your email and click **Send reset link**.
 3. Berrify always shows the same confirmation so it does not reveal whether that email has an account.
-4. Open the email, set a new password (at least 6 characters) on **Reset password**, then sign in again.
+4. Open the email (**Reset your Berrify password**), set a new password (at least 6 characters) on **Reset password**, then sign in again.
 5. If the link is stale, the reset page says **This link expired. Request a new one.**
 
-Email delivery uses the project’s existing Supabase mail settings.
+The message is Berrify-branded (wine button, wordmark). Delivery still uses the project’s existing Supabase mail settings. Seed addresses such as `demo@berrify.local` do not receive mail.
 
 **Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use a staff seed account such as `server@berrify.local` to try Clock in / Clock out. Seed passwords live in the README, not on the sign-in screen.
 
