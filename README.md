@@ -8,7 +8,7 @@ Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 
 How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
-**Production:** [https://berrify.app](https://berrify.app) (also [www.berrify.app](https://www.berrify.app) and [berrify.ggomez-fd2.workers.dev](https://berrify.ggomez-fd2.workers.dev)). Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). Add each origin under Supabase Auth → URL configuration → Redirect URLs.
+**Production:** [https://berrify.app](https://berrify.app) (also [www.berrify.app](https://www.berrify.app) and [berrify.ggomez-fd2.workers.dev](https://berrify.ggomez-fd2.workers.dev)). Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). Add each origin under Supabase Auth → URL configuration → Redirect URLs, including `https://berrify.app/reset-password` and local `http://localhost:5173/reset-password`.
 
 ## Stack
 
@@ -45,8 +45,8 @@ Demo accounts (created by `npm run db:seed`), password `12345678`:
 - Staff (server): `server@berrify.local`
 - Staff (cook): `cook@berrify.local`
 
-Managers create an employee with an email. When that person signs up with the
-same email, they join the restaurant as staff instead of getting a new workspace.
+Admins create employee accounts on the Employees page. The login screen is
+sign-in only (no sign up). Use **Forgot password?** to email a reset link.
 
 ## Scripts
 
@@ -150,7 +150,8 @@ npm run workers:deploy
 
 The Worker also stays on `https://berrify.ggomez-fd2.workers.dev`. Custom
 domains `berrify.app` and `www.berrify.app` are declared in `wrangler.jsonc`.
-Add those origins under Supabase Auth → URL configuration → Redirect URLs.
+Add those origins under Supabase Auth → URL configuration → Redirect URLs,
+plus `https://berrify.app/reset-password` and `http://localhost:5173/reset-password`.
 
 GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 `main` when these repository secrets exist:

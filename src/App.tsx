@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppShell } from "./components/layout/AppShell";
 import { LoginPage } from "./features/auth/LoginPage";
+import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { EmployeesPage } from "./features/employees/EmployeesPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
@@ -25,6 +26,7 @@ export default function App() {
       <BrowserRouter basename={routerBasename()}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="kiosk" element={<KioskPage />} />
             <Route element={<AppShell />}>
