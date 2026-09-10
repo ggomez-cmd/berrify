@@ -496,12 +496,17 @@ try {
   );
   assert(staffHash, "staff can select clock_pin_hash");
 
-  const badPin = await asAuthenticated(cookUserId, async () =>
+  const staffKioskUnlock = await asAuthenticated(staffId, async () =>
+    expectReject(() => q(`select public.kiosk_unlock('9999')`), /Not authorized/i),
+  );
+  assert(staffKioskUnlock, "staff can unlock the kiosk");
+
+  const badPin = await asAuthenticated(ownerId, async () =>
     expectReject(() => q(`select public.kiosk_unlock('0000')`), /Invalid PIN|PIN must be/i),
   );
   assert(badPin, "wrong PIN unlocks the kiosk");
 
-  const unlocked = await asAuthenticated(cookUserId, async () => {
+  const unlocked = await asAuthenticated(ownerId, async () => {
     const { rows } = await q<{ kiosk_unlock: { id: string; full_name: string; state: string } }>(
       `select public.kiosk_unlock('9999') as kiosk_unlock`,
     );
@@ -511,7 +516,7 @@ try {
   assert(unlocked?.full_name === "Kiosk Probe", "kiosk_unlock hid the employee name");
   assert(unlocked?.state === "off_clock", "kiosk probe was not off clock");
 
-  const kioskIn = await asAuthenticated(cookUserId, async () => {
+  const kioskIn = await asAuthenticated(ownerId, async () => {
     const { rows } = await q<ClockEvent>(
       `select * from public.kiosk_record_clock_event('9999', 'clock_in', $1::uuid, null)`,
       [crypto.randomUUID()],
