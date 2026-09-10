@@ -42,3 +42,6 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Supabase CLI local cache
+supabase/.temp/
