@@ -19,6 +19,7 @@
     "verify:db": "tsx scripts/verify-db.ts",
     "verify:time-clock": "tsx scripts/verify-time-clock.ts",
     "verify:authz": "tsx scripts/verify-authz.ts",
+    "auth:email-templates": "tsx scripts/apply-auth-email-templates.ts",
     "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",
     "ocr:photo": "tsx scripts/ocr-photo.ts",
     "workers:dev": "wrangler dev",

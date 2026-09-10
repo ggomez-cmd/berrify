@@ -48,6 +48,12 @@ Demo accounts (created by `npm run db:seed`), password `12345678`:
 Admins create employee accounts on the Employees page. The login screen is
 sign-in only (no sign up). Use **Forgot password?** to email a reset link.
 
+The reset message is the Berrify-branded HTML in
+`supabase/templates/recovery.html` (subject **Reset your Berrify password**).
+Paste it into Supabase **Authentication → Email Templates → Reset password**,
+or apply it with `SUPABASE_ACCESS_TOKEN` and `npm run auth:email-templates`.
+The wordmark is served from `https://berrify.app/email/berrify-wordmark.png`.
+
 ## Scripts
 
 | Command             | Description                                         |
@@ -65,6 +71,7 @@ sign-in only (no sign up). Use **Forgot password?** to email a reset link.
 | `npm run workers:dev` | Build the app and run it on Cloudflare Workers locally. |
 | `npm run workers:deploy` | Build and deploy the Worker (SPA + `/api`). |
 | `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
+| `npm run auth:email-templates` | Push the branded reset-password email to Supabase Auth. |
 
 ## Data model
 
