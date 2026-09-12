@@ -342,6 +342,14 @@ Statuses:
 4. Filter by restaurant if you run more than one set of books.
 5. Use tabs **All / Extracted / Reviewed / Exported**.
 
+### How to forward from a kitchen WhatsApp group
+
+Official WhatsApp cannot put the Business number in a normal kitchen group. In that group, photograph the factura, then **forward the photo** to the Berrify Business number. Put **Semilla** or **Kane** in the caption so the bill lands on the right books.
+
+The photo shows up on **Invoices** as **received**. Open **Review** — Berrify reads the photo there (not when the message arrives). If one photo has two bills, the extra bill becomes its own row.
+
+You can still use **WhatsApp** on the Invoices page to upload a forward by hand.
+
 Routing (first match wins):
 
 1. WhatsApp group name / ingest `--group` / `--restaurant`
@@ -420,6 +428,6 @@ Time Clock → Attendance → Record missing punch, or Exceptions → Reconcile 
 - Analytics
 - PIN or kiosk clock
 - Live QuickBooks Online OAuth or Web Connector sync (export is a file you import)
-- Unofficial WhatsApp group bots (official Cloud API cannot join a normal kitchen group)
+- Unofficial WhatsApp group bots (official Cloud API cannot join a normal kitchen group — forward the photo to the Business number instead)
 
 For developer setup, migrations, and seed data, see the repository `README.md`.

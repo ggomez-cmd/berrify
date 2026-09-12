@@ -141,7 +141,7 @@ The production app is a Vite SPA plus a small Worker. Static files come from
 
 - `GET /api/health` — liveness JSON
 - `GET /api/webhooks/whatsapp` — Meta verify-token handshake (`WHATSAPP_VERIFY_TOKEN`)
-- `POST /api/webhooks/whatsapp` — reserved (returns 501 until ingest is wired)
+- `POST /api/webhooks/whatsapp` — Cloud API ingest (HMAC + Graph media download → `invoices` row, no OCR on the Worker)
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -168,7 +168,19 @@ GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Optional Worker secret: `npx wrangler secret put WHATSAPP_VERIFY_TOKEN`.
+Worker secrets for inbound WhatsApp (also listed in `.dev.vars.example`):
+
+```bash
+npx wrangler secret put WHATSAPP_VERIFY_TOKEN
+npx wrangler secret put WHATSAPP_APP_SECRET
+npx wrangler secret put WHATSAPP_ACCESS_TOKEN
+npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID
+npx wrangler secret put WHATSAPP_ORG_ID
+npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+`POST /api/webhooks/whatsapp` verifies `X-Hub-Signature-256`, downloads image media from Graph, and inserts `source: "whatsapp"` / `status: "received"` with `ocr_text` left null. Duplicate `whatsapp_message_id` values return 200. OCR runs later in Invoices → Review. The official Cloud API cannot join a kitchen group — staff photograph the bill there, then forward it to the Business number with a `Semilla` or `Kane` caption.
 
 Cursor loads Cloudflare MCP servers from `.cursor/mcp.json` (docs, bindings,
 builds, observability, and the main API). Authenticate the account-scoped
