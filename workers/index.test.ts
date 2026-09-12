@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { signWhatsAppBody } from "../src/lib/whatsapp-webhook";
 import worker, { handleApi, redirectToHttps, type WorkerEnv } from "./index";
 
 const env: WorkerEnv = {
@@ -6,8 +7,111 @@ const env: WorkerEnv = {
   WHATSAPP_VERIFY_TOKEN: "demo-verify",
 };
 
-function api(path: string, init?: RequestInit): Promise<Response> {
-  return handleApi(new Request(`https://berrify.example${path}`, init), env);
+const ingestEnv: WorkerEnv = {
+  ...env,
+  WHATSAPP_APP_SECRET: "app-secret",
+  WHATSAPP_ACCESS_TOKEN: "graph-token",
+  WHATSAPP_PHONE_NUMBER_ID: "123456",
+  WHATSAPP_ORG_ID: "org-1",
+  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role",
+};
+
+function api(
+  path: string,
+  init?: RequestInit,
+  workerEnv: WorkerEnv = env,
+  fetchImpl?: typeof fetch,
+): Promise<Response> {
+  return handleApi(new Request(`https://berrify.example${path}`, init), workerEnv, fetchImpl);
+}
+
+const IMAGE_BODY = JSON.stringify({
+  object: "whatsapp_business_account",
+  entry: [
+    {
+      changes: [
+        {
+          value: {
+            metadata: { phone_number_id: "123456" },
+            messages: [
+              {
+                id: "wamid.HBgLTEST",
+                from: "17875550100",
+                type: "image",
+                image: {
+                  id: "MEDIA_1",
+                  caption: "Semilla factura",
+                  mime_type: "image/jpeg",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+const TEXT_BODY = JSON.stringify({
+  object: "whatsapp_business_account",
+  entry: [
+    {
+      changes: [
+        {
+          value: {
+            metadata: { phone_number_id: "123456" },
+            messages: [
+              {
+                id: "wamid.TEXT",
+                from: "17875550100",
+                type: "text",
+                text: { body: "hello" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: number }) {
+  const inserted: unknown[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url === "https://graph.facebook.com/v21.0/MEDIA_1") {
+      return Response.json({
+        url: "https://lookaside.fbsbx.com/file",
+        mime_type: "image/jpeg",
+      });
+    }
+    if (url === "https://lookaside.fbsbx.com/file") {
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/jpeg" },
+      });
+    }
+    if (url.includes("/rest/v1/restaurants")) {
+      return Response.json([
+        { id: "r-semilla", name: "Semilla", qbo_company_name: "Semilla", slug: "semilla" },
+      ]);
+    }
+    if (url.includes("/rest/v1/restaurant_aliases")) {
+      return Response.json([
+        { restaurant_id: "r-semilla", match_kind: "caption", match_text: "semilla" },
+      ]);
+    }
+    if (url.includes("/rest/v1/invoices") && method === "GET") {
+      return Response.json(options?.alreadyExists ? [{ id: "inv-1" }] : []);
+    }
+    if (url.includes("/rest/v1/invoices") && method === "POST") {
+      inserted.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(null, { status: options?.insertStatus ?? 201 });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  return { fetchImpl, inserted };
 }
 
 describe("Worker API", () => {
@@ -45,9 +149,101 @@ describe("Worker API", () => {
     expect(response.status).toBe(403);
   });
 
-  it("returns 501 for WhatsApp POSTs until ingest is wired", async () => {
+  it("returns 503 for WhatsApp POSTs when ingest secrets are missing", async () => {
     const response = await api("/api/webhooks/whatsapp", { method: "POST", body: "{}" });
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ ok: false });
+  });
+
+  it("rejects a WhatsApp POST with a bad signature", async () => {
+    const response = await api(
+      "/api/webhooks/whatsapp",
+      {
+        method: "POST",
+        headers: { "X-Hub-Signature-256": "sha256=deadbeef" },
+        body: IMAGE_BODY,
+      },
+      ingestEnv,
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("acks text-only WhatsApp POSTs without inserting", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const signature = await signWhatsAppBody(TEXT_BODY, "app-secret");
+    const response = await api(
+      "/api/webhooks/whatsapp",
+      {
+        method: "POST",
+        headers: { "X-Hub-Signature-256": signature },
+        body: TEXT_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 0,
+      skipped: 0,
+      errors: [],
+    });
+    expect(inserted).toEqual([]);
+  });
+
+  it("downloads a WhatsApp image and inserts a received invoice", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const signature = await signWhatsAppBody(IMAGE_BODY, "app-secret");
+    const response = await api(
+      "/api/webhooks/whatsapp",
+      {
+        method: "POST",
+        headers: { "X-Hub-Signature-256": signature },
+        body: IMAGE_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 1,
+      skipped: 0,
+      errors: [],
+    });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      org_id: "org-1",
+      restaurant_id: "r-semilla",
+      status: "received",
+      source: "whatsapp",
+      whatsapp_message_id: "wamid.HBgLTEST",
+      caption: "Semilla factura",
+      ocr_text: null,
+    });
+  });
+
+  it("treats a duplicate WhatsApp message id as success", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch({ alreadyExists: true });
+    const signature = await signWhatsAppBody(IMAGE_BODY, "app-secret");
+    const response = await api(
+      "/api/webhooks/whatsapp",
+      {
+        method: "POST",
+        headers: { "X-Hub-Signature-256": signature },
+        body: IMAGE_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 0,
+      skipped: 1,
+      errors: [],
+    });
+    expect(inserted).toEqual([]);
   });
 
   it("rejects non-GET health requests", async () => {

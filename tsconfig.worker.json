@@ -13,5 +13,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["workers/index.ts"]
+  "include": ["workers/index.ts", "workers/whatsapp-post.ts"]
 }
