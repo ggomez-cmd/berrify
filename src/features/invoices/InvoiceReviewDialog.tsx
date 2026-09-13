@@ -29,6 +29,7 @@ import type {
   Supplier,
   VendorAliasRow,
 } from "../../lib/types";
+import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
 import { useCreateInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
@@ -139,6 +140,7 @@ export function InvoiceReviewDialog({
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !invoice) return;
@@ -175,6 +177,7 @@ export function InvoiceReviewDialog({
     setOcrBusy(false);
     setOcrText(null);
     setExtraBills([]);
+    setLightboxOpen(false);
     ocrStartedFor.current = null;
   }, [open, invoice]);
 
@@ -351,7 +354,13 @@ export function InvoiceReviewDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        if (!next && lightboxOpen) {
+          setLightboxOpen(false);
+          return;
+        }
+        onOpenChange(next);
+      }}
       title={invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Review invoice"}
       description="Confirm SKUs and the QuickBooks Desktop Expenses tab, then export an IIF bill."
       className="max-h-[92vh] w-[min(1100px,calc(100vw-1.5rem))] overflow-y-auto"
@@ -362,11 +371,28 @@ export function InvoiceReviewDialog({
             Loading photo…
           </div>
         ) : media.data?.image_data ? (
-          <img
-            src={media.data.image_data}
-            alt="Invoice photo"
-            className="max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
-          />
+          <>
+            <button
+              type="button"
+              className="relative w-full cursor-pointer rounded-xl text-left"
+              aria-label="Click to zoom"
+              onClick={() => setLightboxOpen(true)}
+            >
+              <img
+                src={media.data.image_data}
+                alt="Invoice photo"
+                className="pointer-events-none max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
+              />
+              <span className="absolute bottom-2 left-2 rounded-lg bg-navy/70 px-2 py-1 text-xs text-white">
+                Click to zoom
+              </span>
+            </button>
+            <InvoicePhotoLightbox
+              open={lightboxOpen}
+              src={media.data.image_data}
+              onClose={() => setLightboxOpen(false)}
+            />
+          </>
         ) : (
           <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
             No photo attached
