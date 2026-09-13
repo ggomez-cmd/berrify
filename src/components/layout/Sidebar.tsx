@@ -6,7 +6,6 @@ import {
   Clock,
   LayoutDashboard,
   Lock,
-  LogOut,
   Receipt,
   Tablet,
   Truck,
@@ -20,6 +19,7 @@ import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
 import { isAdmin, isManager } from "../../lib/schedule";
 import { BrandMark } from "../ui/brand-mark";
+import { SignOutButton } from "./SignOutButton";
 
 type NavItem = {
   to: string;
@@ -85,7 +85,7 @@ export function Sidebar({
   label?: string;
   hidden?: boolean;
 }) {
-  const { role, user, signOut } = useAuth();
+  const { role, user } = useAuth();
   const manager = isManager(role);
   const admin = isAdmin(role);
 
@@ -168,17 +168,7 @@ export function Sidebar({
 
       <div className="mt-3 border-t border-line px-2 pt-3">
         <p className="mb-1 truncate px-1 text-[11px] text-muted">{user?.email}</p>
-        <button
-          type="button"
-          onClick={() => {
-            onNavigate?.();
-            void signOut();
-          }}
-          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-muted hover:bg-paper hover:text-ink"
-        >
-          <LogOut className="size-4" />
-          Sign out
-        </button>
+        <SignOutButton className="w-full justify-start" onSignedOut={onNavigate} />
       </div>
     </aside>
   );
