@@ -20,11 +20,12 @@ export async function downloadTelegramFile(
   }
   const meta = (await metaResponse.json()) as {
     ok?: boolean;
+    description?: string;
     result?: { file_path?: string; file_size?: number };
   };
   const filePath = meta.result?.file_path;
   if (!meta.ok || !filePath) {
-    throw new Error("Telegram getFile returned no file path");
+    throw new Error(meta.description?.trim() || "Telegram getFile returned no file path");
   }
   if ((meta.result?.file_size ?? 0) > MAX_INVOICE_IMAGE_BYTES) {
     throw new Error("Invoice photo must be 8 MB or smaller.");

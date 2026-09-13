@@ -37,9 +37,26 @@ describe("parseTelegramInboundImages", () => {
     ).toEqual([]);
   });
 
-  it("returns nothing for a non-photo payload", () => {
-    expect(parseTelegramInboundImages({ update_id: 1 })).toEqual([]);
-    expect(parseTelegramInboundImages(null)).toEqual([]);
+  it("accepts image documents and rejects PDFs", () => {
+    expect(
+      parseTelegramInboundImages({
+        update_id: 3,
+        message: {
+          message_id: 9,
+          caption: "Kane factura",
+          from: { id: 777 },
+          chat: { id: 55 },
+          document: { file_id: "DOC_IMG", mime_type: "image/jpeg", file_name: "bill.jpg" },
+        },
+      }),
+    ).toEqual([
+      {
+        messageId: "55:9",
+        from: "777",
+        caption: "Kane factura",
+        fileId: "DOC_IMG",
+      },
+    ]);
     expect(
       parseTelegramInboundImages({
         message: {
@@ -49,6 +66,11 @@ describe("parseTelegramInboundImages", () => {
         },
       }),
     ).toEqual([]);
+  });
+
+  it("returns nothing for a non-photo payload", () => {
+    expect(parseTelegramInboundImages({ update_id: 1 })).toEqual([]);
+    expect(parseTelegramInboundImages(null)).toEqual([]);
   });
 });
 
