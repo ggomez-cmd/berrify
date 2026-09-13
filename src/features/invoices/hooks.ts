@@ -222,6 +222,7 @@ export function useUpdateInvoice() {
       total: number;
       status: InvoiceStatus;
       exported_at?: string | null;
+      ocr_text?: string | null;
     }) => {
       const { error } = await supabase
         .from("invoices")
@@ -238,6 +239,7 @@ export function useUpdateInvoice() {
           total: input.total,
           status: input.status,
           exported_at: input.exported_at ?? input.invoice.exported_at,
+          ...(input.ocr_text !== undefined ? { ocr_text: input.ocr_text } : {}),
         })
         .eq("id", input.invoice.id);
       if (error) throw error;
@@ -249,8 +251,9 @@ export function useUpdateInvoice() {
         input.expenses,
       );
     },
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
       void qc.invalidateQueries({ queryKey: ["invoices"] });
+      void qc.invalidateQueries({ queryKey: ["invoice_media", input.invoice.id] });
     },
   });
 }

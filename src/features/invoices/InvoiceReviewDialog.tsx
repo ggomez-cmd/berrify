@@ -1,21 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import {
   ACCOUNTS,
+  DEFAULT_ACCOUNT_RULES,
+  extractInvoicesFromText,
   invoiceTotals,
   rollupExpenses,
   toQuickBooksBillCsv,
   toQuickBooksBillIif,
+  type AccountRule,
   type ExpenseLine,
+  type ExtractedInvoice,
   type ExtractedSku,
+  type VendorAlias,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
-import { restaurantFileSlug } from "../../lib/restaurant-route";
-import type { InvoiceCategory, InvoiceWithSupplier, Restaurant, Supplier } from "../../lib/types";
-import { useInvoiceMedia, useUpdateInvoice } from "./hooks";
+import { ocrImage } from "../../lib/ocr";
+import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
+import type {
+  AccountRuleRow,
+  InvoiceCategory,
+  InvoiceWithSupplier,
+  Restaurant,
+  RestaurantAliasRow,
+  Supplier,
+  VendorAliasRow,
+} from "../../lib/types";
+import { useCreateInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
 
@@ -29,21 +43,88 @@ function downloadText(filename: string, contents: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+function toVendorAliases(rows: VendorAliasRow[]): VendorAlias[] {
+  return rows.map((alias) => ({
+    match_text: alias.match_text,
+    supplier_id: alias.supplier_id,
+    qbo_vendor_name: alias.qbo_vendor_name,
+  }));
+}
+
+function toAccountRules(rows: AccountRuleRow[]): AccountRule[] {
+  if (rows.length === 0) return DEFAULT_ACCOUNT_RULES;
+  return rows.map((rule) => ({
+    keyword: rule.keyword,
+    account: rule.account,
+    memo: rule.memo,
+    category: rule.category,
+  }));
+}
+
+function billsFromOcr(
+  text: string,
+  current: InvoiceWithSupplier,
+  restaurants: Restaurant[],
+  restaurantAliases: RestaurantAliasRow[],
+  vendorAliases: VendorAliasRow[],
+  accountRules: AccountRuleRow[],
+): { first: ExtractedInvoice | null; extras: ExtractedInvoice[]; restaurantId: string | null } {
+  const [first, ...extras] = extractInvoicesFromText(
+    text,
+    toVendorAliases(vendorAliases),
+    toAccountRules(accountRules),
+  );
+  if (!first) return { first: null, extras: [], restaurantId: current.restaurant_id };
+
+  let restaurantId = current.restaurant_id;
+  if (!restaurantId) {
+    const route = matchRestaurant(
+      {
+        ocrText: text,
+        caption: current.caption,
+        from: current.whatsapp_from,
+        group: current.whatsapp_group,
+      },
+      restaurants.map((restaurant) => ({
+        id: restaurant.id,
+        name: restaurant.name,
+        qbo_company_name: restaurant.qbo_company_name,
+        slug: restaurant.slug,
+      })),
+      restaurantAliases.map((alias) => ({
+        restaurant_id: alias.restaurant_id,
+        match_kind: alias.match_kind,
+        match_text: alias.match_text,
+      })),
+    );
+    restaurantId = route?.restaurant.id ?? null;
+  }
+  return { first, extras, restaurantId };
+}
+
 export function InvoiceReviewDialog({
   open,
   onOpenChange,
   invoice,
   suppliers,
   restaurants,
+  restaurantAliases,
+  vendorAliases,
+  accountRules,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   invoice: InvoiceWithSupplier | null;
   suppliers: Supplier[];
   restaurants: Restaurant[];
+  restaurantAliases: RestaurantAliasRow[];
+  vendorAliases: VendorAliasRow[];
+  accountRules: AccountRuleRow[];
 }) {
   const save = useUpdateInvoice();
+  const create = useCreateInvoice();
   const media = useInvoiceMedia(open && invoice ? invoice.id : null);
+  const ocrStartedFor = useRef<string | null>(null);
   const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [vendorName, setVendorName] = useState("");
@@ -55,6 +136,9 @@ export function InvoiceReviewDialog({
   const [lines, setLines] = useState<ExtractedSku[]>([]);
   const [expenses, setExpenses] = useState<ExpenseLine[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrText, setOcrText] = useState<string | null>(null);
+  const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
 
   useEffect(() => {
     if (!open || !invoice) return;
@@ -88,7 +172,80 @@ export function InvoiceReviewDialog({
         : rollupExpenses(nextLines, Number(invoice.tax)),
     );
     setError(null);
+    setOcrBusy(false);
+    setOcrText(null);
+    setExtraBills([]);
+    ocrStartedFor.current = null;
   }, [open, invoice]);
+
+  useEffect(() => {
+    if (!open || !invoice || media.isLoading || !media.data) return;
+    if (ocrStartedFor.current === invoice.id) return;
+
+    const applyPreview = (text: string, allowExtras: boolean) => {
+      const preview = billsFromOcr(
+        text,
+        invoice,
+        restaurants,
+        restaurantAliases,
+        vendorAliases,
+        accountRules,
+      );
+      if (preview.restaurantId) setRestaurantId(preview.restaurantId);
+      if (!preview.first) return;
+      setVendorName(preview.first.vendor_name ?? "");
+      setSupplierId(preview.first.supplier_id ?? "");
+      setNumber(preview.first.invoice_number ?? "");
+      setDate(preview.first.invoice_date ?? "");
+      setDue(preview.first.due_date ?? "");
+      setTerms(preview.first.terms || "Net 15");
+      setTax(preview.first.tax);
+      setLines(preview.first.lines);
+      setExpenses(
+        preview.first.expenses.length > 0
+          ? preview.first.expenses
+          : rollupExpenses(preview.first.lines, preview.first.tax),
+      );
+      setExtraBills(allowExtras ? preview.extras : []);
+    };
+
+    const existingOcr = media.data.ocr_text;
+    const image = media.data.image_data;
+    if (existingOcr) {
+      ocrStartedFor.current = invoice.id;
+      setOcrText(existingOcr);
+      if (invoice.invoice_lines.length === 0) {
+        applyPreview(existingOcr, false);
+      }
+      return;
+    }
+    if (!image) {
+      ocrStartedFor.current = invoice.id;
+      return;
+    }
+
+    ocrStartedFor.current = invoice.id;
+    setOcrBusy(true);
+    void ocrImage(image)
+      .then((ocr) => {
+        setOcrText(ocr.text);
+        applyPreview(ocr.text, true);
+      })
+      .catch((err) => {
+        ocrStartedFor.current = null;
+        setError(err instanceof Error ? err.message : "Could not read invoice photo");
+      })
+      .finally(() => setOcrBusy(false));
+  }, [
+    open,
+    invoice,
+    media.isLoading,
+    media.data,
+    restaurants,
+    restaurantAliases,
+    vendorAliases,
+    accountRules,
+  ]);
 
   const totals = useMemo(() => invoiceTotals(lines, tax), [lines, tax]);
 
@@ -113,7 +270,38 @@ export function InvoiceReviewDialog({
         total: totals.total,
         status,
         exported_at: exportedAt ?? null,
+        ...(ocrText !== null ? { ocr_text: ocrText } : {}),
       });
+      if (extraBills.length > 0) {
+        const image = media.data?.image_data ?? invoice.image_data;
+        const mime = media.data?.image_mime ?? invoice.image_mime;
+        for (const bill of extraBills) {
+          await create.mutateAsync({
+            source: invoice.source,
+            image_data: image,
+            image_mime: mime,
+            ocr_text: ocrText,
+            caption: invoice.caption ?? undefined,
+            whatsapp_from: invoice.whatsapp_from ?? undefined,
+            whatsapp_group: invoice.whatsapp_group ?? undefined,
+            restaurant_id: restaurantId || invoice.restaurant_id,
+            vendor_name: bill.vendor_name,
+            supplier_id: bill.supplier_id,
+            invoice_number: bill.invoice_number,
+            invoice_date: bill.invoice_date,
+            due_date: bill.due_date,
+            terms: bill.terms,
+            subtotal: bill.subtotal,
+            tax: bill.tax,
+            total: bill.total,
+            ap_account: invoice.ap_account || ACCOUNTS.ap,
+            status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
+            lines: bill.lines,
+            expenses: bill.expenses,
+          });
+        }
+        setExtraBills([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save invoice");
       throw err;
@@ -381,10 +569,21 @@ export function InvoiceReviewDialog({
         </div>
       </div>
 
-      {media.data?.ocr_text ? (
+      {ocrBusy ? (
+        <p className="mt-3 text-sm text-muted">Reading invoice photo…</p>
+      ) : extraBills.length > 0 ? (
+        <p className="mt-3 text-sm text-muted">
+          This photo has {extraBills.length} more bill{extraBills.length === 1 ? "" : "s"}. Saving
+          review creates those extra rows without reusing the WhatsApp message id.
+        </p>
+      ) : null}
+
+      {ocrText || media.data?.ocr_text ? (
         <details className="mt-3 text-xs text-muted">
           <summary>OCR text</summary>
-          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">{media.data.ocr_text}</pre>
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">
+            {ocrText || media.data?.ocr_text}
+          </pre>
         </details>
       ) : null}
 
@@ -393,13 +592,24 @@ export function InvoiceReviewDialog({
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Close
         </Button>
-        <Button variant="ghost" disabled={save.isPending} onClick={() => void persist("reviewed")}>
+        <Button
+          variant="ghost"
+          disabled={save.isPending || create.isPending || ocrBusy}
+          onClick={() => void persist("reviewed")}
+        >
           Save review
         </Button>
-        <Button variant="ghost" disabled={save.isPending} onClick={() => void exportCsv()}>
+        <Button
+          variant="ghost"
+          disabled={save.isPending || create.isPending || ocrBusy}
+          onClick={() => void exportCsv()}
+        >
           Export CSV
         </Button>
-        <Button disabled={save.isPending} onClick={() => void exportIif()}>
+        <Button
+          disabled={save.isPending || create.isPending || ocrBusy}
+          onClick={() => void exportIif()}
+        >
           Export Desktop IIF
         </Button>
       </div>

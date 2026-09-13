@@ -1,3 +1,5 @@
+import { handleWhatsAppPost } from "./whatsapp-post";
+
 export type AssetFetcher = {
   fetch: (request: Request) => Response | Promise<Response>;
 };
@@ -5,6 +7,12 @@ export type AssetFetcher = {
 export type WorkerEnv = {
   ASSETS: AssetFetcher;
   WHATSAPP_VERIFY_TOKEN?: string;
+  WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_ORG_ID?: string;
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 };
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -76,7 +84,11 @@ export function redirectToHttps(request: Request): Response | null {
   });
 }
 
-export async function handleApi(request: Request, env: WorkerEnv): Promise<Response> {
+export async function handleApi(
+  request: Request,
+  env: WorkerEnv,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response> {
   const url = new URL(request.url);
   const path = apiPath(url.pathname);
 
@@ -96,13 +108,7 @@ export async function handleApi(request: Request, env: WorkerEnv): Promise<Respo
       case "GET":
         return verifyWhatsApp(url, env);
       case "POST":
-        return json(
-          {
-            ok: false,
-            error: "WhatsApp Cloud API ingest is not wired on this Worker yet. Use npm run whatsapp:ingest.",
-          },
-          501,
-        );
+        return withSecurityHeaders(await handleWhatsAppPost(request, env, fetchImpl));
       default: {
         return methodNotAllowed(["GET", "POST"]);
       }

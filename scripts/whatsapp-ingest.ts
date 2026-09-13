@@ -11,7 +11,7 @@
  *   npm run whatsapp:ingest -- --file ./bill.jpg --from +17875550100
  *   npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
  *
- * Cloud API webhook shape (document only — no live webhook in this MVP):
+ * Cloud API webhook shape (live POST /api/webhooks/whatsapp on the Worker):
  *
  * POST /webhooks/whatsapp
  * {

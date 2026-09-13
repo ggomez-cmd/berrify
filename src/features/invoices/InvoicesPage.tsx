@@ -309,6 +309,9 @@ export function InvoicesPage() {
         invoice={reviewing}
         suppliers={suppliers}
         restaurants={restaurants}
+        restaurantAliases={restaurantAliases}
+        vendorAliases={aliases}
+        accountRules={rules}
       />
     </div>
   );
