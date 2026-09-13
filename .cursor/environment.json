@@ -7,5 +7,10 @@
       "command": "npm run dev"
     }
   ],
-  "ports": [5173]
+  "ports": [
+    {
+      "name": "Vite dev server",
+      "port": 5173
+    }
+  ]
 }
