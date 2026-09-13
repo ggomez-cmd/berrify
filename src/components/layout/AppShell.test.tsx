@@ -98,4 +98,10 @@ describe("AppShell mobile navigation", () => {
     expect(within(nav).queryByRole("link", { name: "Invoices" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Employees" })).toBeNull();
   });
+
+  it("shows Sign out in the header for staff without opening the menu", () => {
+    renderShell("/schedule", "staff");
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
 });
