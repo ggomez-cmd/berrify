@@ -5,6 +5,7 @@ import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
 import { BrandMark } from "../ui/brand-mark";
 import { Sidebar } from "./Sidebar";
+import { SignOutButton } from "./SignOutButton";
 
 function titleFor(path: string): string {
   if (path.startsWith("/inventory")) return "Inventory";
@@ -82,22 +83,26 @@ export function AppShell() {
             <Menu className="size-5" />
           </button>
           {showPageTitle ? (
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="truncate text-base font-semibold tracking-tight text-ink">
                 {titleFor(pathname)}
               </h1>
               <p className="truncate text-xs text-muted">{org?.name ?? "Workspace"}</p>
             </div>
           ) : (
-            <BrandMark className="h-7 w-[6.5rem] text-wine" />
+            <BrandMark className="h-7 w-[6.5rem] flex-1 text-wine" />
           )}
+          <SignOutButton className="shrink-0" />
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-8 md:py-6">
           {showPageTitle ? (
-            <div className="mb-5 hidden md:block">
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">{titleFor(pathname)}</h1>
-              <p className="mt-0.5 text-sm text-muted">{org?.name ?? "Workspace"}</p>
+            <div className="mb-5 hidden items-start justify-between gap-3 md:flex">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight text-ink">{titleFor(pathname)}</h1>
+                <p className="mt-0.5 text-sm text-muted">{org?.name ?? "Workspace"}</p>
+              </div>
+              <SignOutButton className="shrink-0" />
             </div>
           ) : null}
           <Outlet />

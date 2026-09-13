@@ -48,7 +48,7 @@ The message is Berrify-branded (wine button, wordmark). Delivery still uses the 
 
 ### Sign out
 
-Use **Sign out** at the bottom of the left sidebar.
+Use **Sign out** in the page header (always visible) or at the bottom of the left sidebar.
 
 ---
 
