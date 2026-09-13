@@ -11,10 +11,33 @@ export type OcrResult = {
 };
 
 export type OcrImageOptions = {
+  engine?: OcrEngine;
   fetchImpl?: typeof fetch;
   getAccessToken?: () => Promise<string | null>;
   fallback?: (image: string) => Promise<OcrResult>;
 };
+
+const OCR_ENGINE_KEY = "berrify.ocrEngine";
+
+export function getOcrEngine(): OcrEngine {
+  if (typeof localStorage === "undefined") return "vision";
+  try {
+    const value = localStorage.getItem(OCR_ENGINE_KEY);
+    if (value === "vision" || value === "tesseract") return value;
+  } catch {
+    // ignore quota / private-mode failures
+  }
+  return "vision";
+}
+
+export function setOcrEngine(engine: OcrEngine): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(OCR_ENGINE_KEY, engine);
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
 
 const ROTATIONS = [0, 90, 180, 270] as const;
 
@@ -101,24 +124,65 @@ async function ocrImageWithVision(
       credentials: "same-origin",
       body: JSON.stringify({ image }),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      if (options.engine === "vision") {
+        throw new Error(await visionFailureMessage(response));
+      }
+      return null;
+    }
     const body: unknown = await response.json();
-    if (!body || typeof body !== "object") return null;
+    if (!body || typeof body !== "object") {
+      if (options.engine === "vision") throw new Error("Vision OCR returned an invalid response");
+      return null;
+    }
     const text = (body as { text?: unknown }).text;
-    if (typeof text !== "string" || !text.trim()) return null;
+    if (typeof text !== "string" || !text.trim()) {
+      if (options.engine === "vision") throw new Error("Vision OCR returned empty text");
+      return null;
+    }
     const rawConfidence = (body as { confidence?: unknown }).confidence;
     const confidence = typeof rawConfidence === "number" ? rawConfidence : 100;
     return { text, confidence, rotation: 0, engine: "vision" };
-  } catch {
+  } catch (error) {
+    if (options.engine === "vision") throw error;
     return null;
   }
 }
 
+async function visionFailureMessage(response: Response): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object") {
+      const message = (body as { error?: unknown }).error;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  } catch {
+    // ignore non-JSON bodies
+  }
+  return `Vision OCR failed (${response.status})`;
+}
+
 export async function ocrImage(image: string, options: OcrImageOptions = {}): Promise<OcrResult> {
-  const vision = await ocrImageWithVision(image, options);
-  if (vision) return vision;
-  const fallback = options.fallback ?? ocrImageWithTesseract;
-  return fallback(image);
+  const runTesseract = () => (options.fallback ?? ocrImageWithTesseract)(image);
+  const engine = options.engine;
+  if (engine === undefined) {
+    const vision = await ocrImageWithVision(image, options);
+    if (vision) return vision;
+    return runTesseract();
+  }
+  switch (engine) {
+    case "tesseract":
+      return runTesseract();
+    case "vision": {
+      const vision = await ocrImageWithVision(image, options);
+      if (vision) return vision;
+      throw new Error("Vision OCR failed");
+    }
+    default: {
+      const exhaustive: never = engine;
+      return exhaustive;
+    }
+  }
 }
 
 export function ocrEngineNote(ocr: OcrResult): string {

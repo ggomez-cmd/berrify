@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ocrEngineNote, ocrImage, type OcrResult } from "./ocr";
+import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrResult } from "./ocr";
 
 vi.mock("./supabase", () => ({
   supabase: {
@@ -52,6 +52,54 @@ describe("ocrImage", () => {
     const result = await ocrImage("data:image/jpeg;base64,abc", { fetchImpl, fallback });
     expect(result.engine).toBe("tesseract");
     expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it("Vision-only does not call Tesseract when /api/ocr succeeds", async () => {
+    const fallback = vi.fn(async () => tesseract);
+    const fetchImpl: typeof fetch = async () => Response.json({ text: "VISION ONLY", confidence: 91 });
+    const result = await ocrImage("data:image/jpeg;base64,abc", {
+      engine: "vision",
+      fetchImpl,
+      fallback,
+    });
+    expect(result.engine).toBe("vision");
+    expect(result.text).toBe("VISION ONLY");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("Vision-only throws and does not call Tesseract when /api/ocr fails", async () => {
+    const fallback = vi.fn(async () => tesseract);
+    const fetchImpl: typeof fetch = async () =>
+      Response.json({ error: "Vision OCR is not configured" }, { status: 503 });
+    await expect(
+      ocrImage("data:image/jpeg;base64,abc", { engine: "vision", fetchImpl, fallback }),
+    ).rejects.toThrow("Vision OCR is not configured");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("Tesseract-only does not call /api/ocr", async () => {
+    const fallback = vi.fn(async () => tesseract);
+    const fetchImpl = vi.fn(async () => Response.json({ text: "VISION", confidence: 99 }));
+    const result = await ocrImage("data:image/jpeg;base64,abc", {
+      engine: "tesseract",
+      fetchImpl,
+      fallback,
+    });
+    expect(result).toEqual(tesseract);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalledOnce();
+  });
+});
+
+describe("getOcrEngine / setOcrEngine", () => {
+  it("defaults to vision and persists the selected engine", () => {
+    localStorage.removeItem("berrify.ocrEngine");
+    expect(getOcrEngine()).toBe("vision");
+    setOcrEngine("tesseract");
+    expect(localStorage.getItem("berrify.ocrEngine")).toBe("tesseract");
+    expect(getOcrEngine()).toBe("tesseract");
+    setOcrEngine("vision");
+    expect(getOcrEngine()).toBe("vision");
   });
 });
 
