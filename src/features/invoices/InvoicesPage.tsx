@@ -16,6 +16,7 @@ import {
   type VendorAlias,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
+import { invoiceSourceLabel } from "../../lib/invoice-source";
 import { assertInvoiceImage } from "../../lib/invoice-image";
 import { ocrImage } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
@@ -276,7 +277,7 @@ export function InvoicesPage() {
                         <div className="font-medium">
                           {invoice.suppliers?.name ?? invoice.vendor_name ?? "—"}
                         </div>
-                        <div className="text-xs capitalize text-muted">{invoice.source}</div>
+                        <div className="text-xs text-muted">{invoiceSourceLabel(invoice.source)}</div>
                       </div>
                     </div>
                   </Td>

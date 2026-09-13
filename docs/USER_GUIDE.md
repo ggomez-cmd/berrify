@@ -312,7 +312,7 @@ This page is view-only. To add a movement, go to Inventory → **Adjust**.
 
 ### What it does
 
-Invoices turns a supplier photo (or WhatsApp forward) into a QuickBooks Desktop **Bill** on the **Expenses** tab — not one item line per SKU.
+Invoices turns a supplier photo (or a WhatsApp / Telegram forward) into a QuickBooks Desktop **Bill** on the **Expenses** tab — not one item line per SKU.
 
 Typical flow:
 
@@ -338,6 +338,7 @@ Statuses:
    - **Camera** — phone or webcam capture
    - **Upload photo** — pick an image
    - **WhatsApp** — same upload, tagged as a WhatsApp forward
+   - Photos sent to the Berrify Telegram bot also land here as **Telegram**
 3. Wait for OCR. One photo can create more than one bill.
 4. Filter by restaurant if you run more than one set of books.
 5. Use tabs **All / Extracted / Reviewed / Exported**.
@@ -349,6 +350,10 @@ Official WhatsApp cannot put the Business number in a normal kitchen group. In t
 The photo shows up on **Invoices** as **received**. Open **Review** — Berrify reads the photo there (not when the message arrives). If one photo has two bills, the extra bill becomes its own row.
 
 You can still use **WhatsApp** on the Invoices page to upload a forward by hand.
+
+### How to send a bill on Telegram
+
+Photograph the factura and send it to the Berrify Telegram bot (not a PDF or text-only message). Put **Semilla** or **Kane** in the caption so the bill lands on the right books. The photo shows up on **Invoices** as **Telegram** / **received**. Open **Review** — Berrify reads the photo there, the same way as WhatsApp. WhatsApp forwarding still works.
 
 Routing (first match wins):
 
@@ -415,7 +420,7 @@ Dashboard for low stock and coverage → Time Clock → Who’s working → Sche
 Inventory → find the item → **Adjust** → Purchase → amount → Record movement. Confirm it on Movements.
 
 **A supplier texts a factura**  
-Photograph it (or WhatsApp forward) → Invoices → Review restaurant and expenses → Export Desktop IIF → import in that restaurant’s QuickBooks company file.
+Photograph it (or WhatsApp / Telegram forward) → Invoices → Review restaurant and expenses → Export Desktop IIF → import in that restaurant’s QuickBooks company file.
 
 **Someone forgot to clock out**  
 Time Clock → Attendance → Record missing punch, or Exceptions → Reconcile open sessions → resolve the flag. Do not expect Berrify to invent a clock-out.
