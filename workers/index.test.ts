@@ -30,6 +30,44 @@ function api(
   return handleApi(new Request(`https://berrify.example${path}`, init), workerEnv, fetchImpl);
 }
 
+const TINY_JPEG_DATA_URL = "data:image/jpeg;base64,/9j/4AAQ";
+
+const ocrEnv: WorkerEnv = {
+  ...env,
+  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role",
+};
+
+function mockAuthFetch(inner?: typeof fetch): typeof fetch {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://example.supabase.co/auth/v1/user") {
+      const auth = new Headers(init?.headers).get("Authorization");
+      if (auth === "Bearer user-token") {
+        return Response.json({ id: "user-1" });
+      }
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (inner) return inner(input, init);
+    throw new Error(`unexpected fetch ${init?.method ?? "GET"} ${url}`);
+  };
+  return fetchImpl;
+}
+
+function ocrInit(body: string, extra?: RequestInit): RequestInit {
+  return {
+    method: "POST",
+    ...extra,
+    headers: {
+      Origin: "https://berrify.example",
+      Authorization: "Bearer user-token",
+      "Content-Type": "application/json",
+      ...(extra?.headers ?? {}),
+    },
+    body,
+  };
+}
+
 const IMAGE_BODY = JSON.stringify({
   object: "whatsapp_business_account",
   entry: [
@@ -453,6 +491,68 @@ describe("Worker API", () => {
   it("rejects non-GET health requests", async () => {
     const response = await api("/api/health", { method: "POST" });
     expect(response.status).toBe(405);
+  });
+
+  it("returns 503 for OCR when the Vision key is missing", async () => {
+    const response = await api(
+      "/api/ocr",
+      ocrInit(JSON.stringify({ image: TINY_JPEG_DATA_URL })),
+      ocrEnv,
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Vision OCR is not configured" });
+  });
+
+  it("returns 400 for OCR with invalid JSON", async () => {
+    const response = await api(
+      "/api/ocr",
+      ocrInit("{", { headers: { Origin: "https://berrify.example", Authorization: "Bearer user-token" } }),
+      { ...ocrEnv, GOOGLE_VISION_API_KEY: "vision-key" },
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid JSON" });
+  });
+
+  it("returns Vision text when DOCUMENT_TEXT_DETECTION succeeds", async () => {
+    const visionFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      expect(url).toMatch(/^https:\/\/vision\.googleapis\.com\/v1\/images:annotate\?key=vision-key$/);
+      expect(init?.method).toBe("POST");
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        requests: { features: { type: string }[]; imageContext: { languageHints: string[] } }[];
+      };
+      expect(body.requests[0]?.features[0]?.type).toBe("DOCUMENT_TEXT_DETECTION");
+      expect(body.requests[0]?.imageContext.languageHints).toEqual(["es", "en"]);
+      return Response.json({
+        responses: [
+          {
+            fullTextAnnotation: {
+              text: "FACTURA 12.00",
+              pages: [{ confidence: 0.91 }],
+            },
+          },
+        ],
+      });
+    };
+    const response = await api(
+      "/api/ocr",
+      ocrInit(JSON.stringify({ image: TINY_JPEG_DATA_URL })),
+      { ...ocrEnv, GOOGLE_VISION_API_KEY: "vision-key" },
+      mockAuthFetch(visionFetch),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ text: "FACTURA 12.00", confidence: 91 });
+  });
+
+  it("rejects unauthenticated OCR calls", async () => {
+    const response = await api("/api/ocr", {
+      method: "POST",
+      headers: { Origin: "https://berrify.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ image: TINY_JPEG_DATA_URL }),
+    });
+    expect(response.status).toBe(401);
   });
 });
 
