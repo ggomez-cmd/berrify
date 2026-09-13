@@ -190,6 +190,20 @@ export function useCreateInvoice() {
   });
 }
 
+export function useDeleteInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("invoices").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, id) => {
+      void qc.invalidateQueries({ queryKey: ["invoices"] });
+      void qc.invalidateQueries({ queryKey: ["invoice_media", id] });
+    },
+  });
+}
+
 export function useUpdateInvoice() {
   const qc = useQueryClient();
   return useMutation({

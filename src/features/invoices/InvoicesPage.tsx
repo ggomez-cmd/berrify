@@ -18,7 +18,7 @@ import {
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
 import { assertInvoiceImage } from "../../lib/invoice-image";
-import { ocrEngineNote, ocrImage } from "../../lib/ocr";
+import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrEngine } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
@@ -28,11 +28,19 @@ import {
   fileToDataUrl,
   useAccountRules,
   useCreateInvoice,
+  useDeleteInvoice,
   useInvoices,
   useRestaurantAliases,
   useRestaurants,
   useVendorAliases,
 } from "./hooks";
+
+function confirmDeleteInvoice(invoice: InvoiceWithSupplier) {
+  const vendor = invoice.suppliers?.name ?? invoice.vendor_name;
+  const number = invoice.invoice_number;
+  const detail = [vendor, number].filter(Boolean).join(" · ");
+  return window.confirm(detail ? `Delete this invoice? ${detail}` : "Delete this invoice?");
+}
 
 function statusTone(status: InvoiceWithSupplier["status"]) {
   switch (status) {
@@ -60,10 +68,12 @@ export function InvoicesPage() {
   const { data: aliases = [] } = useVendorAliases();
   const { data: rules = [] } = useAccountRules();
   const create = useCreateInvoice();
+  const remove = useDeleteInvoice();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<InvoiceWithSupplier | null>(null);
   const [restaurantFilter, setRestaurantFilter] = useState("");
+  const [ocrEngine, setOcrEngineState] = useState<OcrEngine>(() => getOcrEngine());
   const [statusTab, setStatusTab] = useState<"all" | InvoiceWithSupplier["status"]>("all");
 
   if (!isManager(role)) {
@@ -76,8 +86,8 @@ export function InvoicesPage() {
     try {
       assertInvoiceImage(file);
       const { data, mime } = await fileToDataUrl(file);
-      setMessage("Reading with Vision…");
-      const ocr = await ocrImage(data);
+      setMessage(ocrEngine === "tesseract" ? "Reading with Tesseract…" : "Reading with Vision…");
+      const ocr = await ocrImage(data, { engine: ocrEngine });
       const vendorAliases: VendorAlias[] = aliases.map((a) => ({
         match_text: a.match_text,
         supplier_id: a.supplier_id,
@@ -215,6 +225,21 @@ export function InvoicesPage() {
             WhatsApp
           </Button>
         </label>
+        <div className="w-full shrink-0 sm:w-44">
+          <Select
+            aria-label="OCR engine"
+            value={ocrEngine}
+            disabled={busy}
+            onChange={(e) => {
+              const engine = e.target.value === "tesseract" ? "tesseract" : "vision";
+              setOcrEngineState(engine);
+              setOcrEngine(engine);
+            }}
+          >
+            <option value="vision">Google Vision</option>
+            <option value="tesseract">Tesseract</option>
+          </Select>
+        </div>
         <div className="ml-auto w-full shrink-0 sm:w-56">
           <Select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)}>
             <option value="">All restaurants</option>
@@ -291,9 +316,28 @@ export function InvoicesPage() {
                     </Badge>
                   </Td>
                   <Td>
-                    <Button variant="subtle" onClick={() => setReviewing(invoice)}>
-                      Review
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="subtle" onClick={() => setReviewing(invoice)}>
+                        Review
+                      </Button>
+                      <Button
+                        variant="subtle"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          if (!confirmDeleteInvoice(invoice)) return;
+                          void remove.mutateAsync(invoice.id).then(
+                            () => {
+                              if (reviewing?.id === invoice.id) setReviewing(null);
+                            },
+                            (err: unknown) => {
+                              setMessage(err instanceof Error ? err.message : "Could not delete invoice");
+                            },
+                          );
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))
