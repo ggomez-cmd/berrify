@@ -1,3 +1,4 @@
+import { handleTelegramPost } from "./telegram-post";
 import { handleWhatsAppPost } from "./whatsapp-post";
 
 export type AssetFetcher = {
@@ -11,6 +12,9 @@ export type WorkerEnv = {
   WHATSAPP_ACCESS_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
   WHATSAPP_ORG_ID?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
+  TELEGRAM_ORG_ID?: string;
   NEXT_PUBLIC_SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
 };
@@ -111,6 +115,16 @@ export async function handleApi(
         return withSecurityHeaders(await handleWhatsAppPost(request, env, fetchImpl));
       default: {
         return methodNotAllowed(["GET", "POST"]);
+      }
+    }
+  }
+
+  if (path === "/api/webhooks/telegram") {
+    switch (request.method) {
+      case "POST":
+        return withSecurityHeaders(await handleTelegramPost(request, env, fetchImpl));
+      default: {
+        return methodNotAllowed(["POST"]);
       }
     }
   }

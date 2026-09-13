@@ -142,6 +142,7 @@ The production app is a Vite SPA plus a small Worker. Static files come from
 - `GET /api/health` — liveness JSON
 - `GET /api/webhooks/whatsapp` — Meta verify-token handshake (`WHATSAPP_VERIFY_TOKEN`)
 - `POST /api/webhooks/whatsapp` — Cloud API ingest (HMAC + Graph media download → `invoices` row, no OCR on the Worker)
+- `POST /api/webhooks/telegram` — Bot API ingest (`X-Telegram-Bot-Api-Secret-Token` + `getFile` download → `invoices` row, no OCR on the Worker)
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -168,7 +169,7 @@ GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Worker secrets for inbound WhatsApp (also listed in `.dev.vars.example`):
+Worker secrets for inbound WhatsApp and Telegram (also listed in `.dev.vars.example`):
 
 ```bash
 npx wrangler secret put WHATSAPP_VERIFY_TOKEN
@@ -176,11 +177,18 @@ npx wrangler secret put WHATSAPP_APP_SECRET
 npx wrangler secret put WHATSAPP_ACCESS_TOKEN
 npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID
 npx wrangler secret put WHATSAPP_ORG_ID
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler secret put TELEGRAM_ORG_ID
 npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 ```
 
 `POST /api/webhooks/whatsapp` verifies `X-Hub-Signature-256`, downloads image media from Graph, and inserts `source: "whatsapp"` / `status: "received"` with `ocr_text` left null. Duplicate `whatsapp_message_id` values return 200. OCR runs later in Invoices → Review. The official Cloud API cannot join a kitchen group — staff photograph the bill there, then forward it to the Business number with a `Semilla` or `Kane` caption.
+
+`POST /api/webhooks/telegram` verifies `X-Telegram-Bot-Api-Secret-Token`, downloads the largest photo via Bot API `getFile` (same 8 MB cap), and inserts `source: "telegram"` / `status: "received"` with `ocr_text` left null. Duplicate `telegram_message_id` values (`chat_id:message_id`) return 200. Point `setWebhook` at `https://<host>/api/webhooks/telegram` with the same `secret_token`. Caption words such as `Semilla` or `Kane` still route the bill. WhatsApp ingest is unchanged.
+
+Apply the Telegram columns once with `npm run db:apply -- 0014_telegram_invoice_ingest.sql` (do not `db:push`).
 
 Cursor loads Cloudflare MCP servers from `.cursor/mcp.json` (docs, bindings,
 builds, observability, and the main API). Authenticate the account-scoped

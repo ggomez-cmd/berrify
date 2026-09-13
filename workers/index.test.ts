@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TELEGRAM_SECRET_HEADER } from "../src/lib/telegram-webhook";
 import { signWhatsAppBody } from "../src/lib/whatsapp-webhook";
 import worker, { handleApi, redirectToHttps, type WorkerEnv } from "./index";
 
@@ -15,6 +16,9 @@ const ingestEnv: WorkerEnv = {
   WHATSAPP_ORG_ID: "org-1",
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
+  TELEGRAM_BOT_TOKEN: "bot-token",
+  TELEGRAM_WEBHOOK_SECRET: "hook-secret",
+  TELEGRAM_ORG_ID: "org-1",
 };
 
 function api(
@@ -53,6 +57,29 @@ const IMAGE_BODY = JSON.stringify({
   ],
 });
 
+const TELEGRAM_PHOTO_BODY = JSON.stringify({
+  update_id: 1001,
+  message: {
+    message_id: 42,
+    caption: "Semilla factura",
+    from: { id: 777, username: "cook" },
+    chat: { id: -100 },
+    photo: [
+      { file_id: "SMALL", file_size: 100 },
+      { file_id: "FILE_1", file_size: 9000 },
+    ],
+  },
+});
+
+const TELEGRAM_TEXT_BODY = JSON.stringify({
+  update_id: 1002,
+  message: {
+    message_id: 43,
+    chat: { id: -100 },
+    text: "hello",
+  },
+});
+
 const TEXT_BODY = JSON.stringify({
   object: "whatsapp_business_account",
   entry: [
@@ -88,6 +115,17 @@ function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: num
       });
     }
     if (url === "https://lookaside.fbsbx.com/file") {
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/jpeg" },
+      });
+    }
+    if (url === "https://api.telegram.org/botbot-token/getFile?file_id=FILE_1") {
+      return Response.json({
+        ok: true,
+        result: { file_path: "photos/bill.jpg", file_size: 3 },
+      });
+    }
+    if (url === "https://api.telegram.org/file/botbot-token/photos/bill.jpg") {
       return new Response(new Uint8Array([1, 2, 3]), {
         headers: { "content-type": "image/jpeg" },
       });
@@ -221,6 +259,100 @@ describe("Worker API", () => {
       caption: "Semilla factura",
       ocr_text: null,
     });
+  });
+
+  it("returns 503 for Telegram POSTs when ingest secrets are missing", async () => {
+    const response = await api("/api/webhooks/telegram", { method: "POST", body: "{}" });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ ok: false });
+  });
+
+  it("rejects a Telegram POST with a bad secret header", async () => {
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "wrong" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      ingestEnv,
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("acks text-only Telegram POSTs without inserting", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_TEXT_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 0,
+      skipped: 0,
+      errors: [],
+    });
+    expect(inserted).toEqual([]);
+  });
+
+  it("downloads a Telegram photo and inserts a received invoice", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 1,
+      skipped: 0,
+      errors: [],
+    });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      org_id: "org-1",
+      restaurant_id: "r-semilla",
+      status: "received",
+      source: "telegram",
+      telegram_message_id: "-100:42",
+      caption: "Semilla factura",
+      ocr_text: null,
+    });
+  });
+
+  it("treats a duplicate Telegram message id as success", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch({ alreadyExists: true });
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 0,
+      skipped: 1,
+      errors: [],
+    });
+    expect(inserted).toEqual([]);
   });
 
   it("treats a duplicate WhatsApp message id as success", async () => {

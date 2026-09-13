@@ -119,7 +119,7 @@ export type ShiftWithEmployee = Shift & {
 };
 
 export type InvoiceStatus = "received" | "extracted" | "reviewed" | "exported";
-export type InvoiceSource = "upload" | "whatsapp" | "camera";
+export type InvoiceSource = "upload" | "whatsapp" | "camera" | "telegram";
 export type InvoiceCategory = "food" | "kitchen" | "cleaning" | "tax" | "beverage" | "other";
 
 export type Restaurant = {
@@ -165,6 +165,8 @@ export type Invoice = {
   whatsapp_from: string | null;
   whatsapp_group: string | null;
   whatsapp_message_id: string | null;
+  telegram_from: string | null;
+  telegram_message_id: string | null;
   caption: string | null;
   image_data: string | null;
   image_mime: string | null;
