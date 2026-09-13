@@ -14,10 +14,17 @@ type TelegramPhotoSize = {
   file_size?: number;
 };
 
+type TelegramDocument = {
+  file_id?: string;
+  mime_type?: string;
+  file_name?: string;
+};
+
 type TelegramMessage = {
   message_id?: number;
   caption?: string;
   photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
   from?: { id?: number; username?: string };
   chat?: { id?: number };
 };
@@ -40,21 +47,35 @@ function pickLargestPhoto(photos: TelegramPhotoSize[]): string | null {
   return best?.fileId ?? null;
 }
 
+function isImageMime(mime: string | null | undefined): boolean {
+  if (!mime) return false;
+  return mime.toLowerCase().startsWith("image/") && mime.toLowerCase() !== "image/svg+xml";
+}
+
 function senderFrom(message: TelegramMessage, chatId: number): string {
   if (message.from?.username?.trim()) return `@${message.from.username.trim()}`;
   if (message.from?.id != null) return String(message.from.id);
   return String(chatId);
 }
 
+function fileIdFromMessage(message: TelegramMessage): string | null {
+  if (message.photo?.length) return pickLargestPhoto(message.photo);
+  const document = message.document;
+  if (document?.file_id && isImageMime(document.mime_type)) {
+    return document.file_id.trim();
+  }
+  return null;
+}
+
 export function parseTelegramInboundImages(body: unknown): TelegramInboundImage[] {
   if (!body || typeof body !== "object") return [];
   const update = body as TelegramUpdate;
   const message = update.message ?? update.channel_post;
-  if (!message?.photo?.length) return [];
+  if (!message) return [];
 
   const chatId = message.chat?.id;
   const rawMessageId = message.message_id;
-  const fileId = pickLargestPhoto(message.photo);
+  const fileId = fileIdFromMessage(message);
   if (chatId == null || rawMessageId == null || !fileId) return [];
 
   return [

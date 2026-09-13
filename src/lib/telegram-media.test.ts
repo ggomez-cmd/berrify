@@ -26,6 +26,14 @@ describe("downloadTelegramFile", () => {
     expect([...media.bytes]).toEqual([1, 2, 3, 4]);
   });
 
+  it("surfaces Telegram getFile error descriptions", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      Response.json({ ok: false, description: "Bad Request: file is too big" });
+    await expect(downloadTelegramFile("FILE_1", "bot-token", fetchImpl)).rejects.toThrow(
+      /file is too big/,
+    );
+  });
+
   it("rejects photos over the invoice size cap", async () => {
     const fetchImpl: typeof fetch = async (input) => {
       const url = String(input);

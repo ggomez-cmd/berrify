@@ -186,7 +186,7 @@ npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 
 `POST /api/webhooks/whatsapp` verifies `X-Hub-Signature-256`, downloads image media from Graph, and inserts `source: "whatsapp"` / `status: "received"` with `ocr_text` left null. Duplicate `whatsapp_message_id` values return 200. OCR runs later in Invoices → Review. The official Cloud API cannot join a kitchen group — staff photograph the bill there, then forward it to the Business number with a `Semilla` or `Kane` caption.
 
-`POST /api/webhooks/telegram` verifies `X-Telegram-Bot-Api-Secret-Token`, downloads the largest photo via Bot API `getFile` (same 8 MB cap), and inserts `source: "telegram"` / `status: "received"` with `ocr_text` left null. Duplicate `telegram_message_id` values (`chat_id:message_id`) return 200. Point `setWebhook` at `https://<host>/api/webhooks/telegram` with the same `secret_token`. Caption words such as `Semilla` or `Kane` still route the bill. WhatsApp ingest is unchanged.
+`POST /api/webhooks/telegram` verifies `X-Telegram-Bot-Api-Secret-Token`, downloads `message.photo` or an image `message.document` via Bot API `getFile` (same 8 MB cap), and inserts `source: "telegram"` / `status: "received"` with `ocr_text` left null. Duplicate `telegram_message_id` values (`chat_id:message_id`) return 200. getFile/insert failures are logged and returned in the JSON `errors` array; if every item fails the Worker responds 502. Point `setWebhook` at `https://<host>/api/webhooks/telegram` with the same `secret_token`. Caption words such as `Semilla` or `Kane` still route the bill. WhatsApp ingest is unchanged.
 
 Apply the Telegram columns once with `npm run db:apply -- 0014_telegram_invoice_ingest.sql` (do not `db:push`).
 

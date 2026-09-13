@@ -80,6 +80,17 @@ const TELEGRAM_TEXT_BODY = JSON.stringify({
   },
 });
 
+const TELEGRAM_DOCUMENT_BODY = JSON.stringify({
+  update_id: 1003,
+  message: {
+    message_id: 44,
+    caption: "Semilla factura",
+    from: { id: 777, username: "cook" },
+    chat: { id: -100 },
+    document: { file_id: "FILE_1", mime_type: "image/jpeg", file_name: "bill.jpg" },
+  },
+});
+
 const TEXT_BODY = JSON.stringify({
   object: "whatsapp_business_account",
   entry: [
@@ -298,8 +309,69 @@ describe("Worker API", () => {
       ingested: 0,
       skipped: 0,
       errors: [],
+      ignored: "no photo or image document",
     });
     expect(inserted).toEqual([]);
+  });
+
+  it("downloads a Telegram image document and inserts a received invoice", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_DOCUMENT_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      ingested: 1,
+      skipped: 0,
+      errors: [],
+    });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      source: "telegram",
+      telegram_message_id: "-100:44",
+      caption: "Semilla factura",
+    });
+  });
+
+  it("returns 502 when Telegram getFile fails for every photo", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/getFile")) {
+        return Response.json({ ok: false, description: "Bad Request: file is too big" });
+      }
+      if (url.includes("/rest/v1/restaurants") || url.includes("/rest/v1/restaurant_aliases")) {
+        return Response.json([]);
+      }
+      if (url.includes("/rest/v1/invoices")) {
+        return Response.json([]);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      ingested: 0,
+      skipped: 1,
+      errors: ["-100:42: Bad Request: file is too big"],
+    });
   });
 
   it("downloads a Telegram photo and inserts a received invoice", async () => {

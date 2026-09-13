@@ -17,11 +17,16 @@ export type TelegramPostEnv = {
 };
 
 export type TelegramIngestResult = {
-  ok: true;
+  ok: boolean;
   ingested: number;
   skipped: number;
   errors: string[];
+  ignored?: string;
 };
+
+function logTelegramError(context: string, detail: string): void {
+  console.error(`telegram ingest ${context}: ${detail}`);
+}
 
 function json(body: unknown, status: number, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
@@ -175,21 +180,28 @@ export async function handleTelegramPost(
   const inbound = parseTelegramInboundImages(parsed);
 
   if (inbound.length === 0) {
-    return json({ ok: true, ingested: 0, skipped: 0, errors: [] } satisfies TelegramIngestResult, 200);
+    const ignored = "no photo or image document";
+    logTelegramError("ignored", ignored);
+    return json(
+      { ok: true, ingested: 0, skipped: 0, errors: [], ignored } satisfies TelegramIngestResult,
+      200,
+    );
   }
 
   let routing: { restaurants: Restaurant[]; aliases: RestaurantAlias[] };
   try {
     routing = await loadRouting(supabaseUrl, serviceRole, orgId, fetchImpl);
   } catch (err) {
+    const errors = [err instanceof Error ? err.message : "Could not load restaurant routing"];
+    logTelegramError("routing", errors[0] ?? "Could not load restaurant routing");
     return json(
       {
-        ok: true,
+        ok: false,
         ingested: 0,
         skipped: inbound.length,
-        errors: [err instanceof Error ? err.message : "Could not load restaurant routing"],
+        errors,
       } satisfies TelegramIngestResult,
-      200,
+      502,
     );
   }
 
@@ -210,10 +222,15 @@ export async function handleTelegramPost(
       else skipped += 1;
     } catch (err) {
       skipped += 1;
-      errors.push(
-        `${message.messageId}: ${err instanceof Error ? err.message : "ingest failed"}`,
-      );
+      const detail = `${message.messageId}: ${err instanceof Error ? err.message : "ingest failed"}`;
+      logTelegramError("item", detail);
+      errors.push(detail);
     }
+  }
+
+  const allFailed = ingested === 0 && errors.length > 0 && errors.length === inbound.length;
+  if (allFailed) {
+    return json({ ok: false, ingested, skipped, errors } satisfies TelegramIngestResult, 502);
   }
 
   return json({ ok: true, ingested, skipped, errors } satisfies TelegramIngestResult, 200);
