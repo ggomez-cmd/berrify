@@ -18,7 +18,7 @@ import {
   type VendorAlias,
 } from "../../lib/invoice-extract";
 import { formatMoney } from "../../lib/format";
-import { ocrImage } from "../../lib/ocr";
+import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
 import type {
   AccountRuleRow,
@@ -30,7 +30,7 @@ import type {
   VendorAliasRow,
 } from "../../lib/types";
 import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
-import { useCreateInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
+import { useCreateInvoice, useDeleteInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
 
@@ -124,6 +124,7 @@ export function InvoiceReviewDialog({
 }) {
   const save = useUpdateInvoice();
   const create = useCreateInvoice();
+  const remove = useDeleteInvoice();
   const media = useInvoiceMedia(open && invoice ? invoice.id : null);
   const ocrStartedFor = useRef<string | null>(null);
   const [restaurantId, setRestaurantId] = useState("");
@@ -138,6 +139,7 @@ export function InvoiceReviewDialog({
   const [expenses, setExpenses] = useState<ExpenseLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrNote, setOcrNote] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -175,6 +177,7 @@ export function InvoiceReviewDialog({
     );
     setError(null);
     setOcrBusy(false);
+    setOcrNote(null);
     setOcrText(null);
     setExtraBills([]);
     setLightboxOpen(false);
@@ -229,9 +232,10 @@ export function InvoiceReviewDialog({
 
     ocrStartedFor.current = invoice.id;
     setOcrBusy(true);
-    void ocrImage(image)
+    void ocrImage(image, { engine: getOcrEngine() })
       .then((ocr) => {
         setOcrText(ocr.text);
+        setOcrNote(ocrEngineNote(ocr));
         applyPreview(ocr.text, true);
       })
       .catch((err) => {
@@ -596,13 +600,20 @@ export function InvoiceReviewDialog({
       </div>
 
       {ocrBusy ? (
-        <p className="mt-3 text-sm text-muted">Reading with Vision…</p>
-      ) : extraBills.length > 0 ? (
         <p className="mt-3 text-sm text-muted">
-          This photo has {extraBills.length} more bill{extraBills.length === 1 ? "" : "s"}. Saving
-          review creates those extra rows without reusing the WhatsApp message id.
+          {getOcrEngine() === "tesseract" ? "Reading with Tesseract…" : "Reading with Vision…"}
         </p>
-      ) : null}
+      ) : (
+        <>
+          {ocrNote ? <p className="mt-3 text-sm text-muted">{ocrNote}</p> : null}
+          {extraBills.length > 0 ? (
+            <p className="mt-3 text-sm text-muted">
+              This photo has {extraBills.length} more bill{extraBills.length === 1 ? "" : "s"}. Saving
+              review creates those extra rows without reusing the WhatsApp message id.
+            </p>
+          ) : null}
+        </>
+      )}
 
       {ocrText || media.data?.ocr_text ? (
         <details className="mt-3 text-xs text-muted">
@@ -615,6 +626,26 @@ export function InvoiceReviewDialog({
 
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Button
+          variant="danger"
+          className="mr-auto"
+          disabled={save.isPending || create.isPending || remove.isPending || ocrBusy}
+          onClick={() => {
+            const vendor = vendorName || invoice.suppliers?.name || invoice.vendor_name;
+            const detail = [vendor, number || invoice.invoice_number].filter(Boolean).join(" · ");
+            if (!window.confirm(detail ? `Delete this invoice? ${detail}` : "Delete this invoice?")) {
+              return;
+            }
+            void remove.mutateAsync(invoice.id).then(
+              () => onOpenChange(false),
+              (err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not delete invoice");
+              },
+            );
+          }}
+        >
+          Delete
+        </Button>
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Close
         </Button>
