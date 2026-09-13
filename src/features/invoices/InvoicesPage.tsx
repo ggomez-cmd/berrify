@@ -18,7 +18,7 @@ import {
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
 import { assertInvoiceImage } from "../../lib/invoice-image";
-import { ocrImage } from "../../lib/ocr";
+import { ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
@@ -76,7 +76,7 @@ export function InvoicesPage() {
     try {
       assertInvoiceImage(file);
       const { data, mime } = await fileToDataUrl(file);
-      setMessage("Running OCR (trying rotations)…");
+      setMessage("Reading with Vision…");
       const ocr = await ocrImage(data);
       const vendorAliases: VendorAlias[] = aliases.map((a) => ({
         match_text: a.match_text,
@@ -133,7 +133,7 @@ export function InvoicesPage() {
         ids.push(id);
       }
       setMessage(
-        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. OCR rotation ${ocr.rotation}° · review the restaurant and Expenses tab, then export IIF.`,
+        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. ${ocrEngineNote(ocr)} · review the restaurant and Expenses tab, then export IIF.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not read invoice");

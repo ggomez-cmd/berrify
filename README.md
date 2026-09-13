@@ -128,10 +128,13 @@ npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
 
 The webhook JSON shape is documented at the top of
 `scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
-and unofficial group bots are out of scope. OCR runs in the browser (and in
-`whatsapp:ingest` for image files) with `tesseract.js` — it tries 0/90/180/270
-and keeps the highest confidence. Pink carbonless photos that were shot
-sideways usually need a human pass in Review before you export.
+and unofficial group bots are out of scope. Invoices **Camera/Upload** and
+**Review** call `POST /api/ocr` first (Cloud Vision Document Text Detection,
+Spanish + English). If Vision is missing or fails, the browser falls back to
+`tesseract.js` `eng` at 0/90/180/270 and keeps the highest confidence.
+`whatsapp:ingest` still OCRs image files with Tesseract only. Telegram and
+WhatsApp webhooks insert `ocr_text: null`. Pink carbonless photos that were
+shot sideways usually need a human pass in Review before you export.
 
 ## Cloudflare Workers
 
@@ -140,6 +143,7 @@ The production app is a Vite SPA plus a small Worker. Static files come from
 `/api/*` hits the Worker first:
 
 - `GET /api/health` — liveness JSON
+- `POST /api/ocr` — session-authenticated Cloud Vision Document Text Detection (`GOOGLE_VISION_API_KEY`); 503 when the secret is missing so the browser falls back to Tesseract
 - `GET /api/webhooks/whatsapp` — Meta verify-token handshake (`WHATSAPP_VERIFY_TOKEN`)
 - `POST /api/webhooks/whatsapp` — Cloud API ingest (HMAC + Graph media download → `invoices` row, no OCR on the Worker)
 - `POST /api/webhooks/telegram` — Bot API ingest (`X-Telegram-Bot-Api-Secret-Token` + `getFile` download → `invoices` row, no OCR on the Worker)
@@ -169,7 +173,7 @@ GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Worker secrets for inbound WhatsApp and Telegram (also listed in `.dev.vars.example`):
+Worker secrets for inbound WhatsApp, Telegram, and Vision OCR (also listed in `.dev.vars.example`):
 
 ```bash
 npx wrangler secret put WHATSAPP_VERIFY_TOKEN
@@ -182,7 +186,10 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put TELEGRAM_ORG_ID
 npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put GOOGLE_VISION_API_KEY
 ```
+
+[Cloud Vision pricing](https://cloud.google.com/vision/pricing): the first 1,000 images/month are free; after that Document Text Detection is about $1.50 / 1,000. Without `GOOGLE_VISION_API_KEY`, `POST /api/ocr` returns 503 and the SPA uses Tesseract.
 
 `POST /api/webhooks/whatsapp` verifies `X-Hub-Signature-256`, downloads image media from Graph, and inserts `source: "whatsapp"` / `status: "received"` with `ocr_text` left null. Duplicate `whatsapp_message_id` values return 200. OCR runs later in Invoices → Review. The official Cloud API cannot join a kitchen group — staff photograph the bill there, then forward it to the Business number with a `Semilla` or `Kane` caption.
 

@@ -570,7 +570,7 @@ export function InvoiceReviewDialog({
       </div>
 
       {ocrBusy ? (
-        <p className="mt-3 text-sm text-muted">Reading invoice photo…</p>
+        <p className="mt-3 text-sm text-muted">Reading with Vision…</p>
       ) : extraBills.length > 0 ? (
         <p className="mt-3 text-sm text-muted">
           This photo has {extraBills.length} more bill{extraBills.length === 1 ? "" : "s"}. Saving
