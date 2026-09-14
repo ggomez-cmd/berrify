@@ -3,8 +3,10 @@ import {
   ACCOUNTS,
   addDaysIso,
   classifySku,
+  compactOcrMoney,
   extractInvoiceFromText,
   extractInvoicesFromText,
+  normalizeDate,
   rollupExpenses,
   stripPriceSuffix,
   toQuickBooksBillCsv,
@@ -19,6 +21,14 @@ import {
   NORTHWESTERN_OCR,
   SANTURCE_OCR,
   SUPERMAX_OCR,
+  VISION_BALLESTER_OCR,
+  VISION_BALLESTER_SUPERMAX_OCR,
+  VISION_DROUYN_OCR,
+  VISION_FERNANDEZ_OCR,
+  VISION_JOSE_SANTIAGO_BACON_OCR,
+  VISION_JOSE_SANTIAGO_BALANCE_OCR,
+  VISION_NORTHWESTERN_OCR,
+  VISION_SANTURCE_OCR,
 } from "./invoice-fixtures";
 
 describe("stripPriceSuffix", () => {
@@ -87,6 +97,19 @@ describe("extractInvoiceFromText", () => {
 describe("addDaysIso", () => {
   it("adds Net 15", () => {
     expect(addDaysIso("2026-08-12", 15)).toBe("2026-08-27");
+  });
+});
+
+describe("compactOcrMoney", () => {
+  it("removes spaces inside thousands and cents", () => {
+    expect(compactOcrMoney("$1, 155. 59")).toBe("$1,155.59");
+    expect(compactOcrMoney("233. 24")).toBe("233.24");
+  });
+});
+
+describe("normalizeDate", () => {
+  it("rejects a dropped leading month digit", () => {
+    expect(normalizeDate("0-12-2026")).toBeNull();
   });
 });
 
@@ -279,6 +302,68 @@ describe("Northwestern Selecta", () => {
     expect(extracted.lines).toHaveLength(3);
     expect(extracted.lines.find((l) => l.code === "148590")?.pounds).toBeCloseTo(10);
     expect(extracted.expenses[0]?.account).toBe(ACCOUNTS.food);
+  });
+});
+
+describe("Vision-shaped OCR", () => {
+  it("does not assign SuperMax SubTotal to Ballester", () => {
+    const bills = extractInvoicesFromText(VISION_BALLESTER_SUPERMAX_OCR);
+    expect(bills).toHaveLength(2);
+    expect(bills[0]?.qbo_vendor_name).toBe("Ballester Hermanos Inc");
+    expect(bills[0]?.invoice_number).toBe("40494738");
+    expect(bills[0]?.invoice_date).toBe("2026-08-13");
+    expect(bills[0]?.total).toBeCloseTo(757.56);
+    expect(bills[1]?.qbo_vendor_name).toBe("SuperMax");
+    expect(bills[1]?.invoice_number).toBe("000000058724");
+    expect(bills[1]?.total).toBeCloseTo(48.44);
+  });
+
+  it("does not double Ballester tax into the merchandise total", () => {
+    const extracted = extractInvoiceFromText(VISION_BALLESTER_OCR);
+    expect(extracted.invoice_number).toBe("40494738");
+    expect(extracted.tax).toBeCloseTo(0);
+    expect(extracted.total).toBeCloseTo(757.56);
+  });
+
+  it("binds Drouyn TOTAL-> on the next line", () => {
+    const extracted = extractInvoiceFromText(VISION_DROUYN_OCR);
+    expect(extracted.invoice_number).toBe("01014389");
+    expect(extracted.invoice_date).toBe("2026-08-09");
+    expect(extracted.total).toBeCloseTo(61.5);
+  });
+
+  it("prefers Santurce Invoice Total over the tax line", () => {
+    const extracted = extractInvoiceFromText(VISION_SANTURCE_OCR);
+    expect(extracted.invoice_number).toBe("E-13563");
+    expect(extracted.tax).toBeCloseTo(8.05);
+    expect(extracted.total).toBeCloseTo(78.05);
+  });
+
+  it("prefers Fernández factura number and date over the order date", () => {
+    const extracted = extractInvoiceFromText(VISION_FERNANDEZ_OCR);
+    expect(extracted.invoice_number).toBe("4275290");
+    expect(extracted.invoice_date).toBe("2026-08-17");
+    expect(extracted.total).toBeCloseTo(182.86);
+  });
+
+  it("binds Jose Santiago bacon number and balance due across lines", () => {
+    const extracted = extractInvoiceFromText(VISION_JOSE_SANTIAGO_BACON_OCR);
+    expect(extracted.invoice_number).toBe("6517569");
+    expect(extracted.invoice_date).toBe("2026-08-14");
+    expect(extracted.total).toBeCloseTo(243.49);
+  });
+
+  it("ignores the Northwestern sticker Invoice # and binds INVOICE TOTAL", () => {
+    const extracted = extractInvoiceFromText(VISION_NORTHWESTERN_OCR);
+    expect(extracted.invoice_number).toBe("4128806");
+    expect(extracted.invoice_date).toBe("2026-08-12");
+    expect(extracted.total).toBeCloseTo(446.27);
+  });
+
+  it("parses a spaced Jose Santiago balance due", () => {
+    const extracted = extractInvoiceFromText(VISION_JOSE_SANTIAGO_BALANCE_OCR);
+    expect(extracted.qbo_vendor_name).toBe("Jose Santiago Inc");
+    expect(extracted.total).toBeCloseTo(1155.59);
   });
 });
 

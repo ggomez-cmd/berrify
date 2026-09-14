@@ -413,7 +413,7 @@ async function seedInvoices(orgId: string, userId: string) {
     "Kane Rum Bar",
     "kane-rum-bar",
     "Kane Rum Bar",
-    "1060 Ave Ashford. WhatsApp group: Kane invoices.",
+    "1060 / 1080 Ave Ashford. WhatsApp group: Kane invoices.",
   );
   const restaurantAliases: RestaurantAlias[] = [
     { restaurant_id: kaneId, match_kind: "whatsapp_group", match_text: "kane invoices" },
@@ -425,6 +425,7 @@ async function seedInvoices(orgId: string, userId: string) {
     { restaurant_id: kaneId, match_kind: "customer", match_text: "can enterprise deux" },
     { restaurant_id: kaneId, match_kind: "customer", match_text: "1060 ave ashford" },
     { restaurant_id: kaneId, match_kind: "customer", match_text: "1080 ave ashford" },
+    { restaurant_id: kaneId, match_kind: "customer", match_text: "1080 ashford" },
     { restaurant_id: semillaId, match_kind: "customer", match_text: "semilla" },
     { restaurant_id: semillaId, match_kind: "customer", match_text: "57 delcasse" },
     { restaurant_id: semillaId, match_kind: "customer", match_text: "57 c/del" },

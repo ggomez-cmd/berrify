@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DROUYN_OCR, JOSE_SANTIAGO_OCR, NORTHWESTERN_OCR, SANTURCE_OCR } from "./invoice-fixtures";
+import {
+  BALLESTER_OCR,
+  DROUYN_OCR,
+  JOSE_SANTIAGO_OCR,
+  NORTHWESTERN_OCR,
+  SANTURCE_OCR,
+  VISION_BALLESTER_OCR,
+} from "./invoice-fixtures";
 import { matchRestaurant, type Restaurant, type RestaurantAlias } from "./restaurant-route";
 
 const semilla: Restaurant = {
@@ -24,6 +31,8 @@ const aliases: RestaurantAlias[] = [
   { restaurant_id: kane.id, match_kind: "customer", match_text: "kanerb" },
   { restaurant_id: kane.id, match_kind: "customer", match_text: "can enterprise deux" },
   { restaurant_id: kane.id, match_kind: "customer", match_text: "1060 ave ashford" },
+  { restaurant_id: kane.id, match_kind: "customer", match_text: "1080 ave ashford" },
+  { restaurant_id: kane.id, match_kind: "customer", match_text: "1080 ashford" },
   { restaurant_id: semilla.id, match_kind: "customer", match_text: "semilla" },
   { restaurant_id: semilla.id, match_kind: "customer", match_text: "57 delcasse" },
   { restaurant_id: semilla.id, match_kind: "customer", match_text: "57 c/del" },
@@ -69,6 +78,15 @@ describe("matchRestaurant", () => {
     expect(matchRestaurant({ ocrText: SANTURCE_OCR }, [semilla, kane], aliases)?.restaurant.slug).toBe(
       "kane-rum-bar",
     );
+  });
+
+  it("reads Kane from Ballester sold-to 1080 Ave Ashford", () => {
+    expect(matchRestaurant({ ocrText: BALLESTER_OCR }, [semilla, kane], aliases)?.restaurant.slug).toBe(
+      "kane-rum-bar",
+    );
+    expect(
+      matchRestaurant({ ocrText: VISION_BALLESTER_OCR }, [semilla, kane], aliases)?.match_text,
+    ).toBe("1080 ave ashford");
   });
 
   it("does not guess from CAN ENTERPRISE alone", () => {
