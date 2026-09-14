@@ -583,7 +583,7 @@ describe("Worker API", () => {
     const geminiFetch: typeof fetch = async (input, init) => {
       const url = String(input);
       expect(url).toMatch(
-        /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-2\.5-flash:generateContent\?key=gemini-key$/,
+        /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.6-flash:generateContent\?key=gemini-key$/,
       );
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body ?? "{}")) as {
