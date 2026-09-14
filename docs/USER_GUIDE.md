@@ -317,8 +317,8 @@ Invoices turns a supplier photo (or a WhatsApp / Telegram forward) into a QuickB
 Typical flow:
 
 1. Photograph or upload a bill.
-2. Berrify runs OCR (it tries 0° / 90° / 180° / 270° and keeps the best read).
-3. It extracts vendor, date, totals, SKUs, and rolls SKUs into expense accounts (food, kitchen, cleaning, beverage, tax).
+2. Berrify runs OCR (Google Vision first; Tesseract at 0° / 90° / 180° / 270° if Vision is unavailable).
+3. It extracts vendor, date, totals, SKUs with Gemini when the Worker has a billed Gemini key, otherwise with the built-in rules. SKUs roll into expense accounts (food, kitchen, cleaning, beverage, tax). Saving Review remembers the vendor name and SKU/expense aliases for later bills.
 4. It tries to pick **which restaurant’s books** the bill belongs to (Semilla vs Kane Rum Bar).
 5. You review, then export an `.iif` (or CSV) and import it in QuickBooks Desktop.
 

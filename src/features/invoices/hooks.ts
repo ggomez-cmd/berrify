@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import type { ExpenseLine, ExtractedSku } from "../../lib/invoice-extract";
+import { skuAliasesFromReview, vendorAliasFromReview } from "../../lib/invoice-review-memory";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type {
@@ -8,6 +9,7 @@ import type {
   Invoice,
   InvoiceExpenseLine,
   InvoiceLine,
+  InvoiceSkuAliasRow,
   InvoiceSource,
   InvoiceStatus,
   InvoiceWithSupplier,
@@ -103,6 +105,22 @@ export function useRestaurantAliases() {
         .eq("org_id", org!.id);
       if (error) throw error;
       return (data ?? []) as RestaurantAliasRow[];
+    },
+  });
+}
+
+export function useSkuAliases() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["invoice_sku_aliases", org?.id],
+    enabled: Boolean(org?.id) && isManager(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoice_sku_aliases")
+        .select("*")
+        .eq("org_id", org!.id);
+      if (error) throw error;
+      return (data ?? []) as InvoiceSkuAliasRow[];
     },
   });
 }
@@ -264,12 +282,91 @@ export function useUpdateInvoice() {
         input.lines,
         input.expenses,
       );
+
+      if (input.status === "reviewed" || input.status === "exported") {
+        await persistReviewAliases(input);
+      }
     },
     onSuccess: (_data, input) => {
       void qc.invalidateQueries({ queryKey: ["invoices"] });
       void qc.invalidateQueries({ queryKey: ["invoice_media", input.invoice.id] });
+      void qc.invalidateQueries({ queryKey: ["vendor_aliases"] });
+      void qc.invalidateQueries({ queryKey: ["invoice_sku_aliases"] });
     },
   });
+}
+
+async function persistReviewAliases(input: {
+  invoice: Invoice;
+  lines: Array<
+    Pick<
+      InvoiceLine,
+      | "code"
+      | "description"
+      | "qty_ordered"
+      | "qty_shipped"
+      | "uom"
+      | "pounds"
+      | "unit_price"
+      | "amount"
+      | "category"
+    >
+  >;
+  expenses: Array<Pick<InvoiceExpenseLine, "account" | "amount" | "memo">>;
+  supplier_id: string | null;
+  vendor_name: string | null;
+}) {
+  const { data: supplier } = input.supplier_id
+    ? await supabase.from("suppliers").select("name").eq("id", input.supplier_id).maybeSingle()
+    : { data: null };
+  const vendorAlias = vendorAliasFromReview({
+    supplierId: input.supplier_id,
+    vendorName: input.vendor_name,
+    qboVendorName: supplier?.name ?? input.vendor_name ?? "",
+  });
+  if (vendorAlias) {
+    const { error } = await supabase.from("vendor_aliases").upsert(
+      {
+        org_id: input.invoice.org_id,
+        match_text: vendorAlias.match_text,
+        supplier_id: vendorAlias.supplier_id,
+        qbo_vendor_name: vendorAlias.qbo_vendor_name,
+      },
+      { onConflict: "org_id,match_text" },
+    );
+    if (error) throw error;
+  }
+
+  const skuAliases = skuAliasesFromReview(
+    input.lines.map((line) => ({
+      code: line.code ?? null,
+      description: line.description,
+      qty_ordered: line.qty_ordered ?? 0,
+      qty_shipped: line.qty_shipped ?? 0,
+      uom: line.uom ?? null,
+      pounds: line.pounds ?? null,
+      unit_price: line.unit_price ?? 0,
+      amount: line.amount,
+      category: line.category ?? "food",
+    })),
+    input.expenses.map((line) => ({
+      account: line.account,
+      amount: line.amount,
+      memo: line.memo ?? "",
+    })),
+  );
+  if (skuAliases.length === 0) return;
+  const { error } = await supabase.from("invoice_sku_aliases").upsert(
+    skuAliases.map((alias) => ({
+      org_id: input.invoice.org_id,
+      match_text: alias.match_text,
+      account: alias.account,
+      memo: alias.memo,
+      category: alias.category,
+    })),
+    { onConflict: "org_id,match_text" },
+  );
+  if (error) throw error;
 }
 
 async function replaceInvoiceChildren(

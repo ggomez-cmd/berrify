@@ -554,6 +554,110 @@ describe("Worker API", () => {
     });
     expect(response.status).toBe(401);
   });
+
+  it("returns 503 for invoice extract when the Gemini key is missing", async () => {
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit(JSON.stringify({ ocr_text: "FACTURA 12.00" })),
+      ocrEnv,
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Gemini extract is not configured" });
+  });
+
+  it("returns 400 for invoice extract with invalid JSON", async () => {
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit("{", {
+        headers: { Origin: "https://berrify.example", Authorization: "Bearer user-token" },
+      }),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid JSON" });
+  });
+
+  it("returns Gemini invoices when generateContent succeeds", async () => {
+    const geminiFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      expect(url).toMatch(
+        /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-2\.5-flash:generateContent\?key=gemini-key$/,
+      );
+      expect(init?.method).toBe("POST");
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        tools?: unknown;
+        generationConfig?: { responseMimeType?: string };
+        contents?: { parts?: unknown[] }[];
+      };
+      expect(body.tools).toBeUndefined();
+      expect(body.generationConfig?.responseMimeType).toBe("application/json");
+      expect(JSON.stringify(body)).not.toContain("googleSearch");
+      expect(JSON.stringify(init?.body)).not.toMatch(/data:image/);
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    invoices: [
+                      {
+                        vendor_name: "Ballester",
+                        qbo_vendor_name: "Ballester Hermanos Inc",
+                        supplier_id: null,
+                        invoice_number: "123",
+                        invoice_date: "2026-08-13",
+                        due_date: null,
+                        terms: "Net 30",
+                        subtotal: 757.56,
+                        tax: 0,
+                        total: 757.56,
+                        lines: [],
+                        expenses: [{ account: "50000 · Food Purchases", amount: 757.56, memo: "Food" }],
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      });
+    };
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit(
+        JSON.stringify({
+          ocr_text: "BALLESTER HERMANOS NUM. FACTURA 123 TOTAL $757.56 extra padding text here",
+          confidence: 92,
+        }),
+      ),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(geminiFetch),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      engine: "gemini",
+      invoices: [
+        expect.objectContaining({
+          vendor_name: "Ballester",
+          total: 757.56,
+          invoice_number: "123",
+        }),
+      ],
+    });
+  });
+
+  it("rejects unauthenticated invoice extract calls", async () => {
+    const response = await api("/api/invoice-extract", {
+      method: "POST",
+      headers: { Origin: "https://berrify.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ ocr_text: "FACTURA" }),
+    });
+    expect(response.status).toBe(401);
+  });
 });
 
 describe("HTTPS redirect", () => {
