@@ -107,6 +107,7 @@ export function compactOcrMoney(text: string): string {
   return text
     .replace(/(\d)\s+,\s*/g, "$1,")
     .replace(/(\d),\s+(\d)/g, "$1,$2")
+    .replace(/(?<!\.\d)(\d)\s+\.\s*(\d{2})\b/g, "$1.$2")
     .replace(/(\d)\.\s+(\d{2})\b/g, "$1.$2");
 }
 
@@ -232,6 +233,26 @@ function labeledMoney(text: string, labels: string[]): number {
       const amount = parseMoney(next[1]);
       if (amount > 0) return amount;
     }
+  }
+  return 0;
+}
+
+/** After a label, skip qty/weight rows and take the last money in the following block. */
+function labeledMoneyInBlock(text: string, labels: string[], lookAhead = 8): number {
+  for (const label of labels) {
+    const start = text.search(new RegExp(label, "i"));
+    if (start < 0) continue;
+    const afterLabel = text.slice(start);
+    const lines = afterLabel.split("\n").slice(0, lookAhead + 1);
+    const amounts: number[] = [];
+    for (const line of lines) {
+      if (/^\s*(?:total\s+)?(?:qty|libras|cajas|weight)\b/i.test(line)) continue;
+      for (const hit of line.matchAll(new RegExp(MONEY.source, "g"))) {
+        const amount = parseMoney(hit[1]);
+        if (amount > 0) amounts.push(amount);
+      }
+    }
+    if (amounts.length > 0) return amounts[amounts.length - 1]!;
   }
   return 0;
 }
@@ -389,7 +410,7 @@ export function extractInvoicesFromText(
 ): ExtractedInvoice[] {
   const text = compactOcrMoney(ocrText.replace(/\r/g, ""));
   const hasBallester = /ballester/i.test(text);
-  const hasSupermax = /supermax|superhax/i.test(text);
+  const hasSupermax = /supermax|superhax|super\s*max/i.test(text);
   if (hasBallester && hasSupermax) {
     return [
       extractInvoiceFromText(sliceVendorWindow(text, "ballester"), aliases, rules, "ballester"),
@@ -399,14 +420,71 @@ export function extractInvoicesFromText(
   return splitVendorDocuments(text).map((chunk) => extractInvoiceFromText(chunk, aliases, rules));
 }
 
+const SUPERMAX_SHAPE =
+  /supermax|superhax|super\s*max|selfcheckout|ath(?:\s+debit)?|debit\s*sale|purchase amount|tax municipal|tax estatal|boars head|canadian cheddar|ldpe|evoice\s*#|ben\s*&\s*jerry/i;
+const BALLESTER_SHAPE =
+  /ballester|num\.?\s*factura|fecha\s*factura|bc\s*30\s*days|pork carnita|beef ground|coco lopez|carnita meat|excel or ibp|juice pineapple/i;
+
 function sliceVendorWindow(text: string, keep: "ballester" | "supermax"): string {
+  const parts = partitionBallesterSupermax(text);
+  const chunk = keep === "ballester" ? parts.ballester : parts.supermax;
+  if (chunk.trim().length > 20) return chunk;
   const ballester = text.search(/ballester/i);
-  const supermax = text.search(/supermax|superhax/i);
-  if (ballester < 0 || supermax < 0) return text;
+  const supermax = text.search(/supermax|superhax|super\s*max/i);
+  if (ballester < 0 || supermax < 0) {
+    return keep === "ballester" ? scrubSupermaxTokens(text) : text;
+  }
   if (keep === "ballester") {
-    return ballester < supermax ? text.slice(ballester, supermax) : text.slice(ballester);
+    const raw = ballester < supermax ? text.slice(ballester, supermax) : text.slice(ballester);
+    return scrubSupermaxTokens(raw);
   }
   return supermax < ballester ? text.slice(supermax, ballester) : text.slice(supermax);
+}
+
+function scrubSupermaxTokens(text: string): string {
+  return text.replace(/super\s*max|supermax|superhax/gi, "");
+}
+
+function partitionBallesterSupermax(text: string): { ballester: string; supermax: string } {
+  const lines = text.split("\n");
+  const ballester: string[] = [];
+  const supermax: string[] = [];
+  let mode: "ballester" | "supermax" | null = null;
+
+  const lineMoney = (line: string): number => {
+    const hit = line.match(MONEY);
+    return hit?.[1] ? parseMoney(hit[1]) : 0;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const nextAmt = i + 1 < lines.length ? lineMoney(lines[i + 1]!) : 0;
+    const amt = lineMoney(line) || nextAmt;
+    const supermaxLine = SUPERMAX_SHAPE.test(line);
+    const ballesterLine = BALLESTER_SHAPE.test(line) || BALLESTER_WEIGHT.test(line) || BALLESTER_FLAT.test(line);
+    const totalish = /(?:sub\s*-?totals?|^\s*total\b)/i.test(line) && !/total\s+(?:qty|tax|libras|cajas|de articulos)/i.test(line);
+
+    if (totalish && amt >= 100) {
+      mode = "ballester";
+      ballester.push(line);
+      continue;
+    }
+    if (totalish && amt > 0 && amt < 200 && (mode === "supermax" || supermaxLine)) {
+      mode = "supermax";
+      supermax.push(line);
+      continue;
+    }
+    if (supermaxLine && !ballesterLine) mode = "supermax";
+    else if (ballesterLine) mode = "ballester";
+
+    if (mode === "supermax") supermax.push(line);
+    else if (mode === "ballester") ballester.push(line);
+  }
+
+  return {
+    ballester: scrubSupermaxTokens(ballester.join("\n")),
+    supermax: supermax.join("\n"),
+  };
 }
 
 function splitVendorDocuments(text: string): string[] {
@@ -434,7 +512,7 @@ function splitVendorDocuments(text: string): string[] {
 function detectTerms(text: string, hint: ExtractHint = "auto"): { terms: string; days: number } {
   if (
     hint === "supermax" ||
-    (/supermax|superhax/i.test(text) && /selfcheckout|ath|debit/i.test(text))
+    (/supermax|superhax|super\s*max/i.test(text) && /selfcheckout|ath|debit/i.test(text))
   ) {
     return { terms: "Due on receipt", days: 0 };
   }
@@ -454,7 +532,7 @@ function extractPrintedDueDate(text: string): string | null {
 
 function extractTax(text: string, hint: ExtractHint): number {
   if (hint === "ballester") return 0;
-  if (hint === "auto" && /ballester/i.test(text) && !/supermax|superhax/i.test(text)) {
+  if (hint === "auto" && /ballester/i.test(text) && !/supermax|superhax|super\s*max/i.test(text)) {
     return 0;
   }
   const combined = labeledMoney(text, ["total tax", "puerto rico state"]);
@@ -476,18 +554,19 @@ function extractTax(text: string, hint: ExtractHint): number {
   return tax;
 }
 
-function extractTotal(text: string, hint: ExtractHint, subtotal: number, tax: number): number {
-  if (hint === "supermax" || /supermax|superhax/i.test(text)) {
-    const purchase = text.match(/purchase amount[:\s]+\$?([\d,]+\.\d{2})/i);
-    const ath = text.match(/(?:ath|debit\s*sale)[^\n]*?([\d,]+\.\d{2})/i);
-    const smallTotals = standaloneTotalAmounts(text).filter((n) => n > 0 && n < 200);
-    return (
-      (purchase ? parseMoney(purchase[1]) : 0) ||
-      (ath ? parseMoney(ath[1]) : 0) ||
-      (smallTotals.length > 0 ? smallTotals[smallTotals.length - 1]! : 0) ||
-      round2(subtotal + tax)
-    );
-  }
+function extractSupermaxTotal(text: string, subtotal: number, tax: number): number {
+  const purchase = text.match(/purchase amount[:\s]+\$?([\d,]+\.\d{2})/i);
+  const ath = text.match(/(?:ath|debit\s*sale)[^\n]*?([\d,]+\.\d{2})/i);
+  const smallTotals = standaloneTotalAmounts(text).filter((n) => n > 0 && n < 200);
+  return (
+    (purchase ? parseMoney(purchase[1]) : 0) ||
+    (ath ? parseMoney(ath[1]) : 0) ||
+    (smallTotals.length > 0 ? smallTotals[smallTotals.length - 1]! : 0) ||
+    round2(subtotal + tax)
+  );
+}
+
+function extractGenericTotal(text: string, subtotal: number, tax: number): number {
   return (
     labeledMoney(text, [
       "balance due",
@@ -497,9 +576,29 @@ function extractTotal(text: string, hint: ExtractHint, subtotal: number, tax: nu
       "total orden",
       "total order",
     ]) ||
+    labeledMoneyInBlock(text, ["invoice total", "balance due", "total due", "total orden"]) ||
     standaloneTotalAmounts(text)[0] ||
     round2(subtotal + tax)
   );
+}
+
+function extractTotal(text: string, hint: ExtractHint, subtotal: number, tax: number): number {
+  switch (hint) {
+    case "ballester":
+      return extractGenericTotal(text, subtotal, tax);
+    case "supermax":
+      return extractSupermaxTotal(text, subtotal, tax);
+    case "jose":
+    case "auto":
+      if (/supermax|superhax|super\s*max/i.test(text) && !/ballester/i.test(text)) {
+        return extractSupermaxTotal(text, subtotal, tax);
+      }
+      return extractGenericTotal(text, subtotal, tax);
+    default: {
+      const _never: never = hint;
+      return _never;
+    }
+  }
 }
 
 function standaloneTotalAmounts(text: string): number[] {
@@ -593,6 +692,7 @@ function extractInvoiceDate(text: string, hint: ExtractHint = "auto"): string | 
   }
   const withoutOrderAndDue = text
     .replace(/order\s*date[^\n]*/gi, "")
+    .replace(/fecha\s*orden[^\n]*/gi, "")
     .replace(/(?:due\s*date|fecha\s*venc\w*|paid before|antes del)[^\n]*/gi, "");
   const labeled = [
     new RegExp(`fecha\\s*(?:de\\s*)?factura\\s*[:.]?\\s*${DATE.source}`, "i"),
@@ -618,8 +718,8 @@ function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string 
     .replace(/customer\s*(?:no\.?|number|#)[^\n]*/gi, "");
   if (hint === "supermax") {
     const receipt =
-      withoutCliente.match(/invoice\s*#:?\s*(\d{8,})/i) ??
-      withoutCliente.match(/nice\s*#:?\s*\(?(\d{8,})/i);
+      withoutCliente.match(/(?:e?invoice|evoice|nice)\s*#:?\s*\(?\s*(\d{8,})/i) ??
+      withoutCliente.match(/(?:e?invoice|evoice|nice)\s*#:?\s*\(?\s*\n\s*(\d{8,})/i);
     return receipt?.[1] ?? null;
   }
   const ekos = withoutCliente.match(/\binvoice\s*(?:number|#)?\s*:?\s*(E-\d{4,})/i);
@@ -628,7 +728,9 @@ function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string 
   if (invoiceWord?.[1]) return invoiceWord[1];
   const numFactura = withoutCliente.match(/num\.?\s*factura[\s\S]{0,160}?(\d{7,8})/i);
   if (numFactura?.[1]) return numFactura[1];
-  const facturaNumero = withoutCliente.match(/factura\s+numero[^\d]{0,40}(\d{7,8})/i);
+  const facturaNumero = withoutCliente.match(
+    /factura\s*(?:\n\s*)?(?:n[uú]m(?:ero|\.)?|numero|#)\s*[:.]?\s*(?:\n\s*)?(\d{7,8})/i,
+  );
   if (facturaNumero?.[1]) return facturaNumero[1];
   const factura = withoutCliente.match(/\b(?:num\.?\s*)?factura[^\d]{0,40}(\d{7,8})/i);
   if (factura?.[1] && factura[1].length >= 7) return factura[1];
