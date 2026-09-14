@@ -109,8 +109,8 @@ function visionText(payload: unknown): { text: string; confidence: number } | nu
   return { text, confidence };
 }
 
-function parseImageDataUrl(image: unknown):
-  | { ok: true; content: string }
+export function parseImageDataUrl(image: unknown):
+  | { ok: true; content: string; mime: string }
   | { ok: false; status: number; error: string } {
   if (typeof image !== "string" || !image.trim()) {
     return { ok: false, status: 400, error: "image data URL is required" };
@@ -125,10 +125,10 @@ function parseImageDataUrl(image: unknown):
   if (bytes > MAX_INVOICE_IMAGE_BYTES) {
     return { ok: false, status: 413, error: "Invoice photo must be 8 MB or smaller." };
   }
-  return { ok: true, content };
+  return { ok: true, content, mime: match[1].toLowerCase() };
 }
 
-async function requireSession(
+export async function requireSession(
   request: Request,
   env: OcrPostEnv,
   fetchImpl: typeof fetch,

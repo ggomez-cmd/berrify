@@ -221,6 +221,15 @@ export type AccountRuleRow = {
   category: InvoiceCategory;
 };
 
+export type InvoiceSkuAliasRow = {
+  id: string;
+  org_id: string;
+  match_text: string;
+  account: string;
+  memo: string | null;
+  category: InvoiceCategory;
+};
+
 export type InvoiceWithSupplier = Invoice & {
   suppliers: Pick<Supplier, "id" | "name"> | null;
   restaurants: Pick<Restaurant, "id" | "name" | "qbo_company_name" | "slug"> | null;

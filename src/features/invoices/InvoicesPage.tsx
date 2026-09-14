@@ -11,10 +11,11 @@ import { Table, THead, Td, Th } from "../../components/ui/table";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
-  extractInvoicesFromText,
   type AccountRule,
   type VendorAlias,
 } from "../../lib/invoice-extract";
+import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
+import { reviewedExamplesForVendor } from "../../lib/invoice-review-memory";
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
 import { assertInvoiceImage } from "../../lib/invoice-image";
@@ -32,6 +33,7 @@ import {
   useInvoices,
   useRestaurantAliases,
   useRestaurants,
+  useSkuAliases,
   useVendorAliases,
 } from "./hooks";
 
@@ -66,6 +68,7 @@ export function InvoicesPage() {
   const { data: restaurants = [] } = useRestaurants();
   const { data: restaurantAliases = [] } = useRestaurantAliases();
   const { data: aliases = [] } = useVendorAliases();
+  const { data: skuAliases = [] } = useSkuAliases();
   const { data: rules = [] } = useAccountRules();
   const create = useCreateInvoice();
   const remove = useDeleteInvoice();
@@ -102,7 +105,26 @@ export function InvoicesPage() {
               category: r.category,
             }))
           : DEFAULT_ACCOUNT_RULES;
-      const extracted = extractInvoicesFromText(ocr.text || caption || "", vendorAliases, accountRules);
+      const ocrText = ocr.text || caption || "";
+      const { invoices: extracted, engine: extractEngine } = await extractInvoicesAfterOcr({
+        ocrText,
+        image: data,
+        confidence: ocr.confidence,
+        restaurants: restaurants.map((r) => ({
+          name: r.name,
+          qbo_company_name: r.qbo_company_name,
+          slug: r.slug,
+        })),
+        vendorAliases,
+        accountRules,
+        skuAliases: skuAliases.map((alias) => ({
+          match_text: alias.match_text,
+          account: alias.account,
+          memo: alias.memo,
+          category: alias.category,
+        })),
+        examples: reviewedExamplesForVendor(invoices, ocrText, vendorAliases),
+      });
       const route = matchRestaurant(
         { ocrText: ocr.text || caption || "", caption },
         restaurants.map((r) => ({
@@ -143,7 +165,7 @@ export function InvoicesPage() {
         ids.push(id);
       }
       setMessage(
-        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. ${ocrEngineNote(ocr)} · review the restaurant and Expenses tab, then export IIF.`,
+        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. ${ocrEngineNote(ocr)} · ${extractEngineNote(extractEngine)} · review the restaurant and Expenses tab, then export IIF.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not read invoice");
@@ -356,7 +378,9 @@ export function InvoicesPage() {
         restaurants={restaurants}
         restaurantAliases={restaurantAliases}
         vendorAliases={aliases}
+        skuAliases={skuAliases}
         accountRules={rules}
+        invoices={invoices}
       />
     </div>
   );

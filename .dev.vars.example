@@ -10,3 +10,7 @@ TELEGRAM_ORG_ID=
 NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 GOOGLE_VISION_API_KEY=
+# Billed Gemini API key (Google AI Studio / Gemini API). Worker-only — never
+# expose to the browser. Keep Google “used to improve products” / training
+# data sharing off for this key.
+GEMINI_API_KEY=

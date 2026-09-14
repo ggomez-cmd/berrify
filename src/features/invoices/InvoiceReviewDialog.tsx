@@ -6,7 +6,6 @@ import { Field } from "../../components/ui/label";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
-  extractInvoicesFromText,
   invoiceTotals,
   rollupExpenses,
   toQuickBooksBillCsv,
@@ -17,12 +16,15 @@ import {
   type ExtractedSku,
   type VendorAlias,
 } from "../../lib/invoice-extract";
+import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
 import { formatMoney } from "../../lib/format";
+import { reviewedExamplesForVendor } from "../../lib/invoice-review-memory";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
 import type {
   AccountRuleRow,
   InvoiceCategory,
+  InvoiceSkuAliasRow,
   InvoiceWithSupplier,
   Restaurant,
   RestaurantAliasRow,
@@ -62,20 +64,48 @@ function toAccountRules(rows: AccountRuleRow[]): AccountRule[] {
   }));
 }
 
-function billsFromOcr(
+async function billsFromOcr(
   text: string,
   current: InvoiceWithSupplier,
   restaurants: Restaurant[],
   restaurantAliases: RestaurantAliasRow[],
   vendorAliases: VendorAliasRow[],
   accountRules: AccountRuleRow[],
-): { first: ExtractedInvoice | null; extras: ExtractedInvoice[]; restaurantId: string | null } {
-  const [first, ...extras] = extractInvoicesFromText(
-    text,
-    toVendorAliases(vendorAliases),
-    toAccountRules(accountRules),
-  );
-  if (!first) return { first: null, extras: [], restaurantId: current.restaurant_id };
+  skuAliases: InvoiceSkuAliasRow[],
+  invoices: InvoiceWithSupplier[],
+  image?: string | null,
+  confidence?: number,
+): Promise<{
+  first: ExtractedInvoice | null;
+  extras: ExtractedInvoice[];
+  restaurantId: string | null;
+  extractNote: string;
+}> {
+  const aliases = toVendorAliases(vendorAliases);
+  const rules = toAccountRules(accountRules);
+  const { invoices: extracted, engine } = await extractInvoicesAfterOcr({
+    ocrText: text,
+    image,
+    confidence,
+    restaurants: restaurants.map((restaurant) => ({
+      name: restaurant.name,
+      qbo_company_name: restaurant.qbo_company_name,
+      slug: restaurant.slug,
+    })),
+    vendorAliases: aliases,
+    accountRules: rules,
+    skuAliases: skuAliases.map((alias) => ({
+      match_text: alias.match_text,
+      account: alias.account,
+      memo: alias.memo,
+      category: alias.category,
+    })),
+    examples: reviewedExamplesForVendor(invoices, text, aliases),
+  });
+  const [first, ...extras] = extracted;
+  if (!first) {
+    return { first: null, extras: [], restaurantId: current.restaurant_id, extractNote: extractEngineNote(engine) };
+  }
 
   let restaurantId = current.restaurant_id;
   if (!restaurantId) {
@@ -100,7 +130,7 @@ function billsFromOcr(
     );
     restaurantId = route?.restaurant.id ?? null;
   }
-  return { first, extras, restaurantId };
+  return { first, extras, restaurantId, extractNote: extractEngineNote(engine) };
 }
 
 export function InvoiceReviewDialog({
@@ -111,7 +141,9 @@ export function InvoiceReviewDialog({
   restaurants,
   restaurantAliases,
   vendorAliases,
+  skuAliases,
   accountRules,
+  invoices,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -120,7 +152,9 @@ export function InvoiceReviewDialog({
   restaurants: Restaurant[];
   restaurantAliases: RestaurantAliasRow[];
   vendorAliases: VendorAliasRow[];
+  skuAliases: InvoiceSkuAliasRow[];
   accountRules: AccountRuleRow[];
+  invoices: InvoiceWithSupplier[];
 }) {
   const save = useUpdateInvoice();
   const create = useCreateInvoice();
@@ -188,16 +222,28 @@ export function InvoiceReviewDialog({
     if (!open || !invoice || media.isLoading || !media.data) return;
     if (ocrStartedFor.current === invoice.id) return;
 
-    const applyPreview = (text: string, allowExtras: boolean) => {
-      const preview = billsFromOcr(
+    const applyPreview = async (
+      text: string,
+      allowExtras: boolean,
+      image?: string | null,
+      confidence?: number,
+    ) => {
+      const preview = await billsFromOcr(
         text,
         invoice,
         restaurants,
         restaurantAliases,
         vendorAliases,
         accountRules,
+        skuAliases,
+        invoices,
+        image,
+        confidence,
       );
       if (preview.restaurantId) setRestaurantId(preview.restaurantId);
+      setOcrNote((note) =>
+        note ? `${note} · ${preview.extractNote}` : preview.extractNote,
+      );
       if (!preview.first) return;
       setVendorName(preview.first.vendor_name ?? "");
       setSupplierId(preview.first.supplier_id ?? "");
@@ -221,7 +267,13 @@ export function InvoiceReviewDialog({
       ocrStartedFor.current = invoice.id;
       setOcrText(existingOcr);
       if (invoice.invoice_lines.length === 0) {
-        applyPreview(existingOcr, false);
+        setOcrBusy(true);
+        void applyPreview(existingOcr, false, image)
+          .catch((err) => {
+            ocrStartedFor.current = null;
+            setError(err instanceof Error ? err.message : "Could not extract invoice");
+          })
+          .finally(() => setOcrBusy(false));
       }
       return;
     }
@@ -233,10 +285,10 @@ export function InvoiceReviewDialog({
     ocrStartedFor.current = invoice.id;
     setOcrBusy(true);
     void ocrImage(image, { engine: getOcrEngine() })
-      .then((ocr) => {
+      .then(async (ocr) => {
         setOcrText(ocr.text);
         setOcrNote(ocrEngineNote(ocr));
-        applyPreview(ocr.text, true);
+        await applyPreview(ocr.text, true, image, ocr.confidence);
       })
       .catch((err) => {
         ocrStartedFor.current = null;
@@ -251,7 +303,9 @@ export function InvoiceReviewDialog({
     restaurants,
     restaurantAliases,
     vendorAliases,
+    skuAliases,
     accountRules,
+    invoices,
   ]);
 
   const totals = useMemo(() => invoiceTotals(lines, tax), [lines, tax]);

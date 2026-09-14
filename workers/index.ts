@@ -1,3 +1,4 @@
+import { handleInvoiceExtractPost } from "./invoice-extract-post";
 import { handleOcrPost } from "./ocr-post";
 import { handleTelegramPost } from "./telegram-post";
 import { handleWhatsAppPost } from "./whatsapp-post";
@@ -19,6 +20,8 @@ export type WorkerEnv = {
   NEXT_PUBLIC_SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   GOOGLE_VISION_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
 };
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -135,6 +138,16 @@ export async function handleApi(
     switch (request.method) {
       case "POST":
         return withSecurityHeaders(await handleOcrPost(request, env, fetchImpl));
+      default: {
+        return methodNotAllowed(["POST"]);
+      }
+    }
+  }
+
+  if (path === "/api/invoice-extract") {
+    switch (request.method) {
+      case "POST":
+        return withSecurityHeaders(await handleInvoiceExtractPost(request, env, fetchImpl));
       default: {
         return methodNotAllowed(["POST"]);
       }

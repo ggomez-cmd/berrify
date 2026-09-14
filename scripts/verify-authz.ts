@@ -105,6 +105,12 @@ try {
   });
   assert(staffAliases.length === 0, "staff can select vendor_aliases");
 
+  const staffSkuAliases = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ id: string }>(`select id from public.invoice_sku_aliases where org_id = $1`, [orgId]);
+    return rows;
+  });
+  assert(staffSkuAliases.length === 0, "staff can select invoice_sku_aliases");
+
   const staffRates = await asAuthenticated(staffId, async () =>
     expectReject(() => q(`select hourly_rate, email, phone from public.employees where org_id = $1`, [orgId])),
   );

@@ -130,11 +130,15 @@ The webhook JSON shape is documented at the top of
 `scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
 and unofficial group bots are out of scope. Invoices **Camera/Upload** and
 **Review** call `POST /api/ocr` first (Cloud Vision Document Text Detection,
-Spanish + English). If Vision is missing or fails, the browser falls back to
-`tesseract.js` `eng` at 0/90/180/270 and keeps the highest confidence.
-`whatsapp:ingest` still OCRs image files with Tesseract only. Telegram and
-WhatsApp webhooks insert `ocr_text: null`. Pink carbonless photos that were
-shot sideways usually need a human pass in Review before you export.
+Spanish + English). After OCR, Camera / Upload / Review call
+`POST /api/invoice-extract` (Gemini Flash, `GEMINI_API_KEY` on the Worker).
+If that secret is missing (503) or extract fails, the client uses the current
+`extractInvoicesFromText` rules. If Vision is missing or fails, the browser
+falls back to `tesseract.js` `eng` at 0/90/180/270 and keeps the highest
+confidence. `whatsapp:ingest` still OCRs image files with Tesseract only.
+Telegram and WhatsApp webhooks insert `ocr_text: null` and do **not** call
+Gemini. Pink carbonless photos that were shot sideways usually need a human
+pass in Review before you export.
 
 ## Cloudflare Workers
 
@@ -144,6 +148,7 @@ The production app is a Vite SPA plus a small Worker. Static files come from
 
 - `GET /api/health` — liveness JSON
 - `POST /api/ocr` — session-authenticated Cloud Vision Document Text Detection (`GOOGLE_VISION_API_KEY`); 503 when the secret is missing so the browser falls back to Tesseract
+- `POST /api/invoice-extract` — session-authenticated Gemini Flash extract (`GEMINI_API_KEY`); 503 when the secret is missing so the browser falls back to `extractInvoicesFromText`
 - `GET /api/webhooks/whatsapp` — Meta verify-token handshake (`WHATSAPP_VERIFY_TOKEN`)
 - `POST /api/webhooks/whatsapp` — Cloud API ingest (HMAC + Graph media download → `invoices` row, no OCR on the Worker)
 - `POST /api/webhooks/telegram` — Bot API ingest (`X-Telegram-Bot-Api-Secret-Token` + `getFile` download → `invoices` row, no OCR on the Worker)
@@ -173,7 +178,7 @@ GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Worker secrets for inbound WhatsApp, Telegram, and Vision OCR (also listed in `.dev.vars.example`):
+Worker secrets for inbound WhatsApp, Telegram, Vision OCR, and Gemini extract (also listed in `.dev.vars.example`):
 
 ```bash
 npx wrangler secret put WHATSAPP_VERIFY_TOKEN
@@ -187,7 +192,12 @@ npx wrangler secret put TELEGRAM_ORG_ID
 npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put GOOGLE_VISION_API_KEY
+npx wrangler secret put GEMINI_API_KEY
 ```
+
+Set the same `GEMINI_API_KEY` in the Cloudflare dashboard (Workers → Settings → Variables and Secrets) as you do for Vision. Use a **billed** Gemini API key from Google AI Studio / Gemini API. Do not turn on Google’s “used to improve products” / training-data sharing for that key. Never put `GEMINI_API_KEY` in Vite/`NEXT_PUBLIC_*` or the browser.
+
+Saving Invoice Review upserts `vendor_aliases` when a supplier is set and writes `invoice_sku_aliases` from corrected SKU/expense lines so later extracts can reuse them. Apply `0015_invoice_sku_aliases.sql` with `npm run db:apply -- 0015_invoice_sku_aliases.sql` (do not `db:push`).
 
 [Cloud Vision pricing](https://cloud.google.com/vision/pricing): the first 1,000 images/month are free; after that Document Text Detection is about $1.50 / 1,000. Without `GOOGLE_VISION_API_KEY`, `POST /api/ocr` returns 503 and the SPA uses Tesseract.
 
