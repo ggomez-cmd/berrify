@@ -103,6 +103,7 @@ describe("addDaysIso", () => {
 describe("compactOcrMoney", () => {
   it("removes spaces inside thousands and cents", () => {
     expect(compactOcrMoney("$1, 155. 59")).toBe("$1,155.59");
+    expect(compactOcrMoney("$1 , 155 . 59")).toBe("$1,155.59");
     expect(compactOcrMoney("233. 24")).toBe("233.24");
   });
 });
@@ -318,6 +319,13 @@ describe("Vision-shaped OCR", () => {
     expect(bills[1]?.total).toBeCloseTo(48.44);
   });
 
+  it("does not run SuperMax extractTotal on a Ballester hint that still says SuperMax", () => {
+    const leaked = `${VISION_BALLESTER_OCR}\nSUPERMAX leftover overlay\n`;
+    const extracted = extractInvoiceFromText(leaked, [], undefined, "ballester");
+    expect(extracted.total).toBeCloseTo(757.56);
+    expect(extracted.invoice_date).toBe("2026-08-13");
+  });
+
   it("does not double Ballester tax into the merchandise total", () => {
     const extracted = extractInvoiceFromText(VISION_BALLESTER_OCR);
     expect(extracted.invoice_number).toBe("40494738");
@@ -364,6 +372,7 @@ describe("Vision-shaped OCR", () => {
     const extracted = extractInvoiceFromText(VISION_JOSE_SANTIAGO_BALANCE_OCR);
     expect(extracted.qbo_vendor_name).toBe("Jose Santiago Inc");
     expect(extracted.total).toBeCloseTo(1155.59);
+    expect(extracted.invoice_date).toBeNull();
   });
 });
 
