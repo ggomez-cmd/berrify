@@ -26,6 +26,26 @@ describe("downloadTelegramFile", () => {
     expect([...media.bytes]).toEqual([1, 2, 3, 4]);
   });
 
+  it("sniffs JPEG bytes when Telegram serves octet-stream", async () => {
+    const bytes = Uint8Array.from(atob("/9j/4AAQ"), (c) => c.charCodeAt(0));
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/getFile")) {
+        return Response.json({
+          ok: true,
+          result: { file_path: "photos/bill.jpg", file_size: bytes.byteLength },
+        });
+      }
+      if (url.includes("/file/")) {
+        return new Response(bytes, { headers: { "content-type": "application/octet-stream" } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+    const media = await downloadTelegramFile("FILE_1", "bot-token", fetchImpl);
+    expect(media.mimeType).toBe("image/jpeg");
+    expect(media.dataUrl.startsWith("data:image/jpeg;base64,")).toBe(true);
+  });
+
   it("surfaces Telegram getFile error descriptions", async () => {
     const fetchImpl: typeof fetch = async () =>
       Response.json({ ok: false, description: "Bad Request: file is too big" });
