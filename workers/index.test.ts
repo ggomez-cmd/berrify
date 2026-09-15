@@ -546,6 +546,32 @@ describe("Worker API", () => {
     await expect(response.json()).resolves.toEqual({ text: "FACTURA 12.00", confidence: 91 });
   });
 
+  it("rejects OCR when the image is an https URL instead of a raster data URL", async () => {
+    const response = await api(
+      "/api/ocr",
+      ocrInit(
+        JSON.stringify({
+          image: "https://example.supabase.co/storage/v1/object/public/bills/a.jpg",
+        }),
+      ),
+      { ...ocrEnv, GOOGLE_VISION_API_KEY: "vision-key" },
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "image must be a raster data URL" });
+  });
+
+  it("rejects OCR when the image is an octet-stream data URL instead of a raster data URL", async () => {
+    const response = await api(
+      "/api/ocr",
+      ocrInit(JSON.stringify({ image: "data:application/octet-stream;base64,/9j/4AAQ" })),
+      { ...ocrEnv, GOOGLE_VISION_API_KEY: "vision-key" },
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "image must be a raster data URL" });
+  });
+
   it("rejects unauthenticated OCR calls", async () => {
     const response = await api("/api/ocr", {
       method: "POST",

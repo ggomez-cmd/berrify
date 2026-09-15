@@ -89,6 +89,45 @@ describe("ocrImage", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(fallback).toHaveBeenCalledOnce();
   });
+
+  it("converts a storage URL to a raster data URL before calling Vision", async () => {
+    const fallback = vi.fn(async () => tesseract);
+    const bytes = Uint8Array.from(atob("/9j/4AAQ"), (c) => c.charCodeAt(0));
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url === "https://example.supabase.co/storage/v1/object/public/bills/a.jpg") {
+        return new Response(bytes, { headers: { "Content-Type": "image/jpeg" } });
+      }
+      expect(url).toBe("/api/ocr");
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      expect(body.image?.startsWith("data:image/jpeg;base64,")).toBe(true);
+      return Response.json({ text: "VISION FROM URL", confidence: 80 });
+    };
+    const result = await ocrImage("https://example.supabase.co/storage/v1/object/public/bills/a.jpg", {
+      engine: "vision",
+      fetchImpl,
+      fallback,
+    });
+    expect(result.text).toBe("VISION FROM URL");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("rewrites octet-stream JPEG data URLs before calling Vision", async () => {
+    const fallback = vi.fn(async () => tesseract);
+    const fetchImpl: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe("/api/ocr");
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      expect(body.image).toBe("data:image/jpeg;base64,/9j/4AAQ");
+      return Response.json({ text: "VISION FROM OCTET", confidence: 80 });
+    };
+    const result = await ocrImage("data:application/octet-stream;base64,/9j/4AAQ", {
+      engine: "vision",
+      fetchImpl,
+      fallback,
+    });
+    expect(result.text).toBe("VISION FROM OCTET");
+    expect(fallback).not.toHaveBeenCalled();
+  });
 });
 
 describe("getOcrEngine / setOcrEngine", () => {

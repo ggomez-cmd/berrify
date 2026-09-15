@@ -121,6 +121,31 @@ describe("extractInvoicesAfterOcr", () => {
     });
     expect(result.engine).toBe("rules");
   });
+
+  it("converts a storage URL to a raster data URL when OCR text is thin", async () => {
+    const bytes = Uint8Array.from(atob("/9j/4AAQ"), (c) => c.charCodeAt(0));
+    let extractImage: string | undefined;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url === "https://example.supabase.co/storage/v1/object/public/bills/a.jpg") {
+        return new Response(bytes, { headers: { "Content-Type": "image/jpeg" } });
+      }
+      expect(url).toBe("/api/invoice-extract");
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      extractImage = body.image;
+      return Response.json({ error: "Gemini extract is not configured" }, { status: 503 });
+    };
+    const result = await extractInvoicesAfterOcr({
+      ocrText: "hi",
+      image: "https://example.supabase.co/storage/v1/object/public/bills/a.jpg",
+      confidence: 10,
+      vendorAliases: [],
+      accountRules: DEFAULT_ACCOUNT_RULES,
+      fetchImpl,
+    });
+    expect(extractImage?.startsWith("data:image/jpeg;base64,")).toBe(true);
+    expect(result.engine).toBe("rules");
+  });
 });
 
 describe("extractEngineNote", () => {
