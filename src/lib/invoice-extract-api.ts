@@ -23,6 +23,9 @@ export type InvoiceExtractExample = {
     category: AccountRule["category"];
   }>;
   expenses: Array<{ account: string; amount: number; memo: string }>;
+  ocr_snippet?: string;
+  qbo_vendor_name?: string | null;
+  supplier_id?: string | null;
 };
 
 export type ExtractInvoicesAfterOcrInput = {

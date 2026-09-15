@@ -18,12 +18,13 @@ import {
 } from "../../lib/invoice-extract";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
 import { formatMoney } from "../../lib/format";
-import { reviewedExamplesForVendor } from "../../lib/invoice-review-memory";
+import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
 import type {
   AccountRuleRow,
   InvoiceCategory,
+  InvoiceExtractExampleRow,
   InvoiceSkuAliasRow,
   InvoiceWithSupplier,
   Restaurant,
@@ -72,7 +73,7 @@ async function billsFromOcr(
   vendorAliases: VendorAliasRow[],
   accountRules: AccountRuleRow[],
   skuAliases: InvoiceSkuAliasRow[],
-  invoices: InvoiceWithSupplier[],
+  extractExamples: InvoiceExtractExampleRow[],
   image?: string | null,
   confidence?: number,
 ): Promise<{
@@ -100,7 +101,11 @@ async function billsFromOcr(
       memo: alias.memo,
       category: alias.category,
     })),
-    examples: reviewedExamplesForVendor(invoices, text, aliases),
+    examples: pickClosestExamples(text, extractExamples, EXTRACT_EXAMPLE_LIMIT, {
+      aliases,
+      restaurantId: current.restaurant_id,
+      excludeInvoiceId: current.id,
+    }),
   });
   const [first, ...extras] = extracted;
   if (!first) {
@@ -143,7 +148,7 @@ export function InvoiceReviewDialog({
   vendorAliases,
   skuAliases,
   accountRules,
-  invoices,
+  extractExamples,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -154,7 +159,7 @@ export function InvoiceReviewDialog({
   vendorAliases: VendorAliasRow[];
   skuAliases: InvoiceSkuAliasRow[];
   accountRules: AccountRuleRow[];
-  invoices: InvoiceWithSupplier[];
+  extractExamples: InvoiceExtractExampleRow[];
 }) {
   const save = useUpdateInvoice();
   const create = useCreateInvoice();
@@ -236,7 +241,7 @@ export function InvoiceReviewDialog({
         vendorAliases,
         accountRules,
         skuAliases,
-        invoices,
+        extractExamples,
         image,
         confidence,
       );
@@ -305,7 +310,7 @@ export function InvoiceReviewDialog({
     vendorAliases,
     skuAliases,
     accountRules,
-    invoices,
+    extractExamples,
   ]);
 
   const totals = useMemo(() => invoiceTotals(lines, tax), [lines, tax]);

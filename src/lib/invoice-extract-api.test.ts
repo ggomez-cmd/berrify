@@ -74,6 +74,37 @@ describe("extractInvoicesAfterOcr", () => {
     expect(result.invoices[0]?.total).toBeGreaterThan(0);
   });
 
+  it("forwards reviewed examples including ocr_snippet", async () => {
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        examples?: Array<{ invoice_number?: string; ocr_snippet?: string }>;
+      };
+      expect(body.examples).toEqual([
+        expect.objectContaining({ invoice_number: "S1", ocr_snippet: "jose santiago factura" }),
+      ]);
+      return Response.json({ error: "Gemini extract is not configured" }, { status: 503 });
+    };
+    await extractInvoicesAfterOcr({
+      ocrText: RULES_OCR,
+      vendorAliases: [],
+      accountRules: DEFAULT_ACCOUNT_RULES,
+      examples: [
+        {
+          vendor_name: "Jose Santiago",
+          invoice_number: "S1",
+          invoice_date: "2026-08-01",
+          total: 20,
+          lines: [],
+          expenses: [],
+          ocr_snippet: "jose santiago factura",
+          qbo_vendor_name: "Jose Santiago",
+          supplier_id: "sup-santiago",
+        },
+      ],
+      fetchImpl,
+    });
+  });
+
   it("sends the photo only when OCR text is thin", async () => {
     const fetchImpl: typeof fetch = async (_input, init) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };

@@ -111,6 +111,15 @@ try {
   });
   assert(staffSkuAliases.length === 0, "staff can select invoice_sku_aliases");
 
+  const staffExtractExamples = await asAuthenticated(staffId, async () => {
+    const { rows } = await q<{ id: string }>(
+      `select id from public.invoice_extract_examples where org_id = $1`,
+      [orgId],
+    );
+    return rows;
+  });
+  assert(staffExtractExamples.length === 0, "staff can select invoice_extract_examples");
+
   const staffRates = await asAuthenticated(staffId, async () =>
     expectReject(() => q(`select hourly_rate, email, phone from public.employees where org_id = $1`, [orgId])),
   );
