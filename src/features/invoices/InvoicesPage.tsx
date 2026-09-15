@@ -15,7 +15,7 @@ import {
   type VendorAlias,
 } from "../../lib/invoice-extract";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
-import { reviewedExamplesForVendor } from "../../lib/invoice-review-memory";
+import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
 import { assertInvoiceImage } from "../../lib/invoice-image";
@@ -30,6 +30,7 @@ import {
   useAccountRules,
   useCreateInvoice,
   useDeleteInvoice,
+  useInvoiceExtractExamples,
   useInvoices,
   useRestaurantAliases,
   useRestaurants,
@@ -68,6 +69,7 @@ export function InvoicesPage() {
   const { data: restaurants = [] } = useRestaurants();
   const { data: restaurantAliases = [] } = useRestaurantAliases();
   const { data: aliases = [] } = useVendorAliases();
+  const { data: extractExamples = [] } = useInvoiceExtractExamples();
   const { data: skuAliases = [] } = useSkuAliases();
   const { data: rules = [] } = useAccountRules();
   const create = useCreateInvoice();
@@ -106,6 +108,20 @@ export function InvoicesPage() {
             }))
           : DEFAULT_ACCOUNT_RULES;
       const ocrText = ocr.text || caption || "";
+      const route = matchRestaurant(
+        { ocrText: ocr.text || caption || "", caption },
+        restaurants.map((r) => ({
+          id: r.id,
+          name: r.name,
+          qbo_company_name: r.qbo_company_name,
+          slug: r.slug,
+        })),
+        restaurantAliases.map((a) => ({
+          restaurant_id: a.restaurant_id,
+          match_kind: a.match_kind,
+          match_text: a.match_text,
+        })),
+      );
       const { invoices: extracted, engine: extractEngine } = await extractInvoicesAfterOcr({
         ocrText,
         image: data,
@@ -123,22 +139,11 @@ export function InvoicesPage() {
           memo: alias.memo,
           category: alias.category,
         })),
-        examples: reviewedExamplesForVendor(invoices, ocrText, vendorAliases),
+        examples: pickClosestExamples(ocrText, extractExamples, EXTRACT_EXAMPLE_LIMIT, {
+          aliases: vendorAliases,
+          restaurantId: route?.restaurant.id ?? null,
+        }),
       });
-      const route = matchRestaurant(
-        { ocrText: ocr.text || caption || "", caption },
-        restaurants.map((r) => ({
-          id: r.id,
-          name: r.name,
-          qbo_company_name: r.qbo_company_name,
-          slug: r.slug,
-        })),
-        restaurantAliases.map((a) => ({
-          restaurant_id: a.restaurant_id,
-          match_kind: a.match_kind,
-          match_text: a.match_text,
-        })),
-      );
       const ids: string[] = [];
       for (const bill of extracted) {
         const id = await create.mutateAsync({
@@ -380,7 +385,7 @@ export function InvoicesPage() {
         vendorAliases={aliases}
         skuAliases={skuAliases}
         accountRules={rules}
-        invoices={invoices}
+        extractExamples={extractExamples}
       />
     </div>
   );

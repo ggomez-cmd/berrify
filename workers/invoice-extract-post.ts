@@ -208,6 +208,7 @@ function buildPrompt(body: {
     "Use vendor_aliases to set supplier_id and qbo_vendor_name when the print name matches.",
     "Use account_rules and sku_aliases for expense accounts and SKU categories.",
     "Prefer reviewed examples for the same vendor when they contradict generic guesses.",
+    "Each example may include ocr_snippet — align line layout and vendor fields to that prior bill.",
     "Dates must be YYYY-MM-DD or null. Money is USD numbers, not strings.",
     "Do not invent invoice numbers that are customer, order, or sticker ids when a factura number is present.",
     "",

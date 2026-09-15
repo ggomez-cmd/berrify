@@ -230,6 +230,32 @@ export type InvoiceSkuAliasRow = {
   category: InvoiceCategory;
 };
 
+export type InvoiceExtractExampleRow = {
+  id: string;
+  org_id: string;
+  invoice_id: string;
+  supplier_id: string | null;
+  restaurant_id: string | null;
+  ocr_snippet: string;
+  corrected: {
+    vendor_name: string | null;
+    invoice_number: string | null;
+    invoice_date: string | null;
+    total: number;
+    lines: Array<{
+      code: string | null;
+      description: string;
+      amount: number;
+      category: InvoiceCategory;
+    }>;
+    expenses: Array<{ account: string; amount: number; memo: string }>;
+    qbo_vendor_name?: string | null;
+    supplier_id?: string | null;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
 export type InvoiceWithSupplier = Invoice & {
   suppliers: Pick<Supplier, "id" | "name"> | null;
   restaurants: Pick<Restaurant, "id" | "name" | "qbo_company_name" | "slug"> | null;

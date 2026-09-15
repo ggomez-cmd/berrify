@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import type { ExpenseLine, ExtractedSku } from "../../lib/invoice-extract";
-import { skuAliasesFromReview, vendorAliasFromReview } from "../../lib/invoice-review-memory";
+import {
+  extractExampleUpsert,
+  skuAliasesFromReview,
+  vendorAliasFromReview,
+} from "../../lib/invoice-review-memory";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type {
@@ -9,6 +13,7 @@ import type {
   Invoice,
   InvoiceExpenseLine,
   InvoiceLine,
+  InvoiceExtractExampleRow,
   InvoiceSkuAliasRow,
   InvoiceSource,
   InvoiceStatus,
@@ -105,6 +110,24 @@ export function useRestaurantAliases() {
         .eq("org_id", org!.id);
       if (error) throw error;
       return (data ?? []) as RestaurantAliasRow[];
+    },
+  });
+}
+
+export function useInvoiceExtractExamples() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["invoice_extract_examples", org?.id],
+    enabled: Boolean(org?.id) && isManager(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoice_extract_examples")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("updated_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as InvoiceExtractExampleRow[];
     },
   });
 }
@@ -284,7 +307,7 @@ export function useUpdateInvoice() {
       );
 
       if (input.status === "reviewed" || input.status === "exported") {
-        await persistReviewAliases(input);
+        await persistReviewMemory(input);
       }
     },
     onSuccess: (_data, input) => {
@@ -292,11 +315,12 @@ export function useUpdateInvoice() {
       void qc.invalidateQueries({ queryKey: ["invoice_media", input.invoice.id] });
       void qc.invalidateQueries({ queryKey: ["vendor_aliases"] });
       void qc.invalidateQueries({ queryKey: ["invoice_sku_aliases"] });
+      void qc.invalidateQueries({ queryKey: ["invoice_extract_examples"] });
     },
   });
 }
 
-async function persistReviewAliases(input: {
+async function persistReviewMemory(input: {
   invoice: Invoice;
   lines: Array<
     Pick<
@@ -313,8 +337,13 @@ async function persistReviewAliases(input: {
     >
   >;
   expenses: Array<Pick<InvoiceExpenseLine, "account" | "amount" | "memo">>;
+  restaurant_id: string | null;
   supplier_id: string | null;
   vendor_name: string | null;
+  invoice_number: string;
+  invoice_date: string;
+  total: number;
+  ocr_text?: string | null;
 }) {
   const { data: supplier } = input.supplier_id
     ? await supabase.from("suppliers").select("name").eq("id", input.supplier_id).maybeSingle()
@@ -355,18 +384,58 @@ async function persistReviewAliases(input: {
       memo: line.memo ?? "",
     })),
   );
-  if (skuAliases.length === 0) return;
-  const { error } = await supabase.from("invoice_sku_aliases").upsert(
-    skuAliases.map((alias) => ({
-      org_id: input.invoice.org_id,
-      match_text: alias.match_text,
-      account: alias.account,
-      memo: alias.memo,
-      category: alias.category,
+  if (skuAliases.length > 0) {
+    const { error } = await supabase.from("invoice_sku_aliases").upsert(
+      skuAliases.map((alias) => ({
+        org_id: input.invoice.org_id,
+        match_text: alias.match_text,
+        account: alias.account,
+        memo: alias.memo,
+        category: alias.category,
+      })),
+      { onConflict: "org_id,match_text" },
+    );
+    if (error) throw error;
+  }
+
+  let ocrText = input.ocr_text;
+  if (ocrText === undefined) {
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("ocr_text")
+      .eq("id", input.invoice.id)
+      .maybeSingle();
+    if (error) throw error;
+    ocrText = (data?.ocr_text as string | null | undefined) ?? null;
+  }
+  const example = extractExampleUpsert({
+    orgId: input.invoice.org_id,
+    invoiceId: input.invoice.id,
+    supplierId: input.supplier_id,
+    restaurantId: input.restaurant_id,
+    ocrText,
+    qboVendorName: supplier?.name ?? input.vendor_name ?? "",
+    vendorName: input.vendor_name,
+    invoiceNumber: input.invoice_number || null,
+    invoiceDate: input.invoice_date || null,
+    total: input.total,
+    lines: input.lines.map((line) => ({
+      code: line.code ?? null,
+      description: line.description,
+      amount: line.amount,
+      category: line.category ?? "food",
     })),
-    { onConflict: "org_id,match_text" },
-  );
-  if (error) throw error;
+    expenses: input.expenses.map((line) => ({
+      account: line.account,
+      amount: line.amount,
+      memo: line.memo ?? "",
+    })),
+  });
+  if (!example) return;
+  const { error: exampleError } = await supabase.from("invoice_extract_examples").upsert(example, {
+    onConflict: "invoice_id",
+  });
+  if (exampleError) throw exampleError;
 }
 
 async function replaceInvoiceChildren(
