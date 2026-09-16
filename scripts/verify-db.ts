@@ -29,6 +29,8 @@ const requiredTables = [
   "time_entries",
   "time_breaks",
   "time_exceptions",
+  "payroll_exports",
+  "payroll_export_lines",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -53,6 +55,8 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   time_entries: ["time_entries_select_own", "time_entries_select_manager"],
   time_breaks: ["time_breaks_select_own", "time_breaks_select_manager"],
   time_exceptions: ["time_exceptions_select_own", "time_exceptions_select_manager"],
+  payroll_exports: ["payroll_exports_manager"],
+  payroll_export_lines: ["payroll_export_lines_manager"],
 };
 
 const client = createPgClient();

@@ -351,3 +351,26 @@ export type WhosWorkingRow = {
   clocked_in_at: string | null;
   restaurant_id: string | null;
 };
+
+export type PayrollExport = {
+  id: string;
+  org_id: string;
+  restaurant_id: string;
+  period_start: string;
+  period_end: string;
+  exported_at: string;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type PayrollExportLine = {
+  id: string;
+  org_id: string;
+  payroll_export_id: string;
+  employee_id: string;
+  regular_seconds: number;
+  ot_seconds: number;
+  hourly_rate: number;
+  gross: number;
+  created_at: string;
+};
