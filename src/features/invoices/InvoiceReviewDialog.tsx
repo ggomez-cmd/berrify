@@ -6,8 +6,8 @@ import { Field } from "../../components/ui/label";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
+  expensesFromLinesOrExtract,
   invoiceTotals,
-  rollupExpenses,
   toQuickBooksBillCsv,
   toQuickBooksBillIif,
   type AccountRule,
@@ -85,7 +85,7 @@ async function billsFromOcr(
 }> {
   const aliases = toVendorAliases(vendorAliases);
   const rules = toAccountRules(accountRules);
-  const { invoices: extracted, engine } = await extractInvoicesAfterOcr({
+  const { invoices: extracted, engine, error } = await extractInvoicesAfterOcr({
     ocrText: text,
     image,
     confidence,
@@ -110,7 +110,12 @@ async function billsFromOcr(
   });
   const [first, ...extras] = extracted;
   if (!first) {
-    return { first: null, extras: [], restaurantId: current.restaurant_id, extractNote: extractEngineNote(engine) };
+    return {
+      first: null,
+      extras: [],
+      restaurantId: current.restaurant_id,
+      extractNote: extractEngineNote(engine, error),
+    };
   }
 
   let restaurantId = current.restaurant_id;
@@ -136,7 +141,7 @@ async function billsFromOcr(
     );
     restaurantId = route?.restaurant.id ?? null;
   }
-  return { first, extras, restaurantId, extractNote: extractEngineNote(engine) };
+  return { first, extras, restaurantId, extractNote: extractEngineNote(engine, error) };
 }
 
 export function InvoiceReviewDialog({
@@ -182,6 +187,7 @@ export function InvoiceReviewDialog({
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
+  const [extractTotal, setExtractTotal] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [photoSrc, setPhotoSrc] = useState<string | null>(null);
 
@@ -207,6 +213,8 @@ export function InvoiceReviewDialog({
       category: l.category,
     }));
     setLines(nextLines);
+    const savedTotal = Number(invoice.total);
+    setExtractTotal(savedTotal);
     setExpenses(
       invoice.invoice_expense_lines.length > 0
         ? invoice.invoice_expense_lines.map((e) => ({
@@ -214,7 +222,10 @@ export function InvoiceReviewDialog({
             amount: Number(e.amount),
             memo: e.memo ?? "",
           }))
-        : rollupExpenses(nextLines, Number(invoice.tax)),
+        : expensesFromLinesOrExtract(nextLines, Number(invoice.tax), {
+            total: savedTotal,
+            expenses: [],
+          }),
     );
     setError(null);
     setOcrBusy(false);
@@ -281,10 +292,9 @@ export function InvoiceReviewDialog({
       setTerms(preview.first.terms || "Net 15");
       setTax(preview.first.tax);
       setLines(preview.first.lines);
+      setExtractTotal(preview.first.total);
       setExpenses(
-        preview.first.expenses.length > 0
-          ? preview.first.expenses
-          : rollupExpenses(preview.first.lines, preview.first.tax),
+        expensesFromLinesOrExtract(preview.first.lines, preview.first.tax, preview.first),
       );
       setExtraBills(allowExtras ? preview.extras : []);
     };
@@ -337,7 +347,10 @@ export function InvoiceReviewDialog({
     photoSrc,
   ]);
 
-  const totals = useMemo(() => invoiceTotals(lines, tax), [lines, tax]);
+  const totals = useMemo(
+    () => invoiceTotals(lines, tax, extractTotal),
+    [lines, tax, extractTotal],
+  );
 
   if (!invoice) return null;
 
@@ -621,7 +634,14 @@ export function InvoiceReviewDialog({
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">QuickBooks expenses</h3>
-            <Button variant="subtle" onClick={() => setExpenses(rollupExpenses(lines, tax))}>
+            <Button
+              variant="subtle"
+              onClick={() =>
+                setExpenses(
+                  expensesFromLinesOrExtract(lines, tax, { total: extractTotal, expenses: [] }),
+                )
+              }
+            >
               Recalc rollup
             </Button>
           </div>

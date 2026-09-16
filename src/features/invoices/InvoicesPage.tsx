@@ -122,7 +122,8 @@ export function InvoicesPage() {
           match_text: a.match_text,
         })),
       );
-      const { invoices: extracted, engine: extractEngine } = await extractInvoicesAfterOcr({
+      const { invoices: extracted, engine: extractEngine, error: extractError } =
+        await extractInvoicesAfterOcr({
         ocrText,
         image: data,
         confidence: ocr.confidence,
@@ -170,7 +171,7 @@ export function InvoicesPage() {
         ids.push(id);
       }
       setMessage(
-        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. ${ocrEngineNote(ocr)} · ${extractEngineNote(extractEngine)} · review the restaurant and Expenses tab, then export IIF.`,
+        `${ids.length} digital bill${ids.length === 1 ? "" : "s"} created${route ? ` for ${route.restaurant.qbo_company_name}` : ""}. ${ocrEngineNote(ocr)} · ${extractEngineNote(extractEngine, extractError)} · review the restaurant and Expenses tab, then export IIF.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not read invoice");
