@@ -20,6 +20,7 @@ import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-ex
 import { formatMoney } from "../../lib/format";
 import { toRasterDataUrl } from "../../lib/invoice-image";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
+import { toThrownError } from "../../lib/thrown-error";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
 import type {
@@ -408,7 +409,7 @@ export function InvoiceReviewDialog({
         setExtraBills([]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save invoice");
+      setError(toThrownError(err, "Could not save invoice").message);
       throw err;
     }
   };
