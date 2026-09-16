@@ -8,6 +8,7 @@ import {
 } from "../../lib/invoice-review-memory";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
+import { toThrownError } from "../../lib/thrown-error";
 import type {
   AccountRuleRow,
   Invoice,
@@ -25,6 +26,10 @@ import type {
 
 const INVOICE_LIST_SELECT =
   "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, telegram_from, telegram_message_id, caption, image_mime, created_by, exported_at, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
+
+function throwSaveError(error: unknown): never {
+  throw toThrownError(error, "Could not save invoice");
+}
 
 export function useInvoices() {
   const { org, role } = useAuth();
@@ -297,7 +302,7 @@ export function useUpdateInvoice() {
           ...(input.ocr_text !== undefined ? { ocr_text: input.ocr_text } : {}),
         })
         .eq("id", input.invoice.id);
-      if (error) throw error;
+      if (error) throwSaveError(error);
 
       await replaceInvoiceChildren(
         input.invoice.org_id,
@@ -363,7 +368,7 @@ async function persistReviewMemory(input: {
       },
       { onConflict: "org_id,match_text" },
     );
-    if (error) throw error;
+    if (error) throwSaveError(error);
   }
 
   const skuAliases = skuAliasesFromReview(
@@ -395,7 +400,7 @@ async function persistReviewMemory(input: {
       })),
       { onConflict: "org_id,match_text" },
     );
-    if (error) throw error;
+    if (error) throwSaveError(error);
   }
 
   let ocrText = input.ocr_text;
@@ -405,7 +410,7 @@ async function persistReviewMemory(input: {
       .select("ocr_text")
       .eq("id", input.invoice.id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throwSaveError(error);
     ocrText = (data?.ocr_text as string | null | undefined) ?? null;
   }
   const example = extractExampleUpsert({
@@ -435,7 +440,7 @@ async function persistReviewMemory(input: {
   const { error: exampleError } = await supabase.from("invoice_extract_examples").upsert(example, {
     onConflict: "invoice_id",
   });
-  if (exampleError) throw exampleError;
+  if (exampleError) throwSaveError(exampleError);
 }
 
 async function replaceInvoiceChildren(
@@ -455,12 +460,12 @@ async function replaceInvoiceChildren(
   expenses: Array<{ account: string; amount: number; memo?: string | null }>,
 ) {
   const { error: delLines } = await supabase.from("invoice_lines").delete().eq("invoice_id", invoiceId);
-  if (delLines) throw delLines;
+  if (delLines) throwSaveError(delLines);
   const { error: delExp } = await supabase
     .from("invoice_expense_lines")
     .delete()
     .eq("invoice_id", invoiceId);
-  if (delExp) throw delExp;
+  if (delExp) throwSaveError(delExp);
 
   if (lines.length > 0) {
     const { error } = await supabase.from("invoice_lines").insert(
@@ -478,7 +483,7 @@ async function replaceInvoiceChildren(
         category: line.category ?? "food",
       })),
     );
-    if (error) throw error;
+    if (error) throwSaveError(error);
   }
 
   if (expenses.length > 0) {
@@ -492,7 +497,7 @@ async function replaceInvoiceChildren(
         sort_order: index,
       })),
     );
-    if (error) throw error;
+    if (error) throwSaveError(error);
   }
 }
 
