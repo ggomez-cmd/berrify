@@ -149,3 +149,40 @@ export function atTimeOnDay(day: Date, hours: number, minutes: number): Date {
   d.setHours(hours, minutes, 0, 0);
   return d;
 }
+
+export function localDayFromYmd(ymd: string): Date {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+export function formatLockedShiftDay(day: Date): string {
+  return day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function parseClockTime(value: string): { hours: number; minutes: number } {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    throw new Error(`Invalid clock time: ${value}`);
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) {
+    throw new Error(`Invalid clock time: ${value}`);
+  }
+  return { hours, minutes };
+}
+
+export function composeShiftRangeOnDay(
+  day: Date,
+  startTime: string,
+  endTime: string,
+): { starts_at: string; ends_at: string } {
+  const start = parseClockTime(startTime);
+  const end = parseClockTime(endTime);
+  const starts = atTimeOnDay(day, start.hours, start.minutes);
+  let ends = atTimeOnDay(day, end.hours, end.minutes);
+  if (ends.getTime() < starts.getTime()) {
+    ends = addDays(ends, 1);
+  }
+  return { starts_at: starts.toISOString(), ends_at: ends.toISOString() };
+}

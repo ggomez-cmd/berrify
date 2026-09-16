@@ -4,18 +4,38 @@ import { Dialog } from "../../components/ui/dialog";
 import { Input, Select, Textarea } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { STATIONS } from "../../lib/constants";
-import { employeeHasOverlap } from "../../lib/schedule";
+import {
+  composeShiftRangeOnDay,
+  employeeHasOverlap,
+  formatLockedShiftDay,
+  localDayFromYmd,
+} from "../../lib/schedule";
 import type { Employee, Shift, ShiftStatus, Station } from "../../lib/types";
-import { fromDatetimeLocal, toDatetimeLocal, useDeleteShift, useUpsertShift } from "./hooks";
+import { toDatetimeLocal, useDeleteShift, useUpsertShift } from "./hooks";
 
 type Draft = {
   employee_id: string;
   position: Station;
-  starts_at: string;
-  ends_at: string;
+  day: string;
+  start_time: string;
+  end_time: string;
   status: ShiftStatus;
   note: string;
 };
+
+function clockFromDatetimeLocal(value: string): string {
+  const time = value.split("T")[1];
+  return time ? time.slice(0, 5) : "";
+}
+
+function ymdFromDatetimeLocal(value: string): string {
+  return value.slice(0, 10);
+}
+
+function composeDraftRange(values: Draft): { starts_at: string; ends_at: string } | null {
+  if (!values.day || !values.start_time || !values.end_time) return null;
+  return composeShiftRangeOnDay(localDayFromYmd(values.day), values.start_time, values.end_time);
+}
 
 export function ShiftDialog({
   open,
@@ -26,6 +46,7 @@ export function ShiftDialog({
   defaultStarts,
   defaultEnds,
   defaultEmployeeId,
+  lockDay = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -35,37 +56,47 @@ export function ShiftDialog({
   defaultStarts?: string;
   defaultEnds?: string;
   defaultEmployeeId?: string | null;
+  lockDay?: boolean;
 }) {
   const upsert = useUpsertShift();
   const remove = useDeleteShift();
   const [values, setValues] = useState<Draft>({
     employee_id: "",
     position: "Server",
-    starts_at: "",
-    ends_at: "",
+    day: "",
+    start_time: "",
+    end_time: "",
     status: "draft",
     note: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const dateLocked = Boolean(shift) || lockDay;
+  const employeeLocked = !shift && lockDay;
 
   useEffect(() => {
     if (!open) return;
     if (shift) {
+      const starts = toDatetimeLocal(shift.starts_at);
+      const ends = toDatetimeLocal(shift.ends_at);
       setValues({
         employee_id: shift.employee_id ?? "",
         position: shift.position,
-        starts_at: toDatetimeLocal(shift.starts_at),
-        ends_at: toDatetimeLocal(shift.ends_at),
+        day: ymdFromDatetimeLocal(starts),
+        start_time: clockFromDatetimeLocal(starts),
+        end_time: clockFromDatetimeLocal(ends),
         status: shift.status,
         note: shift.note ?? "",
       });
     } else {
       const emp = employees.find((e) => e.id === defaultEmployeeId);
+      const starts = defaultStarts ? toDatetimeLocal(defaultStarts) : "";
+      const ends = defaultEnds ? toDatetimeLocal(defaultEnds) : "";
       setValues({
         employee_id: defaultEmployeeId ?? "",
         position: emp?.position ?? "Server",
-        starts_at: defaultStarts ? toDatetimeLocal(defaultStarts) : "",
-        ends_at: defaultEnds ? toDatetimeLocal(defaultEnds) : "",
+        day: starts ? ymdFromDatetimeLocal(starts) : "",
+        start_time: starts ? clockFromDatetimeLocal(starts) : "",
+        end_time: ends ? clockFromDatetimeLocal(ends) : "",
         status: "draft",
         note: "",
       });
@@ -74,26 +105,32 @@ export function ShiftDialog({
   }, [open, shift, defaultStarts, defaultEnds, defaultEmployeeId, employees]);
 
   const overlap = useMemo(() => {
-    if (!values.starts_at || !values.ends_at) return false;
+    const range = composeDraftRange(values);
+    if (!range) return false;
     return employeeHasOverlap(existing, {
       id: shift?.id ?? "",
       employee_id: values.employee_id || null,
-      starts_at: fromDatetimeLocal(values.starts_at),
-      ends_at: fromDatetimeLocal(values.ends_at),
+      starts_at: range.starts_at,
+      ends_at: range.ends_at,
     });
   }, [existing, shift, values]);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    const range = composeDraftRange(values);
+    if (!range) {
+      setError("Start and end times are required");
+      return;
+    }
     try {
       await upsert.mutateAsync({
         id: shift?.id,
         values: {
           employee_id: values.employee_id || null,
           position: values.position,
-          starts_at: fromDatetimeLocal(values.starts_at),
-          ends_at: fromDatetimeLocal(values.ends_at),
+          starts_at: range.starts_at,
+          ends_at: range.ends_at,
           status: values.status,
           note: values.note,
         },
@@ -117,6 +154,7 @@ export function ShiftDialog({
             <Select
               id="shift-emp"
               value={values.employee_id}
+              disabled={employeeLocked}
               onChange={(e) => {
                 const id = e.target.value;
                 const emp = employees.find((row) => row.id === id);
@@ -161,22 +199,43 @@ export function ShiftDialog({
             <option value="published">Published</option>
           </Select>
         </Field>
+        {dateLocked ? (
+          <div className="col-span-2">
+            <Field label="Date">
+              <p className="rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink">
+                {values.day ? formatLockedShiftDay(localDayFromYmd(values.day)) : ""}
+              </p>
+            </Field>
+          </div>
+        ) : (
+          <div className="col-span-2">
+            <Field label="Date" htmlFor="shift-day">
+              <Input
+                id="shift-day"
+                type="date"
+                required
+                value={values.day}
+                onChange={(e) => setValues((v) => ({ ...v, day: e.target.value }))}
+              />
+            </Field>
+          </div>
+        )}
         <Field label="Starts" htmlFor="shift-start">
           <Input
             id="shift-start"
-            type="datetime-local"
+            type="time"
             required
-            value={values.starts_at}
-            onChange={(e) => setValues((v) => ({ ...v, starts_at: e.target.value }))}
+            value={values.start_time}
+            onChange={(e) => setValues((v) => ({ ...v, start_time: e.target.value }))}
           />
         </Field>
         <Field label="Ends" htmlFor="shift-end">
           <Input
             id="shift-end"
-            type="datetime-local"
+            type="time"
             required
-            value={values.ends_at}
-            onChange={(e) => setValues((v) => ({ ...v, ends_at: e.target.value }))}
+            value={values.end_time}
+            onChange={(e) => setValues((v) => ({ ...v, end_time: e.target.value }))}
           />
         </Field>
         <div className="col-span-2">

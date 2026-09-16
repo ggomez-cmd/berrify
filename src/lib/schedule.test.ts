@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  atTimeOnDay,
+  composeShiftRangeOnDay,
   employeeHasOverlap,
   employeeWeekHours,
   filterShiftsForWeek,
@@ -148,5 +150,27 @@ describe("visibleShiftsForRole", () => {
     expect(visibleShiftsForRole(shifts, "staff", "me")).toEqual([
       { status: "published", employee_id: "me" },
     ]);
+  });
+});
+
+describe("composeShiftRangeOnDay", () => {
+  it("composes 16:00–22:00 on the locked local day", () => {
+    const day = new Date(2026, 8, 13);
+    const { starts_at, ends_at } = composeShiftRangeOnDay(day, "16:00", "22:00");
+    expect(new Date(starts_at)).toEqual(atTimeOnDay(day, 16, 0));
+    expect(new Date(ends_at)).toEqual(atTimeOnDay(day, 22, 0));
+  });
+
+  it("places an overnight end on the next calendar day", () => {
+    const day = new Date(2026, 8, 13);
+    const { starts_at, ends_at } = composeShiftRangeOnDay(day, "22:00", "02:00");
+    const starts = new Date(starts_at);
+    const ends = new Date(ends_at);
+    expect(starts).toEqual(atTimeOnDay(day, 22, 0));
+    expect(ends.getFullYear()).toBe(2026);
+    expect(ends.getMonth()).toBe(8);
+    expect(ends.getDate()).toBe(14);
+    expect(ends.getHours()).toBe(2);
+    expect(ends.getMinutes()).toBe(0);
   });
 });
