@@ -1,4 +1,10 @@
-import { extractInvoicesFromText, type AccountRule, type ExtractedInvoice, type VendorAlias } from "./invoice-extract";
+import {
+  extractInvoicesFromText,
+  invoicesHavePositiveAmounts,
+  type AccountRule,
+  type ExtractedInvoice,
+  type VendorAlias,
+} from "./invoice-extract";
 import { toRasterDataUrl } from "./invoice-image";
 import { isThinOcrText } from "./ocr-thin";
 import { supabase } from "./supabase";
@@ -45,6 +51,7 @@ export type ExtractInvoicesAfterOcrInput = {
 export type ExtractInvoicesAfterOcrResult = {
   invoices: ExtractedInvoice[];
   engine: ExtractEngine;
+  error?: string;
 };
 
 async function defaultAccessToken(): Promise<string | null> {
@@ -54,12 +61,14 @@ async function defaultAccessToken(): Promise<string | null> {
 
 export { isThinOcrText };
 
-export function extractEngineNote(engine: ExtractEngine): string {
+export function extractEngineNote(engine: ExtractEngine, error?: string): string {
   switch (engine) {
     case "gemini":
       return "Gemini extract";
-    case "rules":
-      return "Rules extract";
+    case "rules": {
+      const detail = error?.trim();
+      return detail ? `Rules extract · ${detail}` : "Rules extract";
+    }
     default: {
       const exhaustive: never = engine;
       return exhaustive;
@@ -67,18 +76,38 @@ export function extractEngineNote(engine: ExtractEngine): string {
   }
 }
 
+function readExtractError(payload: unknown, status: number): string {
+  if (payload && typeof payload === "object") {
+    const message = (payload as { error?: unknown }).error;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return `Extract failed (${status})`;
+}
+
 export async function extractInvoicesAfterOcr(
   input: ExtractInvoicesAfterOcrInput,
 ): Promise<ExtractInvoicesAfterOcrResult> {
-  const fallback = (): ExtractInvoicesAfterOcrResult => ({
-    invoices: extractInvoicesFromText(input.ocrText, input.vendorAliases, input.accountRules),
+  const rulesInvoices = extractInvoicesFromText(
+    input.ocrText,
+    input.vendorAliases,
+    input.accountRules,
+  );
+  const fallback = (error?: string): ExtractInvoicesAfterOcrResult => ({
+    invoices: rulesInvoices,
     engine: "rules",
+    ...(error ? { error } : {}),
   });
 
   const fetchImpl = input.fetchImpl ?? fetch;
   const getAccessToken = input.getAccessToken ?? defaultAccessToken;
+  const attachImageFirst = Boolean(
+    input.image &&
+      (isThinOcrText(input.ocrText, input.confidence) || !invoicesHavePositiveAmounts(rulesInvoices)),
+  );
 
-  try {
+  let rasterImage: string | null | undefined;
+
+  const postExtract = async (attachImage: boolean): Promise<Response> => {
     const token = await getAccessToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -92,26 +121,63 @@ export async function extractInvoicesAfterOcr(
       sku_aliases: input.skuAliases ?? [],
       examples: input.examples ?? [],
     };
-    if (input.image && isThinOcrText(input.ocrText, input.confidence)) {
-      body.image = await toRasterDataUrl(input.image, fetchImpl);
+    if (attachImage && input.image) {
+      if (rasterImage === undefined) {
+        rasterImage = await toRasterDataUrl(input.image, fetchImpl);
+      }
+      body.image = rasterImage;
     }
 
-    const response = await fetchImpl("/api/invoice-extract", {
+    return fetchImpl("/api/invoice-extract", {
       method: "POST",
       headers,
       credentials: "same-origin",
       body: JSON.stringify(body),
     });
+  };
 
-    if (response.status === 503) return fallback();
-    if (!response.ok) return fallback();
+  try {
+    let attachedImage = attachImageFirst;
+    let response = await postExtract(attachedImage);
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
 
-    const payload: unknown = await response.json();
-    if (!payload || typeof payload !== "object") return fallback();
+    const geminiInvoices = (payload as { invoices?: unknown } | null)?.invoices;
+    const hasGemini =
+      response.ok && Array.isArray(geminiInvoices) && geminiInvoices.length > 0;
+    const geminiList = hasGemini ? (geminiInvoices as ExtractedInvoice[]) : [];
+
+    if (
+      input.image &&
+      !attachedImage &&
+      ((hasGemini && !invoicesHavePositiveAmounts(geminiList)) ||
+        (response.ok && (!Array.isArray(geminiInvoices) || geminiInvoices.length === 0)))
+    ) {
+      attachedImage = true;
+      response = await postExtract(true);
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (response.status === 503 || !response.ok) {
+      return fallback(readExtractError(payload, response.status));
+    }
+    if (!payload || typeof payload !== "object") {
+      return fallback("Gemini returned invalid JSON");
+    }
     const invoices = (payload as { invoices?: unknown }).invoices;
-    if (!Array.isArray(invoices) || invoices.length === 0) return fallback();
+    if (!Array.isArray(invoices) || invoices.length === 0) {
+      return fallback(readExtractError(payload, response.status) || "Gemini returned no invoices");
+    }
     return { invoices: invoices as ExtractedInvoice[], engine: "gemini" };
   } catch {
-    return fallback();
+    return fallback("Extract request failed");
   }
 }

@@ -4,8 +4,10 @@ import {
   addDaysIso,
   classifySku,
   compactOcrMoney,
+  expensesFromLinesOrExtract,
   extractInvoiceFromText,
   extractInvoicesFromText,
+  invoiceTotals,
   normalizeDate,
   rollupExpenses,
   stripPriceSuffix,
@@ -28,6 +30,7 @@ import {
   VISION_JOSE_SANTIAGO_BACON_OCR,
   VISION_JOSE_SANTIAGO_BALANCE_OCR,
   VISION_NORTHWESTERN_OCR,
+  VISION_NORTHWESTERN_SPLIT_OCR,
   VISION_SANTURCE_OCR,
 } from "./invoice-fixtures";
 
@@ -76,8 +79,8 @@ describe("extractInvoiceFromText", () => {
     expect(noRef.invoice_number).toBeNull();
   });
 
-  it("skips zero-shipped saran wrap and comment blocks", () => {
-    expect(extracted.lines.some((l) => /saran/i.test(l.description))).toBe(false);
+  it("keeps zero-shipped saran wrap and skips comment blocks", () => {
+    expect(extracted.lines.some((l) => /saran/i.test(l.description) && l.amount === 0)).toBe(true);
     expect(extracted.lines.some((l) => /martes/i.test(l.description))).toBe(false);
   });
 
@@ -223,21 +226,22 @@ describe("extractInvoicesFromText", () => {
 describe("Jose Santiago bacon", () => {
   const extracted = extractInvoiceFromText(JOSE_SANTIAGO_BACON_OCR);
 
-  it("keeps the $243.49 bacon bill and skips the $0 layout", () => {
+  it("keeps the $243.49 bacon bill and the $0 layout row", () => {
     expect(extracted.qbo_vendor_name).toBe("Jose Santiago Inc");
     expect(extracted.invoice_number).toBe("6517569");
     expect(extracted.invoice_date).toBe("2023-08-14");
     expect(extracted.total).toBeCloseTo(243.49);
     expect(extracted.tax).toBeCloseTo(2.41);
-    expect(extracted.lines).toHaveLength(1);
-    expect(extracted.lines[0]?.amount).toBeCloseTo(241.08);
+    expect(extracted.lines).toHaveLength(2);
+    expect(extracted.lines.find((l) => /layout/i.test(l.description))?.amount).toBe(0);
+    expect(extracted.lines.find((l) => /apple smoked/i.test(l.description))?.amount).toBeCloseTo(241.08);
   });
 });
 
 describe("Drouyn & Co", () => {
   const extracted = extractInvoiceFromText(DROUYN_OCR);
 
-  it("skips the back-ordered potato and bills produce only", () => {
+  it("keeps the back-ordered potato as a $0 row and bills produce", () => {
     expect(extracted.qbo_vendor_name).toBe("Drouyn & Co");
     expect(extracted.invoice_number).toBe("01014389");
     expect(extracted.invoice_date).toBe("2026-08-09");
@@ -245,8 +249,8 @@ describe("Drouyn & Co", () => {
     expect(extracted.terms).toBe("Net 7");
     expect(extracted.total).toBeCloseTo(61.5);
     expect(extracted.tax).toBeCloseTo(0);
-    expect(extracted.lines).toHaveLength(5);
-    expect(extracted.lines.some((l) => /creamer/i.test(l.description))).toBe(false);
+    expect(extracted.lines).toHaveLength(6);
+    expect(extracted.lines.some((l) => /creamer/i.test(l.description) && l.amount === 0)).toBe(true);
   });
 });
 
@@ -368,11 +372,56 @@ describe("Vision-shaped OCR", () => {
     expect(extracted.total).toBeCloseTo(446.27);
   });
 
+  it("keeps Northwestern split SKU rows and INVOICE TOTAL with $0 line amounts", () => {
+    const extracted = extractInvoiceFromText(VISION_NORTHWESTERN_SPLIT_OCR);
+    expect(extracted.invoice_number).toBe("4128806");
+    expect(extracted.total).toBeCloseTo(446.27);
+    expect(extracted.lines.some((l) => l.code === "148590" && /veal/i.test(l.description))).toBe(true);
+    expect(extracted.lines.every((l) => l.amount === 0)).toBe(true);
+  });
+
   it("parses a spaced Jose Santiago balance due", () => {
     const extracted = extractInvoiceFromText(VISION_JOSE_SANTIAGO_BALANCE_OCR);
     expect(extracted.qbo_vendor_name).toBe("Jose Santiago Inc");
     expect(extracted.total).toBeCloseTo(1155.59);
     expect(extracted.invoice_date).toBeNull();
+  });
+});
+
+describe("invoiceTotals extract fallback", () => {
+  it("uses extract total when SKU amounts are empty", () => {
+    expect(invoiceTotals([], 0, 446.27).total).toBeCloseTo(446.27);
+    expect(
+      invoiceTotals(
+        [
+          {
+            amount: 0,
+          },
+        ],
+        10,
+        446.27,
+      ).total,
+    ).toBeCloseTo(446.27);
+  });
+
+  it("follows positive SKU amounts plus tax", () => {
+    expect(invoiceTotals([{ amount: 100 }, { amount: 20 }], 5, 999).total).toBeCloseTo(125);
+  });
+});
+
+describe("expensesFromLinesOrExtract", () => {
+  it("rolls one food expense from extract total when SKUs are empty", () => {
+    const expenses = expensesFromLinesOrExtract([], 10, { total: 446.27, expenses: [] });
+    expect(expenses.find((e) => e.account === ACCOUNTS.tax)?.amount).toBeCloseTo(10);
+    expect(expenses.find((e) => e.account === ACCOUNTS.food)?.amount).toBeCloseTo(436.27);
+  });
+
+  it("keeps extract expenses when present", () => {
+    const expenses = expensesFromLinesOrExtract([], 0, {
+      total: 48.44,
+      expenses: [{ account: ACCOUNTS.food, amount: 48.44, memo: "Retail" }],
+    });
+    expect(expenses).toEqual([{ account: ACCOUNTS.food, amount: 48.44, memo: "Retail" }]);
   });
 });
 

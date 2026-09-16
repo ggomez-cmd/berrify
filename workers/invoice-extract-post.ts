@@ -163,7 +163,7 @@ const RESPONSE_SCHEMA = {
                 amount: { type: "NUMBER" },
                 category: { type: "STRING" },
               },
-              required: ["description", "qty_ordered", "qty_shipped", "unit_price", "amount", "category"],
+              required: ["description"],
             },
           },
           expenses: {
@@ -210,6 +210,7 @@ function buildPrompt(body: {
     "Prefer reviewed examples for the same vendor when they contradict generic guesses.",
     "Each example may include ocr_snippet — align line layout and vendor fields to that prior bill.",
     "Dates must be YYYY-MM-DD or null. Money is USD numbers, not strings.",
+    "Prefer partial SKU lines (description only, amount 0) over omitting rows you cannot price.",
     "Do not invent invoice numbers that are customer, order, or sticker ids when a factura number is present.",
     "",
     `OCR text:\n${body.ocr_text}`,
@@ -260,12 +261,11 @@ export async function handleInvoiceExtractPost(
     return json({ error: "ocr_text is required" }, 400);
   }
 
-  const confidence = typeof row.confidence === "number" ? row.confidence : undefined;
   const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [
     { text: buildPrompt({ ...row, ocr_text: row.ocr_text }) },
   ];
 
-  if (row.image !== undefined && isThinOcrText(row.ocr_text, confidence)) {
+  if (row.image !== undefined) {
     const parsed = parseImageDataUrl(row.image);
     if (!parsed.ok) {
       return json({ error: parsed.error }, parsed.status);

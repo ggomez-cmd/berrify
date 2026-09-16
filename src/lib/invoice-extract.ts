@@ -310,9 +310,53 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function invoiceTotals(lines: Array<{ amount: number }>, tax: number) {
+export function invoiceHasPositiveAmounts(invoice: ExtractedInvoice): boolean {
+  if (invoice.total > 0.005) return true;
+  return invoice.lines.some((line) => line.amount > 0.005);
+}
+
+export function invoicesHavePositiveAmounts(invoices: ExtractedInvoice[]): boolean {
+  return invoices.some(invoiceHasPositiveAmounts);
+}
+
+export function invoiceTotals(
+  lines: Array<{ amount: number }>,
+  tax: number,
+  extractTotal = 0,
+) {
   const subtotal = sum(lines as ExtractedSku[]);
-  return { subtotal, tax: round2(tax), total: round2(subtotal + tax) };
+  if (subtotal > 0.005 || extractTotal <= 0.005) {
+    return { subtotal, tax: round2(tax), total: round2(subtotal + tax) };
+  }
+  return {
+    subtotal: round2(Math.max(0, extractTotal - tax)),
+    tax: round2(tax),
+    total: round2(extractTotal),
+  };
+}
+
+export function expensesFromLinesOrExtract(
+  lines: ExtractedSku[],
+  tax: number,
+  extract: { total: number; expenses: ExpenseLine[] },
+): ExpenseLine[] {
+  const lineSum = sum(lines);
+  if (lineSum > 0.005) {
+    return extract.expenses.length > 0 ? extract.expenses : rollupExpenses(lines, tax);
+  }
+  if (extract.total > 0.005) {
+    if (extract.expenses.length > 0) return extract.expenses;
+    const merch = round2(Math.max(0, extract.total - tax));
+    const expenses: ExpenseLine[] = [];
+    if (tax > 0) {
+      expenses.push({ account: ACCOUNTS.tax, amount: round2(tax), memo: "Tax" });
+    }
+    if (merch > 0) {
+      expenses.push({ account: ACCOUNTS.food, amount: merch, memo: "" });
+    }
+    return expenses;
+  }
+  return extract.expenses.length > 0 ? extract.expenses : rollupExpenses(lines, tax);
 }
 
 export type ExtractHint = "ballester" | "supermax" | "jose" | "auto";
@@ -361,7 +405,6 @@ export function extractInvoiceFromText(
       if (parsed.amount > 30) continue;
       if (!/cheddar|jerry|brownie|bag|ldpe/i.test(parsed.description)) continue;
     }
-    if (parsed.amount === 0) continue;
     const classified = classifySku(parsed.description, rules);
     lines.push({ ...parsed, category: classified.category });
   }
@@ -856,11 +899,29 @@ function parseSkuLine(line: string): ExtractedSku | null {
   if (!loose) return parseFuzzySku(line);
   const rest = loose[5];
   const money = [...rest.matchAll(/(\d+(?:,\d{3})*\.\d{2,4})[A-Z$#]*/gi)];
-  if (money.length < 2) return null;
+  if (money.length >= 2) {
+    const amountTok = money[money.length - 1]!;
+    const priceTok = money[money.length - 2]!;
+    const description = rest.slice(0, priceTok.index ?? 0).trim();
+    if (description) {
+      return {
+        code: loose[4],
+        description,
+        qty_ordered: Number(loose[1]),
+        qty_shipped: Number(loose[2]),
+        uom: loose[3].toUpperCase(),
+        pounds: null,
+        unit_price: stripPriceSuffix(priceTok[0]),
+        amount: parseMoney(amountTok[1]),
+        category: "food",
+      };
+    }
+  }
   const amountTok = money[money.length - 1];
-  const priceTok = money[money.length - 2];
-  const description = rest.slice(0, priceTok.index ?? 0).trim();
-  if (!description) return null;
+  const description = amountTok
+    ? rest.slice(0, amountTok.index ?? 0).trim() || rest.trim()
+    : rest.trim();
+  if (!description) return parseFuzzySku(line);
   return {
     code: loose[4],
     description,
@@ -868,13 +929,15 @@ function parseSkuLine(line: string): ExtractedSku | null {
     qty_shipped: Number(loose[2]),
     uom: loose[3].toUpperCase(),
     pounds: null,
-    unit_price: stripPriceSuffix(priceTok[0]),
-    amount: parseMoney(amountTok[1]),
+    unit_price: 0,
+    amount: amountTok ? parseMoney(amountTok[1]) : 0,
     category: "food",
   };
 }
 
 function parseFuzzySku(line: string): ExtractedSku | null {
+  const partial = parsePartialCodedSku(line);
+  if (partial) return partial;
   const fuzzy = line.match(/(\d{6,7})\D+(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
   if (fuzzy) {
     const description = fuzzy[2].replace(/[^A-Za-z0-9 /.*#"'-]+/g, " ").replace(/\s+/g, " ").trim();
@@ -923,6 +986,42 @@ function parseFuzzySku(line: string): ExtractedSku | null {
     pounds: null,
     unit_price: 0,
     amount: parseMoney(tail[2]),
+    category: "food",
+  };
+}
+
+function parsePartialCodedSku(line: string): ExtractedSku | null {
+  const coded = line.match(/^(\d{4,7})\s+(.+)$/);
+  if (!coded) return null;
+  let rest = coded[2].trim();
+  const moneyHits = [...rest.matchAll(/(?<![0-9])(\d{1,3}(?:,\d{3})*\.\d{2,4})\b/g)];
+  let amount = 0;
+  let unitPrice = 0;
+  if (moneyHits.length > 0) {
+    amount = parseMoney(moneyHits[moneyHits.length - 1]![1]);
+    if (moneyHits.length >= 2) {
+      unitPrice = parseMoney(moneyHits[moneyHits.length - 2]![1]);
+    }
+    rest = rest.slice(0, moneyHits[0]!.index).trim();
+  }
+  let qty = 0;
+  const qtyTail = rest.match(/^(.*?)\s+(\d{1,4})$/);
+  if (qtyTail && /[A-Za-z]/.test(qtyTail[1]) && qtyTail[1].trim().length >= 4) {
+    rest = qtyTail[1].trim();
+    qty = Number(qtyTail[2]);
+  }
+  const description = rest.replace(/[^A-Za-z0-9 /.*#"'-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (description.length < 4) return null;
+  if (qty <= 0 && moneyHits.length === 0) return null;
+  return {
+    code: coded[1],
+    description,
+    qty_ordered: qty,
+    qty_shipped: qty,
+    uom: qty > 0 ? "CS" : null,
+    pounds: null,
+    unit_price: unitPrice,
+    amount,
     category: "food",
   };
 }

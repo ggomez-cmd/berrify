@@ -676,6 +676,123 @@ describe("Worker API", () => {
     });
   });
 
+  it("accepts Gemini SKU rows with only a description", async () => {
+    const geminiFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        generationConfig?: { responseSchema?: { properties?: { invoices?: { items?: { properties?: { lines?: { items?: { required?: string[] } } } } } } } };
+      };
+      expect(
+        body.generationConfig?.responseSchema?.properties?.invoices?.items?.properties?.lines?.items?.required,
+      ).toEqual(["description"]);
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    invoices: [
+                      {
+                        vendor_name: "Northwestern Selecta",
+                        qbo_vendor_name: "Northwestern Selecta",
+                        terms: "Net 7",
+                        subtotal: 0,
+                        tax: 0,
+                        total: 446.27,
+                        lines: [{ description: "BOBBY VEAL SCALLOPINI" }],
+                        expenses: [],
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      });
+    };
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit(JSON.stringify({ ocr_text: "NORTHWESTERN SELECTA INVOICE TOTAL 446.27" })),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(geminiFetch),
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      invoices: Array<{ lines: Array<{ description: string; amount: number }>; total: number }>;
+    };
+    expect(payload.invoices[0]?.total).toBe(446.27);
+    expect(payload.invoices[0]?.lines).toEqual([
+      expect.objectContaining({ description: "BOBBY VEAL SCALLOPINI", amount: 0 }),
+    ]);
+  });
+
+  it("forwards a raster photo to Gemini even when OCR is not thin", async () => {
+    const geminiFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        contents?: Array<{ parts?: Array<{ inline_data?: { mime_type?: string } }> }>;
+      };
+      expect(body.contents?.[0]?.parts?.some((part) => part.inline_data?.mime_type === "image/jpeg")).toBe(
+        true,
+      );
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    invoices: [
+                      {
+                        vendor_name: "Northwestern Selecta",
+                        qbo_vendor_name: "Northwestern Selecta",
+                        terms: "Net 7",
+                        subtotal: 446.27,
+                        tax: 0,
+                        total: 446.27,
+                        lines: [],
+                        expenses: [],
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      });
+    };
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit(
+        JSON.stringify({
+          ocr_text: "BALLESTER HERMANOS NUM. FACTURA 123 TOTAL $757.56 extra padding text here",
+          confidence: 92,
+          image: TINY_JPEG_DATA_URL,
+        }),
+      ),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(geminiFetch),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects invoice extract images that are not raster data URLs", async () => {
+    const response = await api(
+      "/api/invoice-extract",
+      ocrInit(
+        JSON.stringify({
+          ocr_text: "BALLESTER HERMANOS NUM. FACTURA 123 TOTAL $757.56 extra padding text here",
+          image: "https://example.supabase.co/storage/v1/object/public/bills/a.jpg",
+        }),
+      ),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "image must be a raster data URL" });
+  });
+
   it("rejects unauthenticated invoice extract calls", async () => {
     const response = await api("/api/invoice-extract", {
       method: "POST",

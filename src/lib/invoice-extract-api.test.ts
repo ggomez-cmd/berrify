@@ -70,6 +70,7 @@ describe("extractInvoicesAfterOcr", () => {
       fetchImpl,
     });
     expect(result.engine).toBe("rules");
+    expect(result.error).toBe("Gemini extract is not configured");
     expect(result.invoices.length).toBeGreaterThan(0);
     expect(result.invoices[0]?.total).toBeGreaterThan(0);
   });
@@ -146,11 +147,96 @@ describe("extractInvoicesAfterOcr", () => {
     expect(extractImage?.startsWith("data:image/jpeg;base64,")).toBe(true);
     expect(result.engine).toBe("rules");
   });
+
+  it("sends the photo when rules extract has no amounts", async () => {
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      expect(body.image).toBe("data:image/jpeg;base64,abc");
+      return Response.json({ error: "Gemini extract is not configured" }, { status: 503 });
+    };
+    const result = await extractInvoicesAfterOcr({
+      ocrText: `${"NORTHWESTERN SELECTA ".repeat(8)}FACTURA NUMERO 4128806\n148590 BOBBY VEAL SCALLOPINI 6OZ (C) 1`,
+      image: "data:image/jpeg;base64,abc",
+      confidence: 90,
+      vendorAliases: [],
+      accountRules: DEFAULT_ACCOUNT_RULES,
+      fetchImpl,
+    });
+    expect(result.engine).toBe("rules");
+    expect(result.error).toBe("Gemini extract is not configured");
+  });
+
+  it("retries once with the photo when Gemini invoices have no amounts", async () => {
+    let calls = 0;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      if (calls === 1) {
+        expect(body.image).toBeUndefined();
+        return Response.json({
+          engine: "gemini",
+          invoices: [
+            {
+              vendor_name: "Empty",
+              qbo_vendor_name: "Empty",
+              supplier_id: null,
+              invoice_number: null,
+              invoice_date: null,
+              due_date: null,
+              terms: "Net 15",
+              subtotal: 0,
+              tax: 0,
+              total: 0,
+              lines: [],
+              expenses: [],
+            },
+          ],
+        });
+      }
+      expect(body.image).toBe("data:image/jpeg;base64,abc");
+      return Response.json({
+        engine: "gemini",
+        invoices: [
+          {
+            vendor_name: "Northwestern Selecta",
+            qbo_vendor_name: "Northwestern Selecta",
+            supplier_id: null,
+            invoice_number: "4128806",
+            invoice_date: "2026-08-12",
+            due_date: null,
+            terms: "Net 7",
+            subtotal: 446.27,
+            tax: 0,
+            total: 446.27,
+            lines: [{ description: "VEAL", amount: 114.9, category: "food" }],
+            expenses: [],
+          },
+        ],
+      });
+    };
+    const result = await extractInvoicesAfterOcr({
+      ocrText: `${RULES_OCR}\n${RULES_OCR}\n${RULES_OCR}`,
+      image: "data:image/jpeg;base64,abc",
+      confidence: 90,
+      vendorAliases: [],
+      accountRules: DEFAULT_ACCOUNT_RULES,
+      fetchImpl,
+    });
+    expect(calls).toBe(2);
+    expect(result.engine).toBe("gemini");
+    expect(result.invoices[0]?.total).toBe(446.27);
+  });
 });
 
 describe("extractEngineNote", () => {
   it("names Gemini vs rules", () => {
     expect(extractEngineNote("gemini")).toBe("Gemini extract");
     expect(extractEngineNote("rules")).toBe("Rules extract");
+  });
+
+  it("surfaces Gemini fallback errors on rules extract", () => {
+    expect(extractEngineNote("rules", "Gemini extract is not configured")).toBe(
+      "Rules extract · Gemini extract is not configured",
+    );
   });
 });
