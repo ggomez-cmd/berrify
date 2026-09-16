@@ -18,6 +18,7 @@ import {
 } from "../../lib/invoice-extract";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
 import { formatMoney } from "../../lib/format";
+import { toRasterDataUrl } from "../../lib/invoice-image";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
@@ -182,6 +183,7 @@ export function InvoiceReviewDialog({
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [photoSrc, setPhotoSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !invoice) return;
@@ -220,12 +222,33 @@ export function InvoiceReviewDialog({
     setOcrText(null);
     setExtraBills([]);
     setLightboxOpen(false);
+    setPhotoSrc(null);
     ocrStartedFor.current = null;
   }, [open, invoice]);
 
   useEffect(() => {
+    if (!open || !media.data?.image_data) {
+      setPhotoSrc(null);
+      return;
+    }
+    const raw = media.data.image_data;
+    let cancelled = false;
+    void toRasterDataUrl(raw)
+      .then((src) => {
+        if (!cancelled) setPhotoSrc(src);
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoSrc(raw);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, media.data?.image_data]);
+
+  useEffect(() => {
     if (!open || !invoice || media.isLoading || !media.data) return;
     if (ocrStartedFor.current === invoice.id) return;
+    if (media.data.image_data && !photoSrc) return;
 
     const applyPreview = async (
       text: string,
@@ -267,7 +290,7 @@ export function InvoiceReviewDialog({
     };
 
     const existingOcr = media.data.ocr_text;
-    const image = media.data.image_data;
+    const image = photoSrc ?? media.data.image_data;
     if (existingOcr) {
       ocrStartedFor.current = invoice.id;
       setOcrText(existingOcr);
@@ -311,11 +334,14 @@ export function InvoiceReviewDialog({
     skuAliases,
     accountRules,
     extractExamples,
+    photoSrc,
   ]);
 
   const totals = useMemo(() => invoiceTotals(lines, tax), [lines, tax]);
 
   if (!invoice) return null;
+
+  const displaySrc = photoSrc ?? media.data?.image_data;
 
   const persist = async (status: "reviewed" | "exported", exportedAt?: string) => {
     setError(null);
@@ -339,7 +365,7 @@ export function InvoiceReviewDialog({
         ...(ocrText !== null ? { ocr_text: ocrText } : {}),
       });
       if (extraBills.length > 0) {
-        const image = media.data?.image_data ?? invoice.image_data;
+        const image = photoSrc ?? media.data?.image_data ?? invoice.image_data;
         const mime = media.data?.image_mime ?? invoice.image_mime;
         for (const bill of extraBills) {
           await create.mutateAsync({
@@ -433,7 +459,7 @@ export function InvoiceReviewDialog({
           <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
             Loading photo…
           </div>
-        ) : media.data?.image_data ? (
+        ) : displaySrc ? (
           <>
             <button
               type="button"
@@ -442,7 +468,7 @@ export function InvoiceReviewDialog({
               onClick={() => setLightboxOpen(true)}
             >
               <img
-                src={media.data.image_data}
+                src={displaySrc}
                 alt="Invoice photo"
                 className="pointer-events-none max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
               />
@@ -452,7 +478,7 @@ export function InvoiceReviewDialog({
             </button>
             <InvoicePhotoLightbox
               open={lightboxOpen}
-              src={media.data.image_data}
+              src={displaySrc}
               onClose={() => setLightboxOpen(false)}
             />
           </>

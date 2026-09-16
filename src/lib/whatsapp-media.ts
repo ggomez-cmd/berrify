@@ -1,4 +1,4 @@
-import { MAX_INVOICE_IMAGE_BYTES } from "./invoice-image";
+import { MAX_INVOICE_IMAGE_BYTES, rasterMimeForPhoto } from "./invoice-image";
 
 const GRAPH_VERSION = "v21.0";
 
@@ -43,7 +43,7 @@ export async function downloadWhatsAppMedia(
   if (!fileResponse.ok) {
     throw new Error(`WhatsApp media download failed (${fileResponse.status})`);
   }
-  const mimeType = (meta.mime_type || fileResponse.headers.get("content-type") || "image/jpeg")
+  const declared = (meta.mime_type || fileResponse.headers.get("content-type") || "image/jpeg")
     .split(";")[0]
     .trim();
   const buffer = await fileResponse.arrayBuffer();
@@ -51,6 +51,7 @@ export async function downloadWhatsAppMedia(
     throw new Error("Invoice photo must be 8 MB or smaller.");
   }
   const bytes = new Uint8Array(buffer);
+  const mimeType = rasterMimeForPhoto(bytes, declared);
   return {
     bytes,
     mimeType,

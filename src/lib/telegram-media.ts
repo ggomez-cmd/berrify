@@ -1,4 +1,4 @@
-import { MAX_INVOICE_IMAGE_BYTES } from "./invoice-image";
+import { MAX_INVOICE_IMAGE_BYTES, rasterMimeForPhoto } from "./invoice-image";
 import { mediaBytesToDataUrl } from "./whatsapp-media";
 
 export type DownloadedTelegramMedia = {
@@ -37,12 +37,13 @@ export async function downloadTelegramFile(
   if (!fileResponse.ok) {
     throw new Error(`Telegram file download failed (${fileResponse.status})`);
   }
-  const mimeType = (fileResponse.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+  const declared = (fileResponse.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
   const buffer = await fileResponse.arrayBuffer();
   if (buffer.byteLength > MAX_INVOICE_IMAGE_BYTES) {
     throw new Error("Invoice photo must be 8 MB or smaller.");
   }
   const bytes = new Uint8Array(buffer);
+  const mimeType = rasterMimeForPhoto(bytes, declared);
   return {
     bytes,
     mimeType,

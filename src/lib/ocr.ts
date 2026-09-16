@@ -1,4 +1,5 @@
 import { createWorker } from "tesseract.js";
+import { toRasterDataUrl } from "./invoice-image";
 import { supabase } from "./supabase";
 
 export type OcrEngine = "vision" | "tesseract";
@@ -163,10 +164,12 @@ async function visionFailureMessage(response: Response): Promise<string> {
 }
 
 export async function ocrImage(image: string, options: OcrImageOptions = {}): Promise<OcrResult> {
-  const runTesseract = () => (options.fallback ?? ocrImageWithTesseract)(image);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const raster = await toRasterDataUrl(image, fetchImpl);
+  const runTesseract = () => (options.fallback ?? ocrImageWithTesseract)(raster);
   const engine = options.engine;
   if (engine === undefined) {
-    const vision = await ocrImageWithVision(image, options);
+    const vision = await ocrImageWithVision(raster, options);
     if (vision) return vision;
     return runTesseract();
   }
@@ -174,7 +177,7 @@ export async function ocrImage(image: string, options: OcrImageOptions = {}): Pr
     case "tesseract":
       return runTesseract();
     case "vision": {
-      const vision = await ocrImageWithVision(image, options);
+      const vision = await ocrImageWithVision(raster, options);
       if (vision) return vision;
       throw new Error("Vision OCR failed");
     }

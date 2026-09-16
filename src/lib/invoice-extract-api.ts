@@ -1,4 +1,5 @@
 import { extractInvoicesFromText, type AccountRule, type ExtractedInvoice, type VendorAlias } from "./invoice-extract";
+import { toRasterDataUrl } from "./invoice-image";
 import { isThinOcrText } from "./ocr-thin";
 import { supabase } from "./supabase";
 
@@ -92,7 +93,7 @@ export async function extractInvoicesAfterOcr(
       examples: input.examples ?? [],
     };
     if (input.image && isThinOcrText(input.ocrText, input.confidence)) {
-      body.image = input.image;
+      body.image = await toRasterDataUrl(input.image, fetchImpl);
     }
 
     const response = await fetchImpl("/api/invoice-extract", {
