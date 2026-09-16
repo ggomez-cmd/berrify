@@ -1038,7 +1038,7 @@ function neutralizeFormula(value: string): string {
   return safe;
 }
 
-function iifField(value: string): string {
+export function iifField(value: string): string {
   return neutralizeFormula(String(value ?? "").replace(/[\t\r\n]+/g, " "));
 }
 

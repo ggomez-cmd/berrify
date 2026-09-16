@@ -13,6 +13,7 @@ import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TimeClockPage } from "./features/time-clock/TimeClockPage";
+import { PayrollPage } from "./features/payroll/PayrollPage";
 
 function routerBasename(): string | undefined {
   const base = import.meta.env.BASE_URL;
@@ -33,6 +34,7 @@ export default function App() {
               <Route index element={<DashboardPage />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="time-clock" element={<TimeClockPage />} />
+              <Route path="payroll" element={<PayrollPage />} />
               <Route path="employees" element={<EmployeesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
