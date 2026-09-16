@@ -28,6 +28,7 @@ type DraftTarget = {
   starts?: string;
   ends?: string;
   employeeId?: string | null;
+  lockDay?: boolean;
 };
 
 export function SchedulePage() {
@@ -124,6 +125,7 @@ export function SchedulePage() {
                 onCreate={(day) =>
                   setDialog({
                     shift: null,
+                    lockDay: true,
                     employeeId: employee.id,
                     starts: atTimeOnDay(day, 16, 0).toISOString(),
                     ends: atTimeOnDay(day, 22, 0).toISOString(),
@@ -140,6 +142,7 @@ export function SchedulePage() {
               onCreate={(day) =>
                 setDialog({
                   shift: null,
+                  lockDay: true,
                   employeeId: null,
                   starts: atTimeOnDay(day, 17, 0).toISOString(),
                   ends: atTimeOnDay(day, 23, 0).toISOString(),
@@ -162,6 +165,7 @@ export function SchedulePage() {
         defaultStarts={dialog?.starts}
         defaultEnds={dialog?.ends}
         defaultEmployeeId={dialog?.employeeId}
+        lockDay={dialog?.lockDay ?? false}
       />
     </div>
   );
