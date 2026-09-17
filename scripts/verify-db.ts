@@ -31,6 +31,7 @@ const requiredTables = [
   "time_exceptions",
   "payroll_exports",
   "payroll_export_lines",
+  "empty_bottle_events",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -57,6 +58,7 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   time_exceptions: ["time_exceptions_select_own", "time_exceptions_select_manager"],
   payroll_exports: ["payroll_exports_manager"],
   payroll_export_lines: ["payroll_export_lines_manager"],
+  empty_bottle_events: ["empty_bottle_events_select_manager"],
 };
 
 const client = createPgClient();

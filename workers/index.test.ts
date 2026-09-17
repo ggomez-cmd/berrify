@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
+  emptyCallbackData,
+  emptyBottleUsageMovement,
+} from "../src/lib/empty-bottle";
+import { clearEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
 import { TELEGRAM_SECRET_HEADER } from "../src/lib/telegram-webhook";
 import { signWhatsAppBody } from "../src/lib/whatsapp-webhook";
 import worker, { handleApi, redirectToHttps, type WorkerEnv } from "./index";
@@ -118,6 +124,49 @@ const TELEGRAM_TEXT_BODY = JSON.stringify({
   },
 });
 
+const TELEGRAM_EMPTY_PHOTO_BODY = JSON.stringify({
+  update_id: 1004,
+  message: {
+    message_id: 45,
+    caption: "empty Semilla",
+    from: { id: 777, username: "cook" },
+    chat: { id: -100 },
+    photo: [
+      { file_id: "SMALL", file_size: 100 },
+      { file_id: "FILE_1", file_size: 9000 },
+    ],
+  },
+});
+
+const EVENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+const TELEGRAM_EMPTY_OK_BODY = JSON.stringify({
+  update_id: 1005,
+  callback_query: {
+    id: "cb-ok",
+    data: emptyCallbackData(true, EVENT_ID),
+    message: { chat: { id: -100 } },
+  },
+});
+
+const TELEGRAM_EMPTY_NO_BODY = JSON.stringify({
+  update_id: 1006,
+  callback_query: {
+    id: "cb-no",
+    data: emptyCallbackData(false, EVENT_ID),
+    message: { chat: { id: -100 } },
+  },
+});
+
+const TELEGRAM_EMPTY_COMMAND_BODY = JSON.stringify({
+  update_id: 1007,
+  message: {
+    message_id: 46,
+    chat: { id: -100 },
+    text: "/empty",
+  },
+});
+
 const TELEGRAM_DOCUMENT_BODY = JSON.stringify({
   update_id: 1003,
   message: {
@@ -201,7 +250,97 @@ function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: num
   return { fetchImpl, inserted };
 }
 
+function mockEmptyFetch(options?: {
+  eventStatus?: "pending" | "confirmed" | "cancelled";
+  claim?: boolean;
+}) {
+  const invoices: unknown[] = [];
+  const movements: unknown[] = [];
+  const telegramCalls: Array<{ url: string; body: unknown }> = [];
+  const events: Array<Record<string, unknown>> = [
+    {
+      id: EVENT_ID,
+      org_id: "org-1",
+      telegram_message_id: "-100:45",
+      chat_id: "-100",
+      restaurant_id: "r-semilla",
+      proposed_item_id: "i-rum",
+      proposed_label: "Rum",
+      status: options?.eventStatus ?? "pending",
+    },
+  ];
+  let eventByMessage: Record<string, unknown> | null = null;
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    if (url === "https://api.telegram.org/botbot-token/getFile?file_id=FILE_1") {
+      return Response.json({ ok: true, result: { file_path: "photos/bill.jpg", file_size: 3 } });
+    }
+    if (url === "https://api.telegram.org/file/botbot-token/photos/bill.jpg") {
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
+    }
+    if (url.startsWith("https://api.telegram.org/botbot-token/")) {
+      telegramCalls.push({ url, body });
+      return Response.json({ ok: true });
+    }
+    if (url.includes("generativelanguage.googleapis.com")) {
+      return Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ sku: "BV-EB-RUM", label: "Rum", confidence: 0.9 }) }] } }],
+      });
+    }
+    if (url.includes("/rest/v1/restaurants")) {
+      return Response.json([{ id: "r-semilla", name: "Semilla", qbo_company_name: "Semilla", slug: "semilla" }]);
+    }
+    if (url.includes("/rest/v1/restaurant_aliases")) {
+      return Response.json([{ restaurant_id: "r-semilla", match_kind: "caption", match_text: "semilla" }]);
+    }
+    if (url.includes("/rest/v1/organizations")) {
+      return Response.json([{ name: "Pacifico Kitchen" }]);
+    }
+    if (url.includes("/rest/v1/inventory_items") && method === "GET") {
+      return Response.json([{ id: "i-rum", sku: "BV-EB-RUM", name: "Rum" }]);
+    }
+    if (url.includes("/rest/v1/empty_bottle_events") && method === "GET") {
+      if (url.includes("telegram_message_id=")) {
+        return Response.json(eventByMessage ? [eventByMessage] : []);
+      }
+      return Response.json(events);
+    }
+    if (url.includes("/rest/v1/empty_bottle_events") && method === "POST") {
+      const created = { id: EVENT_ID, status: "pending", ...body };
+      eventByMessage = created;
+      return Response.json([created], { status: 201 });
+    }
+    if (url.includes("/rest/v1/empty_bottle_events") && method === "PATCH") {
+      if (options?.claim === false || (events[0]?.status !== "pending" && options?.eventStatus)) {
+        return Response.json([]);
+      }
+      events[0] = { ...events[0], ...body };
+      return Response.json(events);
+    }
+    if (url.includes("/rest/v1/stock_movements") && method === "POST") {
+      movements.push(body);
+      return Response.json([body], { status: 201 });
+    }
+    if (url.includes("/rest/v1/invoices") && method === "POST") {
+      invoices.push(body);
+      return new Response(null, { status: 201 });
+    }
+    if (url.includes("/rest/v1/invoices") && method === "GET") {
+      return Response.json([]);
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  return { fetchImpl, invoices, movements, telegramCalls };
+}
+
 describe("Worker API", () => {
+  beforeEach(() => {
+    clearEmptyPhotoPending();
+  });
+
   it("returns health JSON", async () => {
     const response = await api("/api/health");
     expect(response.status).toBe(200);
@@ -441,6 +580,137 @@ describe("Worker API", () => {
       caption: "Semilla factura",
       ocr_text: null,
     });
+  });
+
+  it("never invoices an empty-bottle photo and replies when Gemini is missing", async () => {
+    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_PHOTO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      ingested: 0,
+      empty: "identify_unavailable",
+    });
+    expect(invoices).toEqual([]);
+    expect(telegramCalls.some((call) => JSON.stringify(call.body).includes(EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE))).toBe(
+      true,
+    );
+  });
+
+  it("identifies an empty bottle and asks for confirm without invoicing", async () => {
+    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_PHOTO_BODY,
+      },
+      { ...ingestEnv, GEMINI_API_KEY: "gemini-key" },
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, ingested: 0, empty: "awaiting_confirm" });
+    expect(invoices).toEqual([]);
+    expect(telegramCalls.some((call) => String(call.url).includes("sendMessage"))).toBe(true);
+  });
+
+  it("still invoices an unmarked Telegram photo", async () => {
+    const { fetchImpl, inserted } = mockIngestFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    expect(inserted).toHaveLength(1);
+  });
+
+  it("confirms an empty bottle once and ignores a second confirm", async () => {
+    const first = mockEmptyFetch();
+    const confirmInit = {
+      method: "POST" as const,
+      headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+      body: TELEGRAM_EMPTY_OK_BODY,
+    };
+    const confirmed = await api("/api/webhooks/telegram", confirmInit, ingestEnv, first.fetchImpl);
+    expect(confirmed.status).toBe(200);
+    await expect(confirmed.json()).resolves.toMatchObject({ empty: "confirmed" });
+    expect(first.movements).toEqual([
+      emptyBottleUsageMovement({
+        orgId: "org-1",
+        itemId: "i-rum",
+        label: "Rum",
+        restaurantName: "Semilla",
+      }),
+    ]);
+
+    const second = mockEmptyFetch({ eventStatus: "confirmed", claim: false });
+    const again = await api("/api/webhooks/telegram", confirmInit, ingestEnv, second.fetchImpl);
+    expect(again.status).toBe(200);
+    await expect(again.json()).resolves.toMatchObject({ empty: "already_handled" });
+    expect(second.movements).toEqual([]);
+  });
+
+  it("cancels an empty bottle without a stock movement", async () => {
+    const { fetchImpl, movements } = mockEmptyFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_NO_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ empty: "cancelled" });
+    expect(movements).toEqual([]);
+  });
+
+  it("uses a pending /empty command for the next photo", async () => {
+    const { fetchImpl, invoices } = mockEmptyFetch();
+    const command = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_COMMAND_BODY,
+      },
+      { ...ingestEnv, GEMINI_API_KEY: "gemini-key" },
+      fetchImpl,
+    );
+    expect(command.status).toBe(200);
+    await expect(command.json()).resolves.toMatchObject({ empty: "awaiting_photo" });
+
+    const photo = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      { ...ingestEnv, GEMINI_API_KEY: "gemini-key" },
+      fetchImpl,
+    );
+    expect(photo.status).toBe(200);
+    await expect(photo.json()).resolves.toMatchObject({ empty: "awaiting_confirm" });
+    expect(invoices).toEqual([]);
   });
 
   it("treats a duplicate Telegram message id as success", async () => {

@@ -70,6 +70,20 @@ export type StockMovement = {
   created_at: string;
 };
 
+export type EmptyBottleEventStatus = "pending" | "confirmed" | "cancelled";
+
+export type EmptyBottleEvent = {
+  id: string;
+  org_id: string;
+  telegram_message_id: string;
+  chat_id: string;
+  restaurant_id: string | null;
+  proposed_item_id: string;
+  proposed_label: string;
+  status: EmptyBottleEventStatus;
+  created_at: string;
+};
+
 export type InventoryItemWithSupplier = InventoryItem & {
   suppliers: Pick<Supplier, "id" | "name"> | null;
 };
