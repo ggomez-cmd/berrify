@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import { ACCOUNTS } from "../src/lib/invoice-extract.ts";
+import { emptyBottleSeedInsert, missingEmptyBottleItems } from "../src/lib/empty-bottle.ts";
 import { DEMO_FILL_NOTE, demoWeekShifts } from "../src/lib/demo-fill.ts";
 
 dotenv.config();
@@ -125,6 +126,19 @@ async function fillInventory(sb: SupabaseClient, orgId: string, userId: string) 
     .eq("org_id", orgId);
   if (error) throw error;
   const bySku = Object.fromEntries((items ?? []).map((row) => [row.sku, row]));
+
+  const missingBottles = missingEmptyBottleItems(Object.keys(bySku));
+  if (missingBottles.length > 0) {
+    const { data: createdBottles, error: bottleError } = await sb
+      .from("inventory_items")
+      .insert(missingBottles.map((item) => emptyBottleSeedInsert(orgId, item)))
+      .select("id, sku, quantity");
+    if (bottleError) throw bottleError;
+    for (const row of createdBottles ?? []) {
+      bySku[row.sku as string] = row;
+    }
+    console.log(`Added ${missingBottles.length} generic empty-bottle item(s).`);
+  }
 
   if (!bySku["BV-022"]) {
     const { data: created, error: itemError } = await sb

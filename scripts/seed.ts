@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { demoWeekShifts } from "../src/lib/demo-fill.ts";
+import { emptyBottleSeedInsert, missingEmptyBottleItems } from "../src/lib/empty-bottle.ts";
 import {
   ACCOUNTS,
   DEFAULT_ACCOUNT_RULES,
@@ -250,6 +251,25 @@ async function seedInventory(orgId: string, userId: string) {
   );
   if (moveError) throw moveError;
   console.log("Seeded Pacifico Kitchen inventory.");
+}
+
+async function ensureEmptyBottles(orgId: string) {
+  const { data: existing, error } = await admin
+    .from("inventory_items")
+    .select("sku")
+    .eq("org_id", orgId)
+    .like("sku", "BV-EB-%");
+  if (error) throw error;
+  const missing = missingEmptyBottleItems((existing ?? []).map((row) => row.sku as string | null));
+  if (missing.length === 0) {
+    console.log("Empty-bottle catalog already present.");
+    return;
+  }
+  const { error: insertError } = await admin
+    .from("inventory_items")
+    .insert(missing.map((item) => emptyBottleSeedInsert(orgId, item)));
+  if (insertError) throw insertError;
+  console.log(`Seeded ${missing.length} generic empty-bottle item(s).`);
 }
 
 async function ensureStaffUser(staffEmail: string, orgId: string): Promise<string> {
@@ -634,6 +654,7 @@ async function main() {
   const userId = await findOrCreateUser(email, password, "Pacifico Kitchen");
   const orgId = await orgForUser(userId);
   await seedInventory(orgId, userId);
+  await ensureEmptyBottles(orgId);
   await seedSchedule(orgId, userId);
   await ensureClockPins(orgId);
   await ensureOwnerKioskPin(userId);

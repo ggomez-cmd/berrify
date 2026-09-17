@@ -1,3 +1,4 @@
+import { captionHasEmptyIntent, parseEmptyCallbackData, textIsEmptyCommand } from "./empty-bottle";
 import { timingSafeEqual } from "./whatsapp-webhook";
 
 export const TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
@@ -23,16 +24,47 @@ type TelegramDocument = {
 type TelegramMessage = {
   message_id?: number;
   caption?: string;
+  text?: string;
   photo?: TelegramPhotoSize[];
   document?: TelegramDocument;
   from?: { id?: number; username?: string };
   chat?: { id?: number };
 };
 
+type TelegramCallbackQuery = {
+  id?: string;
+  data?: string;
+  from?: { id?: number; username?: string };
+  message?: TelegramMessage;
+};
+
 type TelegramUpdate = {
   message?: TelegramMessage;
   channel_post?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 };
+
+export type TelegramParsedUpdate =
+  | {
+      kind: "empty_callback";
+      confirm: boolean;
+      eventId: string;
+      callbackQueryId: string;
+      chatId: number;
+    }
+  | {
+      kind: "empty_command";
+      chatId: number;
+      from: string;
+      text: string;
+    }
+  | {
+      kind: "photo";
+      chatId: number;
+      emptyCaption: boolean;
+      image: TelegramInboundImage;
+    }
+  | { kind: "ignored" };
 
 function pickLargestPhoto(photos: TelegramPhotoSize[]): string | null {
   let best: { fileId: string; fileSize: number } | null = null;
@@ -68,24 +100,65 @@ function fileIdFromMessage(message: TelegramMessage): string | null {
 }
 
 export function parseTelegramInboundImages(body: unknown): TelegramInboundImage[] {
-  if (!body || typeof body !== "object") return [];
+  const parsed = parseTelegramUpdate(body);
+  return parsed.kind === "photo" ? [parsed.image] : [];
+}
+
+export function parseTelegramUpdate(body: unknown): TelegramParsedUpdate {
+  if (!body || typeof body !== "object") return { kind: "ignored" };
   const update = body as TelegramUpdate;
+
+  const callback = update.callback_query;
+  if (callback) {
+    const parsed = parseEmptyCallbackData(callback.data);
+    const chatId = callback.message?.chat?.id ?? callback.from?.id;
+    const callbackQueryId = callback.id?.trim();
+    if (parsed && chatId != null && callbackQueryId) {
+      return {
+        kind: "empty_callback",
+        confirm: parsed.confirm,
+        eventId: parsed.eventId,
+        callbackQueryId,
+        chatId,
+      };
+    }
+    return { kind: "ignored" };
+  }
+
   const message = update.message ?? update.channel_post;
-  if (!message) return [];
+  if (!message) return { kind: "ignored" };
 
   const chatId = message.chat?.id;
-  const rawMessageId = message.message_id;
-  const fileId = fileIdFromMessage(message);
-  if (chatId == null || rawMessageId == null || !fileId) return [];
+  if (chatId == null) return { kind: "ignored" };
 
-  return [
-    {
-      messageId: `${chatId}:${rawMessageId}`,
+  const fileId = fileIdFromMessage(message);
+  const rawMessageId = message.message_id;
+  if (fileId && rawMessageId != null) {
+    const caption = message.caption?.trim() || null;
+    return {
+      kind: "photo",
+      chatId,
+      emptyCaption: captionHasEmptyIntent(caption),
+      image: {
+        messageId: `${chatId}:${rawMessageId}`,
+        from: senderFrom(message, chatId),
+        caption,
+        fileId,
+      },
+    };
+  }
+
+  const text = message.text?.trim() || null;
+  if (text && (textIsEmptyCommand(text) || captionHasEmptyIntent(text))) {
+    return {
+      kind: "empty_command",
+      chatId,
       from: senderFrom(message, chatId),
-      caption: message.caption?.trim() || null,
-      fileId,
-    },
-  ];
+      text,
+    };
+  }
+
+  return { kind: "ignored" };
 }
 
 export function verifyTelegramSecret(

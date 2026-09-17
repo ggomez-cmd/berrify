@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_FILL_NOTE, astStamp, demoWeekShifts } from "./demo-fill";
+import {
+  EMPTY_BOTTLE_GENERIC_ITEMS,
+  EMPTY_BOTTLE_SEED_QUANTITY,
+  missingEmptyBottleItems,
+} from "./empty-bottle";
 import { hoursBetween, weekStart } from "./schedule";
 
 describe("demoWeekShifts", () => {
@@ -26,5 +31,14 @@ describe("demoWeekShifts", () => {
 
   it("formats Puerto Rico wall times as AST", () => {
     expect(astStamp(2026, 9, 8, 16)).toBe("2026-09-08T16:00:00-04:00");
+  });
+});
+
+describe("empty-bottle seed catalog", () => {
+  it("lists eight generic bottles at qty 12 and is idempotent", () => {
+    expect(EMPTY_BOTTLE_GENERIC_ITEMS).toHaveLength(8);
+    expect(EMPTY_BOTTLE_SEED_QUANTITY).toBe(12);
+    expect(missingEmptyBottleItems(EMPTY_BOTTLE_GENERIC_ITEMS.map((item) => item.sku))).toEqual([]);
+    expect(missingEmptyBottleItems([])).toHaveLength(8);
   });
 });
