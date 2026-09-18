@@ -38,8 +38,16 @@ describe("empty-bottle intent", () => {
     expect(captionHasEmptyIntent("emptying the bin")).toBe(false);
     expect(textIsEmptyCommand("/empty")).toBe(true);
     expect(textIsEmptyCommand("/empty@berrify_bot")).toBe(true);
+    expect(textIsEmptyCommand("/empty@berrify.bot")).toBe(true);
+    expect(textIsEmptyCommand("/empty@foo-bot")).toBe(true);
+    expect(textIsEmptyCommand("\u200B/empty")).toBe(true);
+    expect(textIsEmptyCommand("/empty\u200B")).toBe(true);
+    expect(textIsEmptyCommand("/\u200Bempty")).toBe(true);
+    expect(textIsEmptyCommand("\uFF0Fempty")).toBe(true);
+    expect(textIsEmptyCommand("/empty\u00A0please")).toBe(true);
     expect(textIsEmptyCommand("empty")).toBe(true);
     expect(textIsEmptyCommand("hello")).toBe(false);
+    expect(textIsEmptyCommand("/emptying")).toBe(false);
   });
 
   it("parses confirm callback payloads", () => {
@@ -162,6 +170,7 @@ describe("empty-bottle debit", () => {
 describe("empty-bottle helpers", () => {
   it("strips empty and restaurant words from the leftover caption", () => {
     expect(leftoverEmptyCaption("/empty Semilla rum", ["Semilla", "semilla"])).toBe("rum");
+    expect(leftoverEmptyCaption("/empty@berrify.bot rum", [])).toBe("rum");
   });
 
   it("parses a Gemini identify payload", () => {

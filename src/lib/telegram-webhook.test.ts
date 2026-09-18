@@ -108,6 +108,23 @@ describe("parseTelegramUpdate empty intent", () => {
     });
     expect(
       parseTelegramUpdate({
+        message: { message_id: 9, chat: { id: -100 }, text: "/empty@berrify.bot" },
+      }),
+    ).toMatchObject({ kind: "empty_command", text: "/empty@berrify.bot" });
+    expect(
+      parseTelegramUpdate({
+        message: { message_id: 10, chat: { id: -100 }, text: "/empty@foo-bot" },
+      }),
+    ).toMatchObject({ kind: "empty_command", text: "/empty@foo-bot" });
+    expect(
+      parseTelegramUpdate({
+        message: { message_id: 11, chat: { id: -100 }, text: "/\u200Bempty" },
+      }),
+    ).toMatchObject({ kind: "empty_command", text: "/empty" });
+    expect(parseTelegramUpdate(PHOTO_UPDATE).kind).toBe("photo");
+    expect(parseTelegramUpdate(PHOTO_UPDATE)).toMatchObject({ emptyCaption: false });
+    expect(
+      parseTelegramUpdate({
         callback_query: {
           id: "cb-1",
           data: "empty:ok:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",

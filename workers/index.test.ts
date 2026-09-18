@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  EMPTY_BOTTLE_AWAIT_PHOTO,
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
   emptyCallbackData,
 } from "../src/lib/empty-bottle";
@@ -766,7 +767,7 @@ describe("Worker API", () => {
   });
 
   it("uses a pending /empty command for the next photo", async () => {
-    const { fetchImpl, invoices } = mockEmptyFetch();
+    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
     const command = await api(
       "/api/webhooks/telegram",
       {
@@ -779,6 +780,13 @@ describe("Worker API", () => {
     );
     expect(command.status).toBe(200);
     await expect(command.json()).resolves.toMatchObject({ empty: "awaiting_photo" });
+    expect(
+      telegramCalls.some(
+        (call) =>
+          String(call.url).includes("/sendMessage") &&
+          JSON.stringify(call.body).includes(EMPTY_BOTTLE_AWAIT_PHOTO),
+      ),
+    ).toBe(true);
 
     const photo = await api(
       "/api/webhooks/telegram",
@@ -793,6 +801,50 @@ describe("Worker API", () => {
     expect(photo.status).toBe(200);
     await expect(photo.json()).resolves.toMatchObject({ empty: "awaiting_confirm" });
     expect(invoices).toEqual([]);
+  });
+
+  it("replies to /empty@berrify.bot and fails sendMessage when Telegram ok is false", async () => {
+    const dotted = mockEmptyFetch();
+    const dottedCommand = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: JSON.stringify({
+          update_id: 1008,
+          message: { message_id: 47, chat: { id: -100 }, text: "/empty@berrify.bot" },
+        }),
+      },
+      ingestEnv,
+      dotted.fetchImpl,
+    );
+    expect(dottedCommand.status).toBe(200);
+    await expect(dottedCommand.json()).resolves.toMatchObject({ empty: "awaiting_photo" });
+    expect(
+      dotted.telegramCalls.some((call) => JSON.stringify(call.body).includes(EMPTY_BOTTLE_AWAIT_PHOTO)),
+    ).toBe(true);
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes("/sendMessage")) {
+        return Response.json({ ok: false, description: "Forbidden: bot was blocked by the user" });
+      }
+      return dotted.fetchImpl(input, init);
+    };
+    const blocked = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_COMMAND_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(blocked.status).toBe(502);
+    const payload = (await blocked.json()) as { errors?: string[] };
+    expect(payload.errors?.join(" ")).toContain("Forbidden: bot was blocked by the user");
+    expect(JSON.stringify(payload)).not.toContain("bot-token");
   });
 
   it("treats a duplicate Telegram message id as success", async () => {

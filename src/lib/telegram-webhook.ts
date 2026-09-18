@@ -1,4 +1,9 @@
-import { captionHasEmptyIntent, parseEmptyCallbackData, textIsEmptyCommand } from "./empty-bottle";
+import {
+  captionHasEmptyIntent,
+  normalizeTelegramCommandText,
+  parseEmptyCallbackData,
+  textIsEmptyCommand,
+} from "./empty-bottle";
 import { timingSafeEqual } from "./whatsapp-webhook";
 
 export const TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
@@ -148,7 +153,7 @@ export function parseTelegramUpdate(body: unknown): TelegramParsedUpdate {
     };
   }
 
-  const text = message.text?.trim() || null;
+  const text = normalizeTelegramCommandText(message.text) || null;
   if (text && (textIsEmptyCommand(text) || captionHasEmptyIntent(text))) {
     return {
       kind: "empty_command",
