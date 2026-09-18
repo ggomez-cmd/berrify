@@ -26,10 +26,17 @@ type TelegramDocument = {
   file_name?: string;
 };
 
+type TelegramMessageEntity = {
+  type?: string;
+  offset?: number;
+  length?: number;
+};
+
 type TelegramMessage = {
   message_id?: number;
   caption?: string;
   text?: string;
+  entities?: TelegramMessageEntity[];
   photo?: TelegramPhotoSize[];
   document?: TelegramDocument;
   from?: { id?: number; username?: string };
@@ -56,20 +63,28 @@ export type TelegramParsedUpdate =
       eventId: string;
       callbackQueryId: string;
       chatId: number;
+      replyToMessageId?: number;
     }
   | {
       kind: "empty_command";
       chatId: number;
       from: string;
       text: string;
+      replyToMessageId?: number;
     }
   | {
       kind: "photo";
       chatId: number;
       emptyCaption: boolean;
       image: TelegramInboundImage;
+      replyToMessageId?: number;
     }
-  | { kind: "ignored" };
+  | {
+      kind: "ignored";
+      chatId?: number;
+      replyToMessageId?: number;
+      text?: string;
+    };
 
 function pickLargestPhoto(photos: TelegramPhotoSize[]): string | null {
   let best: { fileId: string; fileSize: number } | null = null;
@@ -104,6 +119,25 @@ function fileIdFromMessage(message: TelegramMessage): string | null {
   return null;
 }
 
+function replyToMessageIdOf(message: TelegramMessage | undefined): number | undefined {
+  return typeof message?.message_id === "number" ? message.message_id : undefined;
+}
+
+function emptyCommandFromBotEntities(text: string | undefined, entities: TelegramMessageEntity[] | undefined): boolean {
+  if (!entities?.length) return false;
+  const raw = text ?? "";
+  for (const entity of entities) {
+    if (entity.type !== "bot_command") continue;
+    const offset = typeof entity.offset === "number" ? entity.offset : 0;
+    const length = typeof entity.length === "number" ? entity.length : 0;
+    if (length <= 0) continue;
+    const token = raw.slice(offset, offset + length);
+    const normalized = normalizeTelegramCommandText(token);
+    if (/^\/empty(?:@[^\s/@]+)?$/iu.test(normalized)) return true;
+  }
+  return false;
+}
+
 export function parseTelegramInboundImages(body: unknown): TelegramInboundImage[] {
   const parsed = parseTelegramUpdate(body);
   return parsed.kind === "photo" ? [parsed.image] : [];
@@ -119,12 +153,14 @@ export function parseTelegramUpdate(body: unknown): TelegramParsedUpdate {
     const chatId = callback.message?.chat?.id ?? callback.from?.id;
     const callbackQueryId = callback.id?.trim();
     if (parsed && chatId != null && callbackQueryId) {
+      const replyToMessageId = replyToMessageIdOf(callback.message);
       return {
         kind: "empty_callback",
         confirm: parsed.confirm,
         eventId: parsed.eventId,
         callbackQueryId,
         chatId,
+        ...(replyToMessageId != null ? { replyToMessageId } : {}),
       };
     }
     return { kind: "ignored" };
@@ -150,20 +186,30 @@ export function parseTelegramUpdate(body: unknown): TelegramParsedUpdate {
         caption,
         fileId,
       },
+      ...(typeof rawMessageId === "number" ? { replyToMessageId: rawMessageId } : {}),
     };
   }
 
+  const replyToMessageId = replyToMessageIdOf(message);
+  const fromEntities = emptyCommandFromBotEntities(message.text, message.entities);
   const text = normalizeTelegramCommandText(message.text) || null;
-  if (text && (textIsEmptyCommand(text) || captionHasEmptyIntent(text))) {
+  if (fromEntities || (text && (textIsEmptyCommand(text) || captionHasEmptyIntent(text)))) {
     return {
       kind: "empty_command",
       chatId,
       from: senderFrom(message, chatId),
-      text,
+      text: text ?? "/empty",
+      ...(replyToMessageId != null ? { replyToMessageId } : {}),
     };
   }
 
-  return { kind: "ignored" };
+  const rawText = typeof message.text === "string" && message.text.length > 0 ? message.text : undefined;
+  return {
+    kind: "ignored",
+    chatId,
+    ...(replyToMessageId != null ? { replyToMessageId } : {}),
+    ...(rawText ? { text: rawText } : {}),
+  };
 }
 
 export function verifyTelegramSecret(

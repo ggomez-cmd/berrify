@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   EMPTY_BOTTLE_AWAIT_PHOTO,
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
+  EMPTY_BOTTLE_TEXT_HELP,
   emptyCallbackData,
 } from "../src/lib/empty-bottle";
 import { clearEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
@@ -550,8 +551,8 @@ describe("Worker API", () => {
     expect(response.status).toBe(403);
   });
 
-  it("acks text-only Telegram POSTs without inserting", async () => {
-    const { fetchImpl, inserted } = mockIngestFetch();
+  it("acks text-only Telegram POSTs with a help reply and does not invoice", async () => {
+    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
     const response = await api(
       "/api/webhooks/telegram",
       {
@@ -563,14 +564,27 @@ describe("Worker API", () => {
       fetchImpl,
     );
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    const payload = await response.json();
+    expect(payload).toEqual({
       ok: true,
       ingested: 0,
       skipped: 0,
       errors: [],
-      ignored: "no photo or image document",
+      ignored: "text_help",
     });
-    expect(inserted).toEqual([]);
+    expect(JSON.stringify(payload)).not.toContain("bot-token");
+    expect(JSON.stringify(payload)).not.toContain("hook-secret");
+    expect(invoices).toEqual([]);
+    expect(
+      telegramCalls.some((call) => {
+        const body = call.body as { text?: string; reply_to_message_id?: number };
+        return (
+          String(call.url).includes("/sendMessage") &&
+          body.text === EMPTY_BOTTLE_TEXT_HELP &&
+          body.reply_to_message_id === 43
+        );
+      }),
+    ).toBe(true);
   });
 
   it("downloads a Telegram image document and inserts a received invoice", async () => {
@@ -784,7 +798,8 @@ describe("Worker API", () => {
       telegramCalls.some(
         (call) =>
           String(call.url).includes("/sendMessage") &&
-          JSON.stringify(call.body).includes(EMPTY_BOTTLE_AWAIT_PHOTO),
+          JSON.stringify(call.body).includes(EMPTY_BOTTLE_AWAIT_PHOTO) &&
+          (call.body as { reply_to_message_id?: number }).reply_to_message_id === 46,
       ),
     ).toBe(true);
 
@@ -845,6 +860,41 @@ describe("Worker API", () => {
     const payload = (await blocked.json()) as { errors?: string[] };
     expect(payload.errors?.join(" ")).toContain("Forbidden: bot was blocked by the user");
     expect(JSON.stringify(payload)).not.toContain("bot-token");
+  });
+
+  it("treats an entities-only /empty payload as awaiting_photo", async () => {
+    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: JSON.stringify({
+          update_id: 1009,
+          message: {
+            message_id: 48,
+            chat: { id: -100 },
+            text: "xx/emptyyy",
+            entities: [{ type: "bot_command", offset: 2, length: 6 }],
+          },
+        }),
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ empty: "awaiting_photo" });
+    expect(invoices).toEqual([]);
+    expect(
+      telegramCalls.some((call) => {
+        const body = call.body as { text?: string; reply_to_message_id?: number };
+        return (
+          String(call.url).includes("/sendMessage") &&
+          body.text === EMPTY_BOTTLE_AWAIT_PHOTO &&
+          body.reply_to_message_id === 48
+        );
+      }),
+    ).toBe(true);
   });
 
   it("treats a duplicate Telegram message id as success", async () => {

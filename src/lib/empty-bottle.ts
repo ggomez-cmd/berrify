@@ -10,6 +10,7 @@ export const EMPTY_BOTTLE_REORDER_LEVEL = 4;
 export const EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE =
   "Empty-bottle identify is unavailable. Ask a manager to configure Gemini.";
 export const EMPTY_BOTTLE_AWAIT_PHOTO = "Send a photo of the empty bottle.";
+export const EMPTY_BOTTLE_TEXT_HELP = "Send /empty then a photo, or caption a photo with empty.";
 
 export const EMPTY_BOTTLE_GENERIC_ITEMS = [
   { sku: "BV-EB-RUM", name: "Rum" },
