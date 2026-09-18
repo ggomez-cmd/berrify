@@ -1,3 +1,4 @@
+import { handleEmptyBottleIdentifyPost } from "./empty-bottle-identify-post";
 import { handleInvoiceExtractPost } from "./invoice-extract-post";
 import { handleOcrPost } from "./ocr-post";
 import { handleTelegramPost } from "./telegram-post";
@@ -148,6 +149,16 @@ export async function handleApi(
     switch (request.method) {
       case "POST":
         return withSecurityHeaders(await handleInvoiceExtractPost(request, env, fetchImpl));
+      default: {
+        return methodNotAllowed(["POST"]);
+      }
+    }
+  }
+
+  if (path === "/api/empty-bottle-identify") {
+    switch (request.method) {
+      case "POST":
+        return withSecurityHeaders(await handleEmptyBottleIdentifyPost(request, env, fetchImpl));
       default: {
         return methodNotAllowed(["POST"]);
       }

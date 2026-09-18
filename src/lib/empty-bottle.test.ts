@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   captionHasEmptyIntent,
+  debitLinesForEmptyBottle,
+  emptyBottleCountsMismatch,
+  emptyBottleSourceLabel,
+  emptyBottleSummaryLabel,
   emptyBottleUsageMovement,
+  emptyBottleUsageMovementsForLines,
   emptyCallbackData,
+  emptyConfirmLinesPrompt,
+  filterEmptyBottleEvents,
   leftoverEmptyCaption,
   matchEmptyBottle,
   nextEmptyBottleStatus,
   parseEmptyBottleIdentify,
+  parseEmptyBottleIdentifyLines,
   parseEmptyCallbackData,
+  shouldRetryEmptyBottleGemini,
   skuFromEmptyLabel,
   textIsEmptyCommand,
   type EmptyBottleCatalogItem,
@@ -97,6 +106,45 @@ describe("empty-bottle debit", () => {
     });
   });
 
+  it("debits one usage movement per line qty and is a no-op after confirm or cancel", () => {
+    const lines = Array.from({ length: 11 }, (_, index) => ({
+      proposed_item_id: `i-${index}`,
+      proposed_label: `Bottle ${index + 1}`,
+      qty: 1,
+    }));
+    const movements = emptyBottleUsageMovementsForLines({
+      orgId: "org-1",
+      restaurantName: "Semilla",
+      lines,
+    });
+    expect(movements).toHaveLength(11);
+    expect(movements.every((row) => row.delta === -1 && row.reason === "usage")).toBe(true);
+    expect(
+      emptyBottleUsageMovementsForLines({
+        orgId: "org-1",
+        restaurantName: "Semilla",
+        lines: [{ proposed_item_id: "i-wine", proposed_label: "Wine", qty: 2 }],
+      }),
+    ).toEqual([
+      emptyBottleUsageMovement({
+        orgId: "org-1",
+        itemId: "i-wine",
+        label: "Wine",
+        restaurantName: "Semilla",
+        qty: 2,
+      }),
+    ]);
+    expect(nextEmptyBottleStatus("confirmed", "confirm").applyDebit).toBe(false);
+    expect(nextEmptyBottleStatus("cancelled", "confirm").applyDebit).toBe(false);
+    expect(
+      debitLinesForEmptyBottle({
+        proposed_item_id: "i-rum",
+        proposed_label: "Rum",
+        lines: [],
+      }),
+    ).toEqual([{ proposed_item_id: "i-rum", proposed_label: "Rum", qty: 1 }]);
+  });
+
   it("cancels without a movement", () => {
     expect(nextEmptyBottleStatus("pending", "cancel")).toEqual({
       next: "cancelled",
@@ -123,6 +171,77 @@ describe("empty-bottle helpers", () => {
       confidence: 0.8,
     });
     expect(parseEmptyBottleIdentify({ label: "", confidence: 1 })).toBeNull();
+  });
+
+  it("rejects the single-bottle Gemini schema and accepts 11 lines", () => {
+    expect(parseEmptyBottleIdentifyLines({ sku: "BV-EB-RUM", label: "Rum", confidence: 0.9 })).toBeNull();
+    const labels = [
+      "Red wine",
+      "White wine",
+      "Averna",
+      "Bravada",
+      "Grey Goose",
+      "Hendrick's",
+      "Macallan 12",
+      "Woodford Reserve",
+      "Wine 3",
+      "Wine 4",
+      "Unknown",
+    ];
+    const parsed = parseEmptyBottleIdentifyLines({
+      bottle_count: 11,
+      lines: labels.map((label, index) => ({ index: index + 1, label, sku: null, qty: 1 })),
+    });
+    expect(parsed?.lines).toHaveLength(11);
+    expect(parsed?.bottle_count).toBe(11);
+  });
+
+  it("retries Gemini when counts differ", () => {
+    expect(
+      shouldRetryEmptyBottleGemini({ bottle_count: 2, lines: [{ index: 1, label: "Rum", sku: null, qty: 1 }] }, null),
+    ).toBe(true);
+    expect(
+      shouldRetryEmptyBottleGemini(
+        {
+          bottle_count: 3,
+          lines: [
+            { index: 1, label: "A", sku: null, qty: 1 },
+            { index: 2, label: "B", sku: null, qty: 1 },
+            { index: 3, label: "C", sku: null, qty: 1 },
+          ],
+        },
+        11,
+      ),
+    ).toBe(true);
+    expect(
+      shouldRetryEmptyBottleGemini(
+        {
+          bottle_count: 1,
+          lines: [{ index: 1, label: "Rum", sku: null, qty: 1 }],
+        },
+        1,
+      ),
+    ).toBe(false);
+  });
+
+  it("filters list rows and flags a Vision/Gemini mismatch", () => {
+    const rows = [
+      { id: "1", restaurant_id: "r-1", status: "pending" as const },
+      { id: "2", restaurant_id: "r-2", status: "confirmed" as const },
+    ];
+    expect(filterEmptyBottleEvents(rows, "r-1", "all")).toEqual([rows[0]]);
+    expect(filterEmptyBottleEvents(rows, "", "confirmed")).toEqual([rows[1]]);
+    expect(emptyBottleCountsMismatch(11, 9)).toBe(true);
+    expect(emptyBottleCountsMismatch(11, 11)).toBe(false);
+    expect(emptyBottleCountsMismatch(null, 11)).toBe(false);
+    expect(emptyBottleSourceLabel("app")).toBe("App");
+    expect(emptyBottleSummaryLabel(11)).toBe("11 bottles");
+    expect(emptyConfirmLinesPrompt({
+      place: "Semilla",
+      lines: [{ proposed_label: "Rum", qty: 1 }],
+      visionCount: 11,
+      geminiCount: 9,
+    })).toContain("Vision 11 / Gemini 9");
   });
 
   it("remembers a pending /empty until the next photo", () => {

@@ -72,16 +72,38 @@ export type StockMovement = {
 
 export type EmptyBottleEventStatus = "pending" | "confirmed" | "cancelled";
 
+export type EmptyBottleSource = "telegram" | "app";
+
 export type EmptyBottleEvent = {
   id: string;
   org_id: string;
-  telegram_message_id: string;
-  chat_id: string;
+  telegram_message_id: string | null;
+  chat_id: string | null;
   restaurant_id: string | null;
-  proposed_item_id: string;
+  proposed_item_id: string | null;
   proposed_label: string;
   status: EmptyBottleEventStatus;
+  source: EmptyBottleSource;
+  image_data: string | null;
+  image_mime: string | null;
+  vision_count: number | null;
+  gemini_count: number | null;
   created_at: string;
+};
+
+export type EmptyBottleLine = {
+  id: string;
+  event_id: string;
+  org_id: string;
+  proposed_item_id: string | null;
+  proposed_label: string;
+  qty: number;
+  sort: number;
+};
+
+export type EmptyBottleEventWithRelations = EmptyBottleEvent & {
+  restaurants: Pick<Restaurant, "id" | "name"> | null;
+  empty_bottle_lines: EmptyBottleLine[];
 };
 
 export type InventoryItemWithSupplier = InventoryItem & {

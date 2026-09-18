@@ -32,6 +32,7 @@ const requiredTables = [
   "payroll_exports",
   "payroll_export_lines",
   "empty_bottle_events",
+  "empty_bottle_lines",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -58,7 +59,13 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   time_exceptions: ["time_exceptions_select_own", "time_exceptions_select_manager"],
   payroll_exports: ["payroll_exports_manager"],
   payroll_export_lines: ["payroll_export_lines_manager"],
-  empty_bottle_events: ["empty_bottle_events_select_manager"],
+  empty_bottle_events: ["empty_bottle_events_select_manager", "empty_bottle_events_update_manager"],
+  empty_bottle_lines: [
+    "empty_bottle_lines_select_manager",
+    "empty_bottle_lines_insert_pending",
+    "empty_bottle_lines_update_pending",
+    "empty_bottle_lines_delete_pending",
+  ],
 };
 
 const client = createPgClient();
@@ -145,6 +152,8 @@ try {
       "reconcile_attendance",
       "resolve_time_exception",
       "update_org_clock_settings",
+      "confirm_empty_bottle",
+      "cancel_empty_bottle",
     ]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
@@ -172,6 +181,8 @@ try {
     "reconcile_attendance",
     "resolve_time_exception",
     "update_org_clock_settings",
+    "confirm_empty_bottle",
+    "cancel_empty_bottle",
   ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);
