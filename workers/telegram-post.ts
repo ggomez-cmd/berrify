@@ -16,6 +16,7 @@ import {
 } from "../src/lib/empty-bottle";
 import { consumeEmptyPhotoPending, markEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
 import { downloadTelegramFile } from "../src/lib/telegram-media";
+import { assertTelegramMethodOk } from "../src/lib/telegram-api";
 import { buildTelegramInvoiceInsert } from "../src/lib/telegram-invoice";
 import type { Restaurant, RestaurantAlias } from "../src/lib/restaurant-route";
 import { matchRestaurant } from "../src/lib/restaurant-route";
@@ -233,10 +234,8 @@ async function telegramMethod(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Telegram ${method} failed (${response.status}): ${detail}`);
-  }
+  const detail = await response.text();
+  assertTelegramMethodOk(method, response.status, detail);
 }
 
 async function loadOrgName(

@@ -89,23 +89,39 @@ export type EmptyBottleCallback = {
   eventId: string;
 };
 
-const EMPTY_WORD = /(?:^|[\s/])(?:\/empty(?:@\w+)?|\bempty\b)(?=$|[\s.,!?;:])/iu;
-const EMPTY_COMMAND = /^(?:\/empty(?:@\w+)?(?:\s+.*)?|empty)$/iu;
+const EMPTY_BOT_MENTION = String.raw`(?:@[^\s/@]+)`;
+const EMPTY_WORD = new RegExp(
+  String.raw`(?:^|[\s/])(?:\/empty${EMPTY_BOT_MENTION}?|\bempty\b)(?=$|[\s.,!?;:])`,
+  "iu",
+);
+const EMPTY_COMMAND = new RegExp(String.raw`^(?:\/empty${EMPTY_BOT_MENTION}?(?:\s+.*)?|empty)$`, "iu");
+const EMPTY_COMMAND_TOKEN = new RegExp(String.raw`\/empty${EMPTY_BOT_MENTION}?`, "gi");
 const CALLBACK = /^empty:(ok|no):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
+export function normalizeTelegramCommandText(text: string | null | undefined): string {
+  return (text ?? "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\uFF0F/g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function captionHasEmptyIntent(text: string | null | undefined): boolean {
-  if (!text?.trim()) return false;
-  return EMPTY_WORD.test(text.trim());
+  const normalized = normalizeTelegramCommandText(text);
+  if (!normalized) return false;
+  return EMPTY_WORD.test(normalized);
 }
 
 export function textIsEmptyCommand(text: string | null | undefined): boolean {
-  if (!text?.trim()) return false;
-  return EMPTY_COMMAND.test(text.trim());
+  const normalized = normalizeTelegramCommandText(text);
+  if (!normalized) return false;
+  return EMPTY_COMMAND.test(normalized);
 }
 
 export function leftoverEmptyCaption(caption: string | null | undefined, stripWords: string[]): string {
-  let text = caption ?? "";
-  text = text.replace(/\/empty(?:@\w+)?/gi, " ");
+  let text = normalizeTelegramCommandText(caption);
+  text = text.replace(EMPTY_COMMAND_TOKEN, " ");
   text = text.replace(/\bempty\b/gi, " ");
   for (const word of stripWords) {
     const trimmed = word.trim();
