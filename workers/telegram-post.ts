@@ -26,6 +26,7 @@ import {
   TELEGRAM_SECRET_HEADER,
   verifyTelegramSecret,
   type TelegramInboundImage,
+  type TelegramParsedUpdate,
 } from "../src/lib/telegram-webhook";
 import { identifyEmptyBottle } from "./empty-bottle-identify";
 
@@ -84,6 +85,15 @@ function logTelegramError(context: string, detail: string): void {
 
 function json(body: unknown, status: number, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
+}
+
+function telegramWebhookResponse(
+  kind: TelegramParsedUpdate["kind"],
+  body: unknown,
+  status: number,
+): Response {
+  console.log(`telegram webhook kind=${kind} status=${status}`);
+  return json(body, status);
 }
 
 function supabaseHeaders(serviceRole: string): HeadersInit {
@@ -819,12 +829,17 @@ export async function handleTelegramPost(
       const errors = [err instanceof Error ? err.message : "Could not load restaurant routing"];
       logTelegramError("routing", errors[0] ?? "Could not load restaurant routing");
       if (update.kind === "photo" && !update.emptyCaption) {
-        return json(
+        return telegramWebhookResponse(
+          update.kind,
           { ok: false, ingested: 0, skipped: 1, errors } satisfies TelegramIngestResult,
           502,
         );
       }
-      return json({ ok: false, ingested: 0, skipped: 0, errors } satisfies TelegramIngestResult, 502);
+      return telegramWebhookResponse(
+        update.kind,
+        { ok: false, ingested: 0, skipped: 0, errors } satisfies TelegramIngestResult,
+        200,
+      );
     }
   }
 
@@ -842,9 +857,14 @@ export async function handleTelegramPost(
         } catch (err) {
           const detail = err instanceof Error ? err.message : "Could not reply";
           logTelegramError("text_help", detail);
-          return json({ ok: false, ingested: 0, skipped: 0, errors: [detail] } satisfies TelegramIngestResult, 502);
+          return telegramWebhookResponse(
+            update.kind,
+            { ok: true, ingested: 0, skipped: 0, errors: [detail], ignored: "text_help" } satisfies TelegramIngestResult,
+            200,
+          );
         }
-        return json(
+        return telegramWebhookResponse(
+          update.kind,
           {
             ok: true,
             ingested: 0,
@@ -856,7 +876,8 @@ export async function handleTelegramPost(
         );
       }
       logTelegramError("ignored", "no photo or image document");
-      return json(
+      return telegramWebhookResponse(
+        update.kind,
         {
           ok: true,
           ingested: 0,
@@ -881,9 +902,20 @@ export async function handleTelegramPost(
       } catch (err) {
         const detail = err instanceof Error ? err.message : "Could not reply";
         logTelegramError("empty_command", detail);
-        return json({ ok: false, ingested: 0, skipped: 0, errors: [detail] } satisfies TelegramIngestResult, 502);
+        return telegramWebhookResponse(
+          update.kind,
+          {
+            ok: true,
+            ingested: 0,
+            skipped: 0,
+            errors: [detail],
+            empty: "awaiting_photo",
+          } satisfies TelegramIngestResult,
+          200,
+        );
       }
-      return json(
+      return telegramWebhookResponse(
+        update.kind,
         { ok: true, ingested: 0, skipped: 0, errors: [], empty: "awaiting_photo" } satisfies TelegramIngestResult,
         200,
       );
@@ -900,11 +932,19 @@ export async function handleTelegramPost(
           routing,
           fetchImpl,
         });
-        return json({ ok: true, ingested: 0, skipped: 0, errors: [], empty } satisfies TelegramIngestResult, 200);
+        return telegramWebhookResponse(
+          update.kind,
+          { ok: true, ingested: 0, skipped: 0, errors: [], empty } satisfies TelegramIngestResult,
+          200,
+        );
       } catch (err) {
         const detail = err instanceof Error ? err.message : "empty callback failed";
         logTelegramError("empty_callback", detail);
-        return json({ ok: false, ingested: 0, skipped: 0, errors: [detail] } satisfies TelegramIngestResult, 502);
+        return telegramWebhookResponse(
+          update.kind,
+          { ok: true, ingested: 0, skipped: 0, errors: [detail] } satisfies TelegramIngestResult,
+          200,
+        );
       }
     }
     case "photo": {
@@ -921,11 +961,19 @@ export async function handleTelegramPost(
             routing,
             fetchImpl,
           });
-          return json({ ok: true, ingested: 0, skipped: 0, errors: [], empty } satisfies TelegramIngestResult, 200);
+          return telegramWebhookResponse(
+            update.kind,
+            { ok: true, ingested: 0, skipped: 0, errors: [], empty } satisfies TelegramIngestResult,
+            200,
+          );
         } catch (err) {
           const detail = `${update.image.messageId}: ${err instanceof Error ? err.message : "empty identify failed"}`;
           logTelegramError("empty_photo", detail);
-          return json({ ok: false, ingested: 0, skipped: 1, errors: [detail] } satisfies TelegramIngestResult, 502);
+          return telegramWebhookResponse(
+            update.kind,
+            { ok: true, ingested: 0, skipped: 1, errors: [detail] } satisfies TelegramIngestResult,
+            200,
+          );
         }
       }
 
@@ -943,9 +991,17 @@ export async function handleTelegramPost(
         errors.push(detail);
       }
       if (ingested === 0 && errors.length > 0) {
-        return json({ ok: false, ingested, skipped, errors } satisfies TelegramIngestResult, 502);
+        return telegramWebhookResponse(
+          update.kind,
+          { ok: false, ingested, skipped, errors } satisfies TelegramIngestResult,
+          502,
+        );
       }
-      return json({ ok: true, ingested, skipped, errors } satisfies TelegramIngestResult, 200);
+      return telegramWebhookResponse(
+        update.kind,
+        { ok: true, ingested, skipped, errors } satisfies TelegramIngestResult,
+        200,
+      );
     }
     default: {
       const exhaustive: never = update;
