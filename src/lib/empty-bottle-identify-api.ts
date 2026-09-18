@@ -30,7 +30,7 @@ export async function identifyEmptyBottlesFromPhoto(input: {
   fetchImpl?: typeof fetch;
   getAccessToken?: () => Promise<string | null>;
 }): Promise<IdentifyEmptyBottlesResult> {
-  const fetchImpl = input.fetchImpl ?? fetch;
+  const fetchImpl = input.fetchImpl ?? ((requestInfo, init) => globalThis.fetch(requestInfo, init));
   const token = await (input.getAccessToken ?? defaultAccessToken)();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;

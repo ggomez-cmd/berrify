@@ -6,6 +6,7 @@ import {
   verifyWhatsAppSignature,
   type WhatsAppInboundImage,
 } from "../src/lib/whatsapp-webhook";
+import { boundFetch } from "./bound-fetch";
 
 export type WhatsAppPostEnv = {
   WHATSAPP_APP_SECRET?: string;
@@ -148,7 +149,7 @@ async function ingestOne(
 export async function handleWhatsAppPost(
   request: Request,
   env: WhatsAppPostEnv,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
   const appSecret = env.WHATSAPP_APP_SECRET;
   const accessToken = env.WHATSAPP_ACCESS_TOKEN;
