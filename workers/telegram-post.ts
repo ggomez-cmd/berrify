@@ -2,6 +2,7 @@ import {
   EMPTY_BOTTLE_AWAIT_PHOTO,
   EMPTY_BOTTLE_CATEGORY,
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
+  EMPTY_BOTTLE_TEXT_HELP,
   EMPTY_BOTTLE_REORDER_LEVEL,
   EMPTY_BOTTLE_UNIT,
   debitLinesForEmptyBottle,
@@ -238,6 +239,26 @@ async function telegramMethod(
   assertTelegramMethodOk(method, response.status, detail);
 }
 
+async function sendTelegramMessage(
+  botToken: string,
+  chatId: number | string,
+  text: string,
+  fetchImpl: typeof fetch,
+  options?: { replyToMessageId?: number; extra?: Record<string, unknown> },
+): Promise<void> {
+  await telegramMethod(
+    botToken,
+    "sendMessage",
+    {
+      chat_id: chatId,
+      text,
+      ...(options?.replyToMessageId != null ? { reply_to_message_id: options.replyToMessageId } : {}),
+      ...options?.extra,
+    },
+    fetchImpl,
+  );
+}
+
 async function loadOrgName(
   url: string,
   serviceRole: string,
@@ -430,29 +451,32 @@ async function sendConfirmPrompt(
   place: string,
   lines: EmptyBottleLineRow[],
   fetchImpl: typeof fetch,
+  replyToMessageId?: number,
 ): Promise<void> {
-  await telegramMethod(
+  await sendTelegramMessage(
     botToken,
-    "sendMessage",
+    chatId,
+    emptyConfirmLinesPrompt({
+      place,
+      lines: lines.map((line) => ({ proposed_label: line.proposed_label, qty: Number(line.qty) })),
+      visionCount: event.vision_count ?? null,
+      geminiCount: event.gemini_count ?? null,
+    }),
+    fetchImpl,
     {
-      chat_id: chatId,
-      text: emptyConfirmLinesPrompt({
-        place,
-        lines: lines.map((line) => ({ proposed_label: line.proposed_label, qty: Number(line.qty) })),
-        visionCount: event.vision_count ?? null,
-        geminiCount: event.gemini_count ?? null,
-      }),
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Confirm", callback_data: emptyCallbackData(true, event.id) },
-            { text: "Cancel", callback_data: emptyCallbackData(false, event.id) },
+      replyToMessageId,
+      extra: {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Confirm", callback_data: emptyCallbackData(true, event.id) },
+              { text: "Cancel", callback_data: emptyCallbackData(false, event.id) },
+            ],
           ],
-        ],
+        },
       },
     },
-    fetchImpl,
   );
 }
 
@@ -460,6 +484,7 @@ async function handleEmptyPhoto(input: {
   inbound: TelegramInboundImage;
   chatId: number;
   hint: string;
+  replyToMessageId?: number;
   env: Required<
     Pick<
       TelegramPostEnv,
@@ -503,17 +528,19 @@ async function handleEmptyPhoto(input: {
         place,
         existingLines,
         fetchImpl,
+        input.replyToMessageId,
       );
     }
     return "duplicate_event";
   }
 
   if (!env.GEMINI_API_KEY?.trim()) {
-    await telegramMethod(
+    await sendTelegramMessage(
       env.TELEGRAM_BOT_TOKEN,
-      "sendMessage",
-      { chat_id: input.chatId, text: EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE },
+      input.chatId,
+      EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
       fetchImpl,
+      { replyToMessageId: input.replyToMessageId },
     );
     return "identify_unavailable";
   }
@@ -598,7 +625,15 @@ async function handleEmptyPhoto(input: {
     lines,
     fetchImpl,
   );
-  await sendConfirmPrompt(env.TELEGRAM_BOT_TOKEN, String(input.chatId), event, place, lines, fetchImpl);
+  await sendConfirmPrompt(
+    env.TELEGRAM_BOT_TOKEN,
+    String(input.chatId),
+    event,
+    place,
+    lines,
+    fetchImpl,
+    input.replyToMessageId,
+  );
   return "awaiting_confirm";
 }
 
@@ -607,6 +642,7 @@ async function handleEmptyCallback(input: {
   confirm: boolean;
   callbackQueryId: string;
   chatId: number;
+  replyToMessageId?: number;
   env: Required<
     Pick<
       TelegramPostEnv,
@@ -668,11 +704,12 @@ async function handleEmptyCallback(input: {
       { callback_query_id: input.callbackQueryId, text: "Cancelled." },
       input.fetchImpl,
     );
-    await telegramMethod(
+    await sendTelegramMessage(
       input.env.TELEGRAM_BOT_TOKEN,
-      "sendMessage",
-      { chat_id: input.chatId, text: "Empty-bottle debit cancelled." },
+      input.chatId,
+      "Empty-bottle debit cancelled.",
       input.fetchImpl,
+      { replyToMessageId: input.replyToMessageId },
     );
     return "cancelled";
   }
@@ -719,11 +756,12 @@ async function handleEmptyCallback(input: {
       { callback_query_id: input.callbackQueryId, text: `Debited ${debitCount} bottle${debitCount === 1 ? "" : "s"}.` },
       input.fetchImpl,
     );
-    await telegramMethod(
+    await sendTelegramMessage(
       input.env.TELEGRAM_BOT_TOKEN,
-      "sendMessage",
-      { chat_id: input.chatId, text: `Debited ${debitCount} empty bottle${debitCount === 1 ? "" : "s"}.` },
+      input.chatId,
+      `Debited ${debitCount} empty bottle${debitCount === 1 ? "" : "s"}.`,
       input.fetchImpl,
+      { replyToMessageId: input.replyToMessageId },
     );
     return "confirmed";
   }
@@ -791,7 +829,32 @@ export async function handleTelegramPost(
   }
 
   switch (update.kind) {
-    case "ignored":
+    case "ignored": {
+      if (update.text && update.chatId != null) {
+        try {
+          await sendTelegramMessage(
+            botToken,
+            update.chatId,
+            EMPTY_BOTTLE_TEXT_HELP,
+            fetchImpl,
+            { replyToMessageId: update.replyToMessageId },
+          );
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : "Could not reply";
+          logTelegramError("text_help", detail);
+          return json({ ok: false, ingested: 0, skipped: 0, errors: [detail] } satisfies TelegramIngestResult, 502);
+        }
+        return json(
+          {
+            ok: true,
+            ingested: 0,
+            skipped: 0,
+            errors: [],
+            ignored: "text_help",
+          } satisfies TelegramIngestResult,
+          200,
+        );
+      }
       logTelegramError("ignored", "no photo or image document");
       return json(
         {
@@ -803,15 +866,17 @@ export async function handleTelegramPost(
         } satisfies TelegramIngestResult,
         200,
       );
+    }
     case "empty_command": {
       const hint = leftoverEmptyCaption(update.text, []);
       markEmptyPhotoPending(String(update.chatId), hint);
       try {
-        await telegramMethod(
+        await sendTelegramMessage(
           botToken,
-          "sendMessage",
-          { chat_id: update.chatId, text: EMPTY_BOTTLE_AWAIT_PHOTO },
+          update.chatId,
+          EMPTY_BOTTLE_AWAIT_PHOTO,
           fetchImpl,
+          { replyToMessageId: update.replyToMessageId },
         );
       } catch (err) {
         const detail = err instanceof Error ? err.message : "Could not reply";
@@ -830,6 +895,7 @@ export async function handleTelegramPost(
           confirm: update.confirm,
           callbackQueryId: update.callbackQueryId,
           chatId: update.chatId,
+          replyToMessageId: update.replyToMessageId,
           env: configured,
           routing,
           fetchImpl,
@@ -850,6 +916,7 @@ export async function handleTelegramPost(
             inbound: update.image,
             chatId: update.chatId,
             hint: pending.hint,
+            replyToMessageId: update.replyToMessageId,
             env: configured,
             routing,
             fetchImpl,

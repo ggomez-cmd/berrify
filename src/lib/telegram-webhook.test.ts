@@ -105,6 +105,7 @@ describe("parseTelegramUpdate empty intent", () => {
       chatId: -100,
       from: "-100",
       text: "/empty",
+      replyToMessageId: 8,
     });
     expect(
       parseTelegramUpdate({
@@ -147,6 +148,46 @@ describe("parseTelegramUpdate empty intent", () => {
         },
       }),
     ).toMatchObject({ kind: "empty_callback", confirm: false, chatId: 9 });
+  });
+
+  it("treats a bot_command entity /empty as empty even when surrounding text is odd", () => {
+    expect(
+      parseTelegramUpdate({
+        message: {
+          message_id: 12,
+          chat: { id: 99 },
+          from: { id: 7, username: "cook" },
+          text: "xx/emptyyy",
+          entities: [{ type: "bot_command", offset: 2, length: 6 }],
+        },
+      }),
+    ).toEqual({
+      kind: "empty_command",
+      chatId: 99,
+      from: "@cook",
+      text: "xx/emptyyy",
+      replyToMessageId: 12,
+    });
+    expect(
+      parseTelegramUpdate({
+        message: {
+          message_id: 13,
+          chat: { id: 99 },
+          text: "xx/empty@berrify.botyy",
+          entities: [{ type: "bot_command", offset: 2, length: 18 }],
+        },
+      }),
+    ).toMatchObject({ kind: "empty_command", text: "xx/empty@berrify.botyy", replyToMessageId: 13 });
+    expect(
+      parseTelegramUpdate({
+        message: {
+          message_id: 14,
+          chat: { id: 99 },
+          text: "hello",
+          entities: [{ type: "bot_command", offset: 0, length: 5 }],
+        },
+      }),
+    ).toMatchObject({ kind: "ignored", text: "hello", chatId: 99, replyToMessageId: 14 });
   });
 });
 
