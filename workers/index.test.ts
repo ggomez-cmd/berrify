@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
   emptyCallbackData,
-  emptyBottleUsageMovement,
 } from "../src/lib/empty-bottle";
 import { clearEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
 import { TELEGRAM_SECRET_HEADER } from "../src/lib/telegram-webhook";
@@ -253,10 +252,15 @@ function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: num
 function mockEmptyFetch(options?: {
   eventStatus?: "pending" | "confirmed" | "cancelled";
   claim?: boolean;
+  geminiLines?: number;
+  geminiFirstPayload?: unknown;
 }) {
   const invoices: unknown[] = [];
   const movements: unknown[] = [];
   const telegramCalls: Array<{ url: string; body: unknown }> = [];
+  const rpcCalls: Array<{ url: string; body: unknown }> = [];
+  const lineInserts: unknown[] = [];
+  const geminiCalls: unknown[] = [];
   const events: Array<Record<string, unknown>> = [
     {
       id: EVENT_ID,
@@ -265,11 +269,23 @@ function mockEmptyFetch(options?: {
       chat_id: "-100",
       restaurant_id: "r-semilla",
       proposed_item_id: "i-rum",
-      proposed_label: "Rum",
+      proposed_label: "1 bottle",
       status: options?.eventStatus ?? "pending",
+      vision_count: null,
+      gemini_count: 1,
     },
   ];
   let eventByMessage: Record<string, unknown> | null = null;
+  const lineCount = options?.geminiLines ?? 1;
+  const geminiPayload = {
+    bottle_count: lineCount,
+    lines: Array.from({ length: lineCount }, (_, index) => ({
+      index: index + 1,
+      label: index === 0 ? "Rum" : `Bottle ${index + 1}`,
+      sku: index === 0 ? "BV-EB-RUM" : null,
+      qty: 1,
+    })),
+  };
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -285,9 +301,34 @@ function mockEmptyFetch(options?: {
       telegramCalls.push({ url, body });
       return Response.json({ ok: true });
     }
-    if (url.includes("generativelanguage.googleapis.com")) {
+    if (url.includes("vision.googleapis.com")) {
       return Response.json({
-        candidates: [{ content: { parts: [{ text: JSON.stringify({ sku: "BV-EB-RUM", label: "Rum", confidence: 0.9 }) }] } }],
+        responses: [
+          {
+            localizedObjectAnnotations: Array.from({ length: lineCount }, (_, index) => ({
+              name: "Bottle",
+              score: 0.9,
+              boundingPoly: {
+                normalizedVertices: [
+                  { x: 0.05 + index * 0.07, y: 0.2 },
+                  { x: 0.1 + index * 0.07, y: 0.2 },
+                  { x: 0.1 + index * 0.07, y: 0.7 },
+                  { x: 0.05 + index * 0.07, y: 0.7 },
+                ],
+              },
+            })),
+            fullTextAnnotation: { text: "Rum" },
+          },
+        ],
+      });
+    }
+    if (url.includes("generativelanguage.googleapis.com")) {
+      geminiCalls.push(body);
+      const payload = geminiCalls.length === 1 && options?.geminiFirstPayload != null
+        ? options.geminiFirstPayload
+        : geminiPayload;
+      return Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }],
       });
     }
     if (url.includes("/rest/v1/restaurants")) {
@@ -299,8 +340,48 @@ function mockEmptyFetch(options?: {
     if (url.includes("/rest/v1/organizations")) {
       return Response.json([{ name: "Pacifico Kitchen" }]);
     }
+    if (url.includes("/rest/v1/memberships")) {
+      return Response.json([{ org_id: "org-1", role: "manager" }]);
+    }
     if (url.includes("/rest/v1/inventory_items") && method === "GET") {
-      return Response.json([{ id: "i-rum", sku: "BV-EB-RUM", name: "Rum" }]);
+      return Response.json([
+        { id: "i-rum", sku: "BV-EB-RUM", name: "Rum" },
+        { id: "i-unknown", sku: "BV-EB-UNKNOWN", name: "Unknown liquor" },
+      ]);
+    }
+    if (url.includes("/rest/v1/inventory_items") && method === "POST") {
+      const created = { id: `i-${String(body.sku).toLowerCase()}`, sku: body.sku, name: body.name };
+      return Response.json([created], { status: 201 });
+    }
+    if (url.includes("/rest/v1/rpc/confirm_empty_bottle")) {
+      if (options?.claim === false || options?.eventStatus === "confirmed") {
+        rpcCalls.push({ url, body });
+        return Response.json({ ok: true, already_handled: true, status: "confirmed", debited: 0 });
+      }
+      rpcCalls.push({ url, body });
+      movements.push({ debited: lineCount });
+      return Response.json({ ok: true, already_handled: false, status: "confirmed", debited: lineCount });
+    }
+    if (url.includes("/rest/v1/rpc/cancel_empty_bottle")) {
+      rpcCalls.push({ url, body });
+      return Response.json({ ok: true, already_handled: false, status: "cancelled" });
+    }
+    if (url.includes("/rest/v1/empty_bottle_lines") && method === "GET") {
+      return Response.json([
+        {
+          id: "line-1",
+          event_id: EVENT_ID,
+          org_id: "org-1",
+          proposed_item_id: "i-rum",
+          proposed_label: "Rum",
+          qty: 1,
+          sort: 0,
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/empty_bottle_lines") && method === "POST") {
+      lineInserts.push(body);
+      return Response.json(Array.isArray(body) ? body : [body], { status: 201 });
     }
     if (url.includes("/rest/v1/empty_bottle_events") && method === "GET") {
       if (url.includes("telegram_message_id=")) {
@@ -333,7 +414,7 @@ function mockEmptyFetch(options?: {
     }
     throw new Error(`unexpected fetch ${method} ${url}`);
   };
-  return { fetchImpl, invoices, movements, telegramCalls };
+  return { fetchImpl, invoices, movements, telegramCalls, rpcCalls, lineInserts, geminiCalls, getEvent: () => eventByMessage };
 }
 
 describe("Worker API", () => {
@@ -607,7 +688,7 @@ describe("Worker API", () => {
   });
 
   it("identifies an empty bottle and asks for confirm without invoicing", async () => {
-    const { fetchImpl, invoices, telegramCalls } = mockEmptyFetch();
+    const { fetchImpl, invoices, telegramCalls, lineInserts, getEvent } = mockEmptyFetch();
     const response = await api(
       "/api/webhooks/telegram",
       {
@@ -621,6 +702,13 @@ describe("Worker API", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true, ingested: 0, empty: "awaiting_confirm" });
     expect(invoices).toEqual([]);
+    expect(getEvent()).toMatchObject({
+      source: "telegram",
+      image_mime: "image/jpeg",
+    });
+    expect(String((getEvent() as { image_data?: string } | null)?.image_data ?? "")).toContain("data:image/jpeg");
+    expect(lineInserts).toHaveLength(1);
+    expect(telegramCalls.some((call) => JSON.stringify(call.body).includes("Vision"))).toBe(true);
     expect(telegramCalls.some((call) => String(call.url).includes("sendMessage"))).toBe(true);
   });
 
@@ -650,14 +738,8 @@ describe("Worker API", () => {
     const confirmed = await api("/api/webhooks/telegram", confirmInit, ingestEnv, first.fetchImpl);
     expect(confirmed.status).toBe(200);
     await expect(confirmed.json()).resolves.toMatchObject({ empty: "confirmed" });
-    expect(first.movements).toEqual([
-      emptyBottleUsageMovement({
-        orgId: "org-1",
-        itemId: "i-rum",
-        label: "Rum",
-        restaurantName: "Semilla",
-      }),
-    ]);
+    expect(first.rpcCalls).toHaveLength(1);
+    expect(first.movements).toEqual([{ debited: 1 }]);
 
     const second = mockEmptyFetch({ eventStatus: "confirmed", claim: false });
     const again = await api("/api/webhooks/telegram", confirmInit, ingestEnv, second.fetchImpl);
@@ -1070,6 +1152,67 @@ describe("Worker API", () => {
       body: JSON.stringify({ ocr_text: "FACTURA" }),
     });
     expect(response.status).toBe(401);
+  });
+
+  it("returns 503 for empty-bottle identify when Gemini is missing", async () => {
+    const response = await api(
+      "/api/empty-bottle-identify",
+      ocrInit(JSON.stringify({ image: TINY_JPEG_DATA_URL })),
+      ocrEnv,
+      mockAuthFetch(),
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Empty-bottle identify is unavailable" });
+  });
+
+  it("rejects unauthenticated empty-bottle identify calls", async () => {
+    const response = await api("/api/empty-bottle-identify", {
+      method: "POST",
+      headers: { Origin: "https://berrify.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ image: TINY_JPEG_DATA_URL }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("stores an app empty-bottle event with lines when Gemini is configured", async () => {
+    const { fetchImpl, getEvent, lineInserts } = mockEmptyFetch({ geminiLines: 11 });
+    const response = await api(
+      "/api/empty-bottle-identify",
+      ocrInit(JSON.stringify({ image: TINY_JPEG_DATA_URL, restaurant_id: "r-semilla" })),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key" },
+      mockAuthFetch(fetchImpl),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      event_id: EVENT_ID,
+      gemini_count: 11,
+      proposed_label: "11 bottles",
+    });
+    expect(getEvent()).toMatchObject({ source: "app", restaurant_id: "r-semilla" });
+    expect(lineInserts[0]).toHaveLength(11);
+  });
+
+  it("retries Gemini once when the first line count is far from Vision", async () => {
+    const { fetchImpl, geminiCalls } = mockEmptyFetch({
+      geminiLines: 11,
+      geminiFirstPayload: {
+        bottle_count: 3,
+        lines: [
+          { index: 1, label: "Rum", sku: "BV-EB-RUM", qty: 1 },
+          { index: 2, label: "Wine", sku: "BV-EB-WINE", qty: 1 },
+          { index: 3, label: "Gin", sku: "BV-EB-GIN", qty: 1 },
+        ],
+      },
+    });
+    const response = await api(
+      "/api/empty-bottle-identify",
+      ocrInit(JSON.stringify({ image: TINY_JPEG_DATA_URL })),
+      { ...ocrEnv, GEMINI_API_KEY: "gemini-key", GOOGLE_VISION_API_KEY: "vision-key" },
+      mockAuthFetch(fetchImpl),
+    );
+    expect(response.status).toBe(200);
+    expect(geminiCalls).toHaveLength(2);
+    expect(JSON.stringify(geminiCalls[1])).toContain("Return exactly 11 lines");
   });
 });
 

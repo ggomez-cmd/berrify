@@ -4,9 +4,10 @@ import {
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
   EMPTY_BOTTLE_REORDER_LEVEL,
   EMPTY_BOTTLE_UNIT,
-  emptyBottleUsageMovement,
+  debitLinesForEmptyBottle,
+  emptyBottleSummaryLabel,
   emptyCallbackData,
-  emptyConfirmPrompt,
+  emptyConfirmLinesPrompt,
   leftoverEmptyCaption,
   matchEmptyBottle,
   nextEmptyBottleStatus,
@@ -34,6 +35,7 @@ export type TelegramPostEnv = {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GOOGLE_VISION_API_KEY?: string;
 };
 
 export type TelegramIngestResult = {
@@ -48,13 +50,31 @@ export type TelegramIngestResult = {
 type EmptyBottleEventRow = {
   id: string;
   org_id: string;
-  telegram_message_id: string;
-  chat_id: string;
+  telegram_message_id: string | null;
+  chat_id: string | null;
   restaurant_id: string | null;
-  proposed_item_id: string;
+  proposed_item_id: string | null;
   proposed_label: string;
   status: EmptyBottleEventStatus;
+  source?: "telegram" | "app";
+  image_data?: string | null;
+  image_mime?: string | null;
+  vision_count?: number | null;
+  gemini_count?: number | null;
 };
+
+type EmptyBottleLineRow = {
+  id?: string;
+  event_id: string;
+  org_id: string;
+  proposed_item_id: string | null;
+  proposed_label: string;
+  qty: number;
+  sort: number;
+};
+
+const EVENT_SELECT =
+  "id,org_id,telegram_message_id,chat_id,restaurant_id,proposed_item_id,proposed_label,status,source,vision_count,gemini_count";
 
 function logTelegramError(context: string, detail: string): void {
   console.error(`telegram ingest ${context}: ${detail}`);
@@ -307,7 +327,7 @@ async function loadEvent(
   const rows = await restGet<EmptyBottleEventRow[]>(
     url,
     serviceRole,
-    `empty_bottle_events?org_id=eq.${encodeURIComponent(orgId)}&id=eq.${encodeURIComponent(eventId)}&select=id,org_id,telegram_message_id,chat_id,restaurant_id,proposed_item_id,proposed_label,status&limit=1`,
+    `empty_bottle_events?org_id=eq.${encodeURIComponent(orgId)}&id=eq.${encodeURIComponent(eventId)}&select=${EVENT_SELECT}&limit=1`,
     fetchImpl,
   );
   return rows[0] ?? null;
@@ -323,20 +343,75 @@ async function loadEventByMessage(
   const rows = await restGet<EmptyBottleEventRow[]>(
     url,
     serviceRole,
-    `empty_bottle_events?org_id=eq.${encodeURIComponent(orgId)}&telegram_message_id=eq.${encodeURIComponent(messageId)}&select=id,org_id,telegram_message_id,chat_id,restaurant_id,proposed_item_id,proposed_label,status&limit=1`,
+    `empty_bottle_events?org_id=eq.${encodeURIComponent(orgId)}&telegram_message_id=eq.${encodeURIComponent(messageId)}&select=${EVENT_SELECT}&limit=1`,
     fetchImpl,
   );
   return rows[0] ?? null;
 }
 
+async function loadEventLines(
+  url: string,
+  serviceRole: string,
+  orgId: string,
+  eventId: string,
+  fetchImpl: typeof fetch,
+): Promise<EmptyBottleLineRow[]> {
+  return restGet<EmptyBottleLineRow[]>(
+    url,
+    serviceRole,
+    `empty_bottle_lines?org_id=eq.${encodeURIComponent(orgId)}&event_id=eq.${encodeURIComponent(eventId)}&select=id,event_id,org_id,proposed_item_id,proposed_label,qty,sort&order=sort.asc`,
+    fetchImpl,
+  );
+}
+
+async function insertEventLines(
+  url: string,
+  serviceRole: string,
+  rows: EmptyBottleLineRow[],
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const response = await restSend(url, serviceRole, "empty_bottle_lines", "POST", rows, fetchImpl);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Could not save empty-bottle lines (${response.status}): ${detail}`);
+  }
+}
+
+async function callEmptyBottleRpc(
+  url: string,
+  serviceRole: string,
+  name: "confirm_empty_bottle" | "cancel_empty_bottle",
+  eventId: string,
+  fetchImpl: typeof fetch,
+): Promise<{ ok: boolean; already_handled?: boolean; status?: string; debited?: number }> {
+  const response = await fetchImpl(`${url.replace(/\/$/, "")}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: supabaseHeaders(serviceRole),
+    body: JSON.stringify({ p_event_id: eventId }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Could not ${name} (${response.status}): ${detail}`);
+  }
+  return (await response.json()) as { ok: boolean; already_handled?: boolean; status?: string; debited?: number };
+}
+
 async function insertEvent(
   url: string,
   serviceRole: string,
-  row: Omit<EmptyBottleEventRow, "id" | "status"> & { status: "pending" },
+  row: Omit<EmptyBottleEventRow, "id" | "status"> & {
+    status: "pending";
+    image_data: string | null;
+    image_mime: string | null;
+    source: "telegram" | "app";
+    vision_count: number | null;
+    gemini_count: number | null;
+  },
   fetchImpl: typeof fetch,
 ): Promise<EmptyBottleEventRow> {
   const response = await restSend(url, serviceRole, "empty_bottle_events", "POST", row, fetchImpl);
-  if (response.status === 409) {
+  if (response.status === 409 && row.telegram_message_id) {
     const existing = await loadEventByMessage(url, serviceRole, row.org_id, row.telegram_message_id, fetchImpl);
     if (existing) return existing;
   }
@@ -349,52 +424,12 @@ async function insertEvent(
   return created[0];
 }
 
-async function claimEvent(
-  url: string,
-  serviceRole: string,
-  orgId: string,
-  eventId: string,
-  next: EmptyBottleEventStatus,
-  fetchImpl: typeof fetch,
-): Promise<boolean> {
-  const response = await restSend(
-    url,
-    serviceRole,
-    `empty_bottle_events?id=eq.${encodeURIComponent(eventId)}&org_id=eq.${encodeURIComponent(orgId)}&status=eq.pending`,
-    "PATCH",
-    { status: next },
-    fetchImpl,
-  );
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Could not update empty-bottle event (${response.status}): ${detail}`);
-  }
-  const rows = (await response.json()) as Array<{ id: string }>;
-  return rows.length > 0;
-}
-
-async function revertEvent(
-  url: string,
-  serviceRole: string,
-  orgId: string,
-  eventId: string,
-  fetchImpl: typeof fetch,
-): Promise<void> {
-  await restSend(
-    url,
-    serviceRole,
-    `empty_bottle_events?id=eq.${encodeURIComponent(eventId)}&org_id=eq.${encodeURIComponent(orgId)}&status=eq.confirmed`,
-    "PATCH",
-    { status: "pending" },
-    fetchImpl,
-  );
-}
-
 async function sendConfirmPrompt(
   botToken: string,
   chatId: string,
   event: EmptyBottleEventRow,
   place: string,
+  lines: EmptyBottleLineRow[],
   fetchImpl: typeof fetch,
 ): Promise<void> {
   await telegramMethod(
@@ -402,7 +437,12 @@ async function sendConfirmPrompt(
     "sendMessage",
     {
       chat_id: chatId,
-      text: emptyConfirmPrompt(event.proposed_label, place),
+      text: emptyConfirmLinesPrompt({
+        place,
+        lines: lines.map((line) => ({ proposed_label: line.proposed_label, qty: Number(line.qty) })),
+        visionCount: event.vision_count ?? null,
+        geminiCount: event.gemini_count ?? null,
+      }),
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
@@ -427,7 +467,7 @@ async function handleEmptyPhoto(input: {
       "TELEGRAM_BOT_TOKEN" | "TELEGRAM_ORG_ID" | "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY"
     >
   > &
-    Pick<TelegramPostEnv, "GEMINI_API_KEY" | "GEMINI_MODEL">;
+    Pick<TelegramPostEnv, "GEMINI_API_KEY" | "GEMINI_MODEL" | "GOOGLE_VISION_API_KEY">;
   routing: { restaurants: Restaurant[]; aliases: RestaurantAlias[] };
   fetchImpl: typeof fetch;
 }): Promise<string> {
@@ -450,7 +490,21 @@ async function handleEmptyPhoto(input: {
 
   if (existing) {
     if (existing.status === "pending") {
-      await sendConfirmPrompt(env.TELEGRAM_BOT_TOKEN, String(input.chatId), existing, place, fetchImpl);
+      const existingLines = await loadEventLines(
+        env.NEXT_PUBLIC_SUPABASE_URL,
+        env.SUPABASE_SERVICE_ROLE_KEY,
+        env.TELEGRAM_ORG_ID,
+        existing.id,
+        fetchImpl,
+      );
+      await sendConfirmPrompt(
+        env.TELEGRAM_BOT_TOKEN,
+        String(input.chatId),
+        existing,
+        place,
+        existingLines,
+        fetchImpl,
+      );
     }
     return "duplicate_event";
   }
@@ -477,36 +531,46 @@ async function handleEmptyPhoto(input: {
     ...routing.aliases.map((row) => row.match_text),
   ];
   const captionHint = leftoverEmptyCaption([inbound.caption, input.hint].filter(Boolean).join(" "), stripWords);
-  const proposal = await identifyEmptyBottle({
+  const identified = await identifyEmptyBottle({
     imageDataUrl: media.dataUrl,
     catalog,
     captionHint,
     env,
     fetchImpl,
   });
-  const match = matchEmptyBottle(proposal, catalog);
-  let item: EmptyBottleCatalogItem;
-  switch (match.kind) {
-    case "existing":
-      item = match.item;
-      break;
-    case "unknown":
-      item = match.item;
-      break;
-    case "create":
-      item = await ensureCatalogItem(
-        env.NEXT_PUBLIC_SUPABASE_URL,
-        env.SUPABASE_SERVICE_ROLE_KEY,
-        env.TELEGRAM_ORG_ID,
-        match.sku,
-        match.name,
-        fetchImpl,
-      );
-      break;
-    default: {
-      const exhaustive: never = match;
-      throw exhaustive;
+  const resolved: EmptyBottleLineRow[] = [];
+  for (const [sort, line] of identified.lines.entries()) {
+    const match = matchEmptyBottle({ sku: line.sku, label: line.label, confidence: 0 }, catalog);
+    let item: EmptyBottleCatalogItem;
+    switch (match.kind) {
+      case "existing":
+      case "unknown":
+        item = match.item;
+        break;
+      case "create":
+        item = await ensureCatalogItem(
+          env.NEXT_PUBLIC_SUPABASE_URL,
+          env.SUPABASE_SERVICE_ROLE_KEY,
+          env.TELEGRAM_ORG_ID,
+          match.sku,
+          match.name,
+          fetchImpl,
+        );
+        catalog.push(item);
+        break;
+      default: {
+        const exhaustive: never = match;
+        throw exhaustive;
+      }
     }
+    resolved.push({
+      event_id: "",
+      org_id: env.TELEGRAM_ORG_ID,
+      proposed_item_id: item.id,
+      proposed_label: match.kind === "create" ? match.name : line.label,
+      qty: line.qty,
+      sort,
+    });
   }
 
   const event = await insertEvent(
@@ -517,13 +581,25 @@ async function handleEmptyPhoto(input: {
       telegram_message_id: inbound.messageId,
       chat_id: String(input.chatId),
       restaurant_id: route?.restaurant.id ?? null,
-      proposed_item_id: item.id,
-      proposed_label: match.kind === "create" ? match.name : item.name,
+      proposed_item_id: resolved[0]?.proposed_item_id ?? null,
+      proposed_label: emptyBottleSummaryLabel(resolved.length),
       status: "pending",
+      source: "telegram",
+      image_data: media.dataUrl,
+      image_mime: media.mimeType,
+      vision_count: identified.visionCount,
+      gemini_count: identified.geminiCount,
     },
     fetchImpl,
   );
-  await sendConfirmPrompt(env.TELEGRAM_BOT_TOKEN, String(input.chatId), event, place, fetchImpl);
+  const lines = resolved.map((line) => ({ ...line, event_id: event.id }));
+  await insertEventLines(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.SUPABASE_SERVICE_ROLE_KEY,
+    lines,
+    fetchImpl,
+  );
+  await sendConfirmPrompt(env.TELEGRAM_BOT_TOKEN, String(input.chatId), event, place, lines, fetchImpl);
   return "awaiting_confirm";
 }
 
@@ -570,84 +646,89 @@ async function handleEmptyCallback(input: {
     return "already_handled";
   }
 
-  const claimed = await claimEvent(
-    input.env.NEXT_PUBLIC_SUPABASE_URL,
-    input.env.SUPABASE_SERVICE_ROLE_KEY,
-    input.env.TELEGRAM_ORG_ID,
-    event.id,
-    decision.next,
-    input.fetchImpl,
-  );
-  if (!claimed) {
-    await telegramMethod(
-      input.env.TELEGRAM_BOT_TOKEN,
-      "answerCallbackQuery",
-      { callback_query_id: input.callbackQueryId, text: "Already handled." },
+  if (!decision.applyDebit) {
+    const cancelled = await callEmptyBottleRpc(
+      input.env.NEXT_PUBLIC_SUPABASE_URL,
+      input.env.SUPABASE_SERVICE_ROLE_KEY,
+      "cancel_empty_bottle",
+      event.id,
       input.fetchImpl,
     );
-    return "already_handled";
-  }
-
-  if (decision.applyDebit) {
-    const restaurant = event.restaurant_id
-      ? input.routing.restaurants.find((row) => row.id === event.restaurant_id)
-      : null;
-    const movement = emptyBottleUsageMovement({
-      orgId: event.org_id,
-      itemId: event.proposed_item_id,
-      label: event.proposed_label,
-      restaurantName: restaurant?.name ?? null,
-    });
-    try {
-      const response = await restSend(
-        input.env.NEXT_PUBLIC_SUPABASE_URL,
-        input.env.SUPABASE_SERVICE_ROLE_KEY,
-        "stock_movements",
-        "POST",
-        movement,
+    if (cancelled.already_handled) {
+      await telegramMethod(
+        input.env.TELEGRAM_BOT_TOKEN,
+        "answerCallbackQuery",
+        { callback_query_id: input.callbackQueryId, text: "Already handled." },
         input.fetchImpl,
       );
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(`Could not debit bottle (${response.status}): ${detail}`);
-      }
-    } catch (err) {
-      await revertEvent(
-        input.env.NEXT_PUBLIC_SUPABASE_URL,
-        input.env.SUPABASE_SERVICE_ROLE_KEY,
-        input.env.TELEGRAM_ORG_ID,
-        event.id,
-        input.fetchImpl,
-      );
-      throw err;
+      return "already_handled";
     }
     await telegramMethod(
       input.env.TELEGRAM_BOT_TOKEN,
       "answerCallbackQuery",
-      { callback_query_id: input.callbackQueryId, text: "Debited 1 bottle." },
+      { callback_query_id: input.callbackQueryId, text: "Cancelled." },
       input.fetchImpl,
     );
     await telegramMethod(
       input.env.TELEGRAM_BOT_TOKEN,
       "sendMessage",
-      { chat_id: input.chatId, text: `Debited 1 bottle of ${event.proposed_label}.` },
+      { chat_id: input.chatId, text: "Empty-bottle debit cancelled." },
+      input.fetchImpl,
+    );
+    return "cancelled";
+  }
+
+  if (decision.applyDebit) {
+    let result: { ok: boolean; already_handled?: boolean; debited?: number };
+    try {
+      result = await callEmptyBottleRpc(
+        input.env.NEXT_PUBLIC_SUPABASE_URL,
+        input.env.SUPABASE_SERVICE_ROLE_KEY,
+        "confirm_empty_bottle",
+        event.id,
+        input.fetchImpl,
+      );
+    } catch (err) {
+      throw err;
+    }
+    if (result.already_handled) {
+      await telegramMethod(
+        input.env.TELEGRAM_BOT_TOKEN,
+        "answerCallbackQuery",
+        { callback_query_id: input.callbackQueryId, text: "Already handled." },
+        input.fetchImpl,
+      );
+      return "already_handled";
+    }
+    const lines = await loadEventLines(
+      input.env.NEXT_PUBLIC_SUPABASE_URL,
+      input.env.SUPABASE_SERVICE_ROLE_KEY,
+      input.env.TELEGRAM_ORG_ID,
+      event.id,
+      input.fetchImpl,
+    );
+    const debitCount =
+      result.debited ??
+      debitLinesForEmptyBottle({
+        proposed_item_id: event.proposed_item_id,
+        proposed_label: event.proposed_label,
+        lines,
+      }).length;
+    await telegramMethod(
+      input.env.TELEGRAM_BOT_TOKEN,
+      "answerCallbackQuery",
+      { callback_query_id: input.callbackQueryId, text: `Debited ${debitCount} bottle${debitCount === 1 ? "" : "s"}.` },
+      input.fetchImpl,
+    );
+    await telegramMethod(
+      input.env.TELEGRAM_BOT_TOKEN,
+      "sendMessage",
+      { chat_id: input.chatId, text: `Debited ${debitCount} empty bottle${debitCount === 1 ? "" : "s"}.` },
       input.fetchImpl,
     );
     return "confirmed";
   }
 
-  await telegramMethod(
-    input.env.TELEGRAM_BOT_TOKEN,
-    "answerCallbackQuery",
-    { callback_query_id: input.callbackQueryId, text: "Cancelled." },
-    input.fetchImpl,
-  );
-  await telegramMethod(
-    input.env.TELEGRAM_BOT_TOKEN,
-    "sendMessage",
-    { chat_id: input.chatId, text: "Empty-bottle debit cancelled." },
-    input.fetchImpl,
-  );
   return "cancelled";
 }
 
@@ -686,6 +767,7 @@ export async function handleTelegramPost(
     SUPABASE_SERVICE_ROLE_KEY: serviceRole,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
     GEMINI_MODEL: env.GEMINI_MODEL,
+    GOOGLE_VISION_API_KEY: env.GOOGLE_VISION_API_KEY,
   };
 
   const needRouting = update.kind !== "ignored";

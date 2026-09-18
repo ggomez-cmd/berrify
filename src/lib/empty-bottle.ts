@@ -59,6 +59,26 @@ export type EmptyBottleProposal = {
   confidence: number;
 };
 
+export type EmptyBottleIdentifyLine = {
+  index: number;
+  label: string;
+  sku: string | null;
+  qty: number;
+};
+
+export type EmptyBottleIdentifyResult = {
+  bottle_count: number;
+  lines: EmptyBottleIdentifyLine[];
+};
+
+export type EmptyBottleDebitLine = {
+  proposed_item_id: string;
+  proposed_label: string;
+  qty: number;
+};
+
+export type EmptyBottleSource = "telegram" | "app";
+
 export type EmptyBottleMatch =
   | { kind: "existing"; item: EmptyBottleCatalogItem }
   | { kind: "create"; sku: string; name: string }
@@ -119,6 +139,119 @@ export function parseEmptyBottleIdentify(payload: unknown): EmptyBottleProposal 
   const confidence =
     typeof row.confidence === "number" && Number.isFinite(row.confidence) ? row.confidence : 0;
   return { sku, label, confidence };
+}
+
+function asPositiveQty(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 1) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+  }
+  return 1;
+}
+
+export function parseEmptyBottleIdentifyLines(payload: unknown): EmptyBottleIdentifyResult | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Record<string, unknown>;
+  if (!Array.isArray(row.lines)) return null;
+  const lines: EmptyBottleIdentifyLine[] = [];
+  for (const [offset, raw] of row.lines.entries()) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    if (!label) continue;
+    const index =
+      typeof item.index === "number" && Number.isFinite(item.index) ? item.index : offset + 1;
+    const sku = typeof item.sku === "string" && item.sku.trim() ? item.sku.trim() : null;
+    lines.push({ index, label, sku, qty: asPositiveQty(item.qty) });
+  }
+  if (lines.length === 0) return null;
+  const bottleCount =
+    typeof row.bottle_count === "number" && Number.isFinite(row.bottle_count) && row.bottle_count >= 1
+      ? Math.floor(row.bottle_count)
+      : lines.length;
+  return { bottle_count: bottleCount, lines };
+}
+
+export function isFarFromVisionCount(lineCount: number, visionCount: number): boolean {
+  const delta = Math.abs(lineCount - visionCount);
+  return delta >= 2 && delta / visionCount >= 0.2;
+}
+
+export function shouldRetryEmptyBottleGemini(
+  result: EmptyBottleIdentifyResult,
+  visionCount: number | null,
+): boolean {
+  if (result.lines.length !== result.bottle_count) return true;
+  if (visionCount != null && visionCount >= 2) {
+    return isFarFromVisionCount(result.lines.length, visionCount);
+  }
+  return false;
+}
+
+export function emptyBottleSummaryLabel(count: number): string {
+  return `${count} bottle${count === 1 ? "" : "s"}`;
+}
+
+export function emptyBottleCountsMismatch(
+  visionCount: number | null | undefined,
+  geminiCount: number | null | undefined,
+): boolean {
+  if (visionCount == null || geminiCount == null) return false;
+  return visionCount !== geminiCount;
+}
+
+export function filterEmptyBottleEvents<
+  T extends { restaurant_id: string | null; status: EmptyBottleEventStatus },
+>(events: T[], restaurantId: string, status: "all" | EmptyBottleEventStatus): T[] {
+  return events.filter((event) => {
+    if (restaurantId && event.restaurant_id !== restaurantId) return false;
+    if (status !== "all" && event.status !== status) return false;
+    return true;
+  });
+}
+
+export function legacyEmptyBottleLines(event: {
+  proposed_item_id: string | null;
+  proposed_label: string;
+}): EmptyBottleDebitLine[] {
+  if (!event.proposed_item_id) return [];
+  return [
+    {
+      proposed_item_id: event.proposed_item_id,
+      proposed_label: event.proposed_label,
+      qty: 1,
+    },
+  ];
+}
+
+export function debitLinesForEmptyBottle(input: {
+  proposed_item_id: string | null;
+  proposed_label: string;
+  lines: Array<{ proposed_item_id: string | null; proposed_label: string; qty: number }>;
+}): EmptyBottleDebitLine[] {
+  const fromLines = input.lines
+    .filter((line): line is EmptyBottleDebitLine => Boolean(line.proposed_item_id) && line.qty >= 1)
+    .map((line) => ({
+      proposed_item_id: line.proposed_item_id,
+      proposed_label: line.proposed_label,
+      qty: line.qty,
+    }));
+  if (fromLines.length > 0) return fromLines;
+  return legacyEmptyBottleLines(input);
+}
+
+export function emptyBottleSourceLabel(source: EmptyBottleSource): string {
+  switch (source) {
+    case "telegram":
+      return "Telegram";
+    case "app":
+      return "App";
+    default: {
+      const exhaustive: never = source;
+      return exhaustive;
+    }
+  }
 }
 
 export function skuFromEmptyLabel(label: string): string {
@@ -198,6 +331,7 @@ export function emptyBottleUsageMovement(input: {
   itemId: string;
   label: string;
   restaurantName: string | null;
+  qty?: number;
 }): {
   org_id: string;
   item_id: string;
@@ -209,15 +343,46 @@ export function emptyBottleUsageMovement(input: {
   return {
     org_id: input.orgId,
     item_id: input.itemId,
-    delta: deltaForReason("usage", 1),
+    delta: deltaForReason("usage", input.qty ?? 1),
     reason: "usage",
     note: emptyBottleMovementNote(input.label, input.restaurantName),
     created_by: null,
   };
 }
 
+export function emptyBottleUsageMovementsForLines(input: {
+  orgId: string;
+  restaurantName: string | null;
+  lines: EmptyBottleDebitLine[];
+}): ReturnType<typeof emptyBottleUsageMovement>[] {
+  return input.lines.map((line) =>
+    emptyBottleUsageMovement({
+      orgId: input.orgId,
+      itemId: line.proposed_item_id,
+      label: line.proposed_label,
+      restaurantName: input.restaurantName,
+      qty: line.qty,
+    }),
+  );
+}
+
 export function emptyConfirmPrompt(label: string, place: string): string {
   return `Empty bottle: *${escapeTelegramMarkdown(label)}* at *${escapeTelegramMarkdown(place)}*. Debit 1 bottle?`;
+}
+
+export function emptyConfirmLinesPrompt(input: {
+  place: string;
+  lines: Array<{ proposed_label: string; qty: number }>;
+  visionCount: number | null;
+  geminiCount: number | null;
+}): string {
+  const listed = input.lines
+    .map((line, index) => `${index + 1}. ${escapeTelegramMarkdown(line.proposed_label)} ×${line.qty}`)
+    .join("\n");
+  const vision = input.visionCount == null ? "—" : String(input.visionCount);
+  const gemini = input.geminiCount == null ? "—" : String(input.geminiCount);
+  const header = `Empty bottles at *${escapeTelegramMarkdown(input.place)}*. Vision ${vision} / Gemini ${gemini}`;
+  return `${header}\n${listed || "No lines"}\nDebit these bottles?`;
 }
 
 function escapeTelegramMarkdown(value: string): string {

@@ -7,6 +7,7 @@ import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { EmployeesPage } from "./features/employees/EmployeesPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
+import { EmptyBottlesPage } from "./features/empty-bottles/EmptyBottlesPage";
 import { InvoicesPage } from "./features/invoices/InvoicesPage";
 import { KioskPage } from "./features/kiosk/KioskPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
@@ -38,6 +39,7 @@ export default function App() {
               <Route path="employees" element={<EmployeesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
+              <Route path="empty-bottles" element={<EmptyBottlesPage />} />
               <Route path="suppliers" element={<SuppliersPage />} />
               <Route path="movements" element={<MovementsPage />} />
             </Route>

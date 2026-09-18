@@ -16,6 +16,7 @@ function titleFor(path: string): string {
   if (path.startsWith("/time-clock")) return "Time Clock";
   if (path.startsWith("/payroll")) return "Payroll";
   if (path.startsWith("/invoices")) return "Invoices";
+  if (path.startsWith("/empty-bottles")) return "Empty bottles";
   return "Dashboard";
 }
 
