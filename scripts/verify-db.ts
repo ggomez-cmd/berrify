@@ -33,6 +33,7 @@ const requiredTables = [
   "payroll_export_lines",
   "empty_bottle_events",
   "empty_bottle_lines",
+  "empty_bottle_pending",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -66,6 +67,7 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
     "empty_bottle_lines_update_pending",
     "empty_bottle_lines_delete_pending",
   ],
+  empty_bottle_pending: [],
 };
 
 const client = createPgClient();

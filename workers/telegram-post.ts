@@ -16,6 +16,7 @@ import {
   type EmptyBottleEventStatus,
 } from "../src/lib/empty-bottle";
 import { consumeEmptyPhotoPending, markEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
+import { boundFetch } from "./bound-fetch";
 import { downloadTelegramFile } from "../src/lib/telegram-media";
 import { assertTelegramMethodOk } from "../src/lib/telegram-api";
 import { buildTelegramInvoiceInsert } from "../src/lib/telegram-invoice";
@@ -782,7 +783,7 @@ async function handleEmptyCallback(input: {
 export async function handleTelegramPost(
   request: Request,
   env: TelegramPostEnv,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
   const botToken = env.TELEGRAM_BOT_TOKEN;
   const webhookSecret = env.TELEGRAM_WEBHOOK_SECRET;
@@ -890,7 +891,21 @@ export async function handleTelegramPost(
     }
     case "empty_command": {
       const hint = leftoverEmptyCaption(update.text, []);
-      markEmptyPhotoPending(String(update.chatId), hint);
+      const errors: string[] = [];
+      try {
+        await markEmptyPhotoPending({
+          supabaseUrl,
+          serviceRole,
+          orgId,
+          chatId: String(update.chatId),
+          hint,
+          fetchImpl,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "Could not persist pending empty photo";
+        logTelegramError("empty_pending", detail);
+        errors.push(detail);
+      }
       try {
         await sendTelegramMessage(
           botToken,
@@ -902,21 +917,17 @@ export async function handleTelegramPost(
       } catch (err) {
         const detail = err instanceof Error ? err.message : "Could not reply";
         logTelegramError("empty_command", detail);
-        return telegramWebhookResponse(
-          update.kind,
-          {
-            ok: true,
-            ingested: 0,
-            skipped: 0,
-            errors: [detail],
-            empty: "awaiting_photo",
-          } satisfies TelegramIngestResult,
-          200,
-        );
+        errors.push(detail);
       }
       return telegramWebhookResponse(
         update.kind,
-        { ok: true, ingested: 0, skipped: 0, errors: [], empty: "awaiting_photo" } satisfies TelegramIngestResult,
+        {
+          ok: true,
+          ingested: 0,
+          skipped: 0,
+          errors,
+          empty: "awaiting_photo",
+        } satisfies TelegramIngestResult,
         200,
       );
     }
@@ -948,7 +959,22 @@ export async function handleTelegramPost(
       }
     }
     case "photo": {
-      const pending = consumeEmptyPhotoPending(String(update.chatId));
+      let pending = { consumed: false, hint: "" };
+      try {
+        pending = await consumeEmptyPhotoPending({
+          supabaseUrl,
+          serviceRole,
+          orgId,
+          chatId: String(update.chatId),
+          fetchImpl,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "Could not load pending empty photo";
+        logTelegramError("empty_pending", detail);
+        if (!update.emptyCaption) {
+          pending = { consumed: false, hint: "" };
+        }
+      }
       const isEmpty = update.emptyCaption || pending.consumed;
       if (isEmpty) {
         try {

@@ -8,6 +8,7 @@ import {
   type EmptyBottleCatalogItem,
 } from "../src/lib/empty-bottle";
 import { parseImageDataUrl, requireSession, sessionAccessToken, type OcrPostEnv } from "./ocr-post";
+import { boundFetch } from "./bound-fetch";
 import { identifyEmptyBottle } from "./empty-bottle-identify";
 
 export type EmptyBottleIdentifyPostEnv = OcrPostEnv & {
@@ -163,7 +164,7 @@ async function sessionUserId(
 export async function handleEmptyBottleIdentifyPost(
   request: Request,
   env: EmptyBottleIdentifyPostEnv,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
   const denied = await requireSession(request, env, fetchImpl);
   if (denied) return denied;

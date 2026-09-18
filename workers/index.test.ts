@@ -1,11 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   EMPTY_BOTTLE_AWAIT_PHOTO,
   EMPTY_BOTTLE_IDENTIFY_UNAVAILABLE,
   EMPTY_BOTTLE_TEXT_HELP,
   emptyCallbackData,
 } from "../src/lib/empty-bottle";
-import { clearEmptyPhotoPending } from "../src/lib/empty-bottle-pending";
 import { TELEGRAM_SECRET_HEADER } from "../src/lib/telegram-webhook";
 import { signWhatsAppBody } from "../src/lib/whatsapp-webhook";
 import worker, { handleApi, redirectToHttps, type WorkerEnv } from "./index";
@@ -202,11 +201,41 @@ const TEXT_BODY = JSON.stringify({
   ],
 });
 
+type PendingRow = { org_id: string; chat_id: string; hint: string; expires_at: string };
+
+function handlePendingRest(
+  url: string,
+  method: string,
+  body: unknown,
+  pendingRows: Map<string, PendingRow>,
+): Response | null {
+  if (!url.includes("/rest/v1/empty_bottle_pending")) return null;
+  if (method === "POST") {
+    const row = body as PendingRow;
+    pendingRows.set(`${row.org_id}:${row.chat_id}`, row);
+    return new Response(null, { status: 201 });
+  }
+  if (method === "DELETE") {
+    const parsed = new URL(url);
+    const orgId = parsed.searchParams.get("org_id")?.replace(/^eq\./, "") ?? "";
+    const chatId = parsed.searchParams.get("chat_id")?.replace(/^eq\./, "") ?? "";
+    const key = `${orgId}:${chatId}`;
+    const row = pendingRows.get(key);
+    pendingRows.delete(key);
+    return Response.json(row ? [row] : []);
+  }
+  throw new Error(`unexpected pending ${method} ${url}`);
+}
+
 function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: number }) {
   const inserted: unknown[] = [];
+  const pendingRows = new Map<string, PendingRow>();
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    const pending = handlePendingRest(url, method, body, pendingRows);
+    if (pending) return pending;
     if (url === "https://graph.facebook.com/v21.0/MEDIA_1") {
       return Response.json({
         url: "https://lookaside.fbsbx.com/file",
@@ -256,6 +285,7 @@ function mockEmptyFetch(options?: {
   claim?: boolean;
   geminiLines?: number;
   geminiFirstPayload?: unknown;
+  pendingRows?: Map<string, PendingRow>;
 }) {
   const invoices: unknown[] = [];
   const movements: unknown[] = [];
@@ -263,6 +293,7 @@ function mockEmptyFetch(options?: {
   const rpcCalls: Array<{ url: string; body: unknown }> = [];
   const lineInserts: unknown[] = [];
   const geminiCalls: unknown[] = [];
+  const pendingRows = options?.pendingRows ?? new Map<string, PendingRow>();
   const events: Array<Record<string, unknown>> = [
     {
       id: EVENT_ID,
@@ -293,6 +324,8 @@ function mockEmptyFetch(options?: {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) : null;
+    const pending = handlePendingRest(url, method, body, pendingRows);
+    if (pending) return pending;
     if (url === "https://api.telegram.org/botbot-token/getFile?file_id=FILE_1") {
       return Response.json({ ok: true, result: { file_path: "photos/bill.jpg", file_size: 3 } });
     }
@@ -420,10 +453,6 @@ function mockEmptyFetch(options?: {
 }
 
 describe("Worker API", () => {
-  beforeEach(() => {
-    clearEmptyPhotoPending();
-  });
-
   it("returns health JSON", async () => {
     const response = await api("/api/health");
     expect(response.status).toBe(200);
@@ -619,6 +648,9 @@ describe("Worker API", () => {
       const url = String(input);
       if (url.includes("/getFile")) {
         return Response.json({ ok: false, description: "Bad Request: file is too big" });
+      }
+      if (url.includes("/rest/v1/empty_bottle_pending")) {
+        return Response.json([]);
       }
       if (url.includes("/rest/v1/restaurants") || url.includes("/rest/v1/restaurant_aliases")) {
         return Response.json([]);
@@ -816,6 +848,38 @@ describe("Worker API", () => {
     expect(photo.status).toBe(200);
     await expect(photo.json()).resolves.toMatchObject({ empty: "awaiting_confirm" });
     expect(invoices).toEqual([]);
+  });
+
+  it("keeps /empty pending across simulated Worker isolates", async () => {
+    const pendingRows = new Map<string, PendingRow>();
+    const isolateA = mockEmptyFetch({ pendingRows });
+    const isolateB = mockEmptyFetch({ pendingRows });
+    const command = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_EMPTY_COMMAND_BODY,
+      },
+      { ...ingestEnv, GEMINI_API_KEY: "gemini-key" },
+      isolateA.fetchImpl,
+    );
+    expect(command.status).toBe(200);
+    await expect(command.json()).resolves.toMatchObject({ empty: "awaiting_photo" });
+
+    const photo = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_PHOTO_BODY,
+      },
+      { ...ingestEnv, GEMINI_API_KEY: "gemini-key" },
+      isolateB.fetchImpl,
+    );
+    expect(photo.status).toBe(200);
+    await expect(photo.json()).resolves.toMatchObject({ empty: "awaiting_confirm" });
+    expect(isolateB.invoices).toEqual([]);
   });
 
   it("replies to /empty@berrify.bot and fails sendMessage when Telegram ok is false", async () => {

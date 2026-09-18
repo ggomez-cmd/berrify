@@ -1,4 +1,5 @@
 import { MAX_INVOICE_IMAGE_BYTES } from "../src/lib/invoice-image";
+import { boundFetch } from "./bound-fetch";
 
 export type OcrPostEnv = {
   GOOGLE_VISION_API_KEY?: string;
@@ -160,7 +161,7 @@ export async function requireSession(
 export async function handleOcrPost(
   request: Request,
   env: OcrPostEnv,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
   const denied = await requireSession(request, env, fetchImpl);
   if (denied) return denied;

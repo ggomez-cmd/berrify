@@ -21,7 +21,6 @@ import {
   textIsEmptyCommand,
   type EmptyBottleCatalogItem,
 } from "./empty-bottle";
-import { clearEmptyPhotoPending, consumeEmptyPhotoPending, markEmptyPhotoPending } from "./empty-bottle-pending";
 
 const catalog: EmptyBottleCatalogItem[] = [
   { id: "i-rum", sku: "BV-EB-RUM", name: "Rum" },
@@ -251,15 +250,5 @@ describe("empty-bottle helpers", () => {
       visionCount: 11,
       geminiCount: 9,
     })).toContain("Vision 11 / Gemini 9");
-  });
-
-  it("remembers a pending /empty until the next photo", () => {
-    clearEmptyPhotoPending();
-    markEmptyPhotoPending("-100", "rum", 1_000);
-    expect(consumeEmptyPhotoPending("-100", 2_000)).toEqual({ consumed: true, hint: "rum" });
-    expect(consumeEmptyPhotoPending("-100", 3_000)).toEqual({ consumed: false, hint: "" });
-    markEmptyPhotoPending("-100", "vodka", 1_000, 10);
-    expect(consumeEmptyPhotoPending("-100", 1_020)).toEqual({ consumed: false, hint: "" });
-    clearEmptyPhotoPending();
   });
 });

@@ -1,3 +1,4 @@
+import { boundAssetFetch, boundFetch } from "./bound-fetch";
 import { handleEmptyBottleIdentifyPost } from "./empty-bottle-identify-post";
 import { handleInvoiceExtractPost } from "./invoice-extract-post";
 import { handleOcrPost } from "./ocr-post";
@@ -97,7 +98,7 @@ export function redirectToHttps(request: Request): Response | null {
 export async function handleApi(
   request: Request,
   env: WorkerEnv,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = apiPath(url.pathname);
@@ -176,6 +177,6 @@ export default {
     if (path === "/api" || path.startsWith("/api/")) {
       return handleApi(request, env);
     }
-    return withSecurityHeaders(await env.ASSETS.fetch(request));
+    return withSecurityHeaders(await boundAssetFetch(env.ASSETS, request));
   },
 };

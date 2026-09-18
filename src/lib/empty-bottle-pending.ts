@@ -1,33 +1,109 @@
 export const EMPTY_BOTTLE_PENDING_TTL_MS = 15 * 60 * 1000;
 
-type PendingEmptyPhoto = {
-  expiresAt: number;
+export type EmptyBottlePendingResult = {
+  consumed: boolean;
   hint: string;
 };
 
-const pendingByChat = new Map<string, PendingEmptyPhoto>();
+type PendingRow = {
+  org_id: string;
+  chat_id: string;
+  hint: string;
+  expires_at: string;
+};
 
-export function markEmptyPhotoPending(
-  chatId: string,
-  hint = "",
-  now = Date.now(),
-  ttlMs = EMPTY_BOTTLE_PENDING_TTL_MS,
-): void {
-  pendingByChat.set(chatId, { expiresAt: now + ttlMs, hint });
+function supabaseHeaders(serviceRole: string): HeadersInit {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    "Content-Type": "application/json",
+  };
 }
 
-export function consumeEmptyPhotoPending(
+function restUrl(supabaseUrl: string, path: string): string {
+  return `${supabaseUrl.replace(/\/$/, "")}/rest/v1/${path}`;
+}
+
+export function emptyBottlePendingSelectPath(orgId: string, chatId: string): string {
+  return `empty_bottle_pending?org_id=eq.${encodeURIComponent(orgId)}&chat_id=eq.${encodeURIComponent(chatId)}`;
+}
+
+export function emptyBottlePendingUpsertBody(
+  orgId: string,
   chatId: string,
-  now = Date.now(),
-): { consumed: boolean; hint: string } {
-  const row = pendingByChat.get(chatId);
+  hint: string,
+  now: number,
+  ttlMs: number,
+): PendingRow {
+  return {
+    org_id: orgId,
+    chat_id: chatId,
+    hint,
+    expires_at: new Date(now + ttlMs).toISOString(),
+  };
+}
+
+function readHint(row: PendingRow | undefined, now: number): EmptyBottlePendingResult {
   if (!row) return { consumed: false, hint: "" };
-  pendingByChat.delete(chatId);
-  if (row.expiresAt < now) return { consumed: false, hint: "" };
+  const expiresAt = Date.parse(row.expires_at);
+  if (!Number.isFinite(expiresAt) || expiresAt < now) return { consumed: false, hint: "" };
   return { consumed: true, hint: row.hint };
 }
 
-export function clearEmptyPhotoPending(chatId?: string): void {
-  if (chatId) pendingByChat.delete(chatId);
-  else pendingByChat.clear();
+export async function markEmptyPhotoPending(input: {
+  supabaseUrl: string;
+  serviceRole: string;
+  orgId: string;
+  chatId: string;
+  hint?: string;
+  now?: number;
+  ttlMs?: number;
+  fetchImpl: typeof fetch;
+}): Promise<void> {
+  const body = emptyBottlePendingUpsertBody(
+    input.orgId,
+    input.chatId,
+    input.hint ?? "",
+    input.now ?? Date.now(),
+    input.ttlMs ?? EMPTY_BOTTLE_PENDING_TTL_MS,
+  );
+  const response = await input.fetchImpl(
+    restUrl(input.supabaseUrl, "empty_bottle_pending?on_conflict=org_id,chat_id"),
+    {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(input.serviceRole),
+        Prefer: "return=minimal,resolution=merge-duplicates",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`empty_bottle_pending upsert failed (${response.status})`);
+  }
+}
+
+export async function consumeEmptyPhotoPending(input: {
+  supabaseUrl: string;
+  serviceRole: string;
+  orgId: string;
+  chatId: string;
+  now?: number;
+  fetchImpl: typeof fetch;
+}): Promise<EmptyBottlePendingResult> {
+  const response = await input.fetchImpl(
+    restUrl(input.supabaseUrl, emptyBottlePendingSelectPath(input.orgId, input.chatId)),
+    {
+      method: "DELETE",
+      headers: {
+        ...supabaseHeaders(input.serviceRole),
+        Prefer: "return=representation",
+      },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`empty_bottle_pending consume failed (${response.status})`);
+  }
+  const rows = (await response.json()) as PendingRow[];
+  return readHint(rows[0], input.now ?? Date.now());
 }
