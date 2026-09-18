@@ -856,10 +856,35 @@ describe("Worker API", () => {
       ingestEnv,
       fetchImpl,
     );
-    expect(blocked.status).toBe(502);
-    const payload = (await blocked.json()) as { errors?: string[] };
+    expect(blocked.status).toBe(200);
+    const payload = (await blocked.json()) as { errors?: string[]; empty?: string };
+    expect(payload.empty).toBe("awaiting_photo");
     expect(payload.errors?.join(" ")).toContain("Forbidden: bot was blocked by the user");
     expect(JSON.stringify(payload)).not.toContain("bot-token");
+  });
+
+  it("acks Hello with 200 when sendMessage is ok false so Telegram keeps the webhook", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/sendMessage")) {
+        return Response.json({ ok: false, description: "Forbidden: bot was blocked by the user" });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+    const response = await api(
+      "/api/webhooks/telegram",
+      {
+        method: "POST",
+        headers: { [TELEGRAM_SECRET_HEADER]: "hook-secret" },
+        body: TELEGRAM_TEXT_BODY,
+      },
+      ingestEnv,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { ignored?: string; errors?: string[] };
+    expect(payload.ignored).toBe("text_help");
+    expect(payload.errors?.join(" ")).toContain("Forbidden: bot was blocked by the user");
   });
 
   it("treats an entities-only /empty payload as awaiting_photo", async () => {
