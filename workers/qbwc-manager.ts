@@ -1,0 +1,280 @@
+import { isSpaSameOrigin, sessionAccessToken } from "./ocr-post";
+import {
+  hashQbPassword,
+  patchConnection,
+  randomQbPassword,
+  randomQbUsername,
+  restUrl,
+  revokeSessionsForConnection,
+  supabaseHeaders,
+  type QbwcConnectionRow,
+  type QbwcRestEnv,
+} from "./qbwc-auth";
+import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
+
+export type QbwcManagerEnv = QbwcRestEnv & {
+  PUBLIC_APP_URL?: string;
+};
+
+type ManagerUser = {
+  userId: string;
+  orgId: string;
+  role: string;
+};
+
+const MANAGER_ROLES = new Set(["admin", "owner", "manager"]);
+
+function json(body: unknown, status = 200): Response {
+  return Response.json(body, { status });
+}
+
+export async function requireManager(
+  request: Request,
+  env: QbwcManagerEnv,
+  fetchImpl: typeof fetch,
+): Promise<ManagerUser | Response> {
+  if (!isSpaSameOrigin(request)) return json({ error: "Unauthorized" }, 401);
+  const token = sessionAccessToken(request);
+  if (!token) return json({ error: "Unauthorized" }, 401);
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return json({ error: "Unauthorized" }, 401);
+
+  const userRes = await fetchImpl(`${supabaseUrl}/auth/v1/user`, {
+    headers: { Authorization: `Bearer ${token}`, apikey: serviceRole },
+  });
+  if (!userRes.ok) return json({ error: "Unauthorized" }, 401);
+  const user = (await userRes.json()) as { id?: string };
+  if (!user.id) return json({ error: "Unauthorized" }, 401);
+
+  const membershipsRes = await fetchImpl(
+    restUrl(supabaseUrl, `memberships?user_id=eq.${encodeURIComponent(user.id)}&limit=1`),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!membershipsRes.ok) return json({ error: "Forbidden" }, 403);
+  const memberships = (await membershipsRes.json()) as Array<{ org_id: string; role: string }>;
+  const membership = memberships[0];
+  if (!membership || !MANAGER_ROLES.has(membership.role)) return json({ error: "Forbidden" }, 403);
+  return { userId: user.id, orgId: membership.org_id, role: membership.role };
+}
+
+function publicConnection(row: QbwcConnectionRow): Omit<QbwcConnectionRow, "password_hash"> {
+  const { password_hash: _passwordHash, ...rest } = row;
+  return rest;
+}
+
+async function loadOwnedConnection(
+  env: QbwcManagerEnv,
+  orgId: string,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<QbwcConnectionRow | null> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return null;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_desktop_connections?id=eq.${encodeURIComponent(connectionId)}&org_id=eq.${encodeURIComponent(orgId)}&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json()) as QbwcConnectionRow[];
+  return rows[0] ?? null;
+}
+
+async function restaurantInOrg(
+  env: QbwcManagerEnv,
+  orgId: string,
+  restaurantId: string,
+  fetchImpl: typeof fetch,
+): Promise<boolean> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return false;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `restaurants?id=eq.${encodeURIComponent(restaurantId)}&org_id=eq.${encodeURIComponent(orgId)}&select=id&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return false;
+  const rows = (await response.json()) as Array<{ id: string }>;
+  return Boolean(rows[0]);
+}
+
+function qwcForConnection(env: QbwcManagerEnv, connection: QbwcConnectionRow): string {
+  const base = publicAppUrl(env.PUBLIC_APP_URL);
+  return buildQwcXml({
+    appUrl: qbwcAppUrl(base),
+    appSupport: qbwcAppSupportUrl(base),
+    userName: connection.qb_username,
+    ownerId: connection.owner_id,
+    fileId: connection.file_id,
+    includeScheduler: Boolean(connection.last_successful_sync_at),
+  });
+}
+
+export async function handleCreateConnection(
+  request: Request,
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object") return json({ error: "Invalid JSON" }, 400);
+  const row = body as { restaurant_id?: unknown; name?: unknown; company_file?: unknown };
+  const restaurantId =
+    typeof row.restaurant_id === "string" && row.restaurant_id.trim() ? row.restaurant_id.trim() : null;
+  if (restaurantId && !(await restaurantInOrg(env, manager.orgId, restaurantId, fetchImpl))) {
+    return json({ error: "Restaurant not found" }, 400);
+  }
+  const name =
+    typeof row.name === "string" && row.name.trim()
+      ? row.name.trim()
+      : restaurantId
+        ? "Restaurant company file"
+        : "Shared company file";
+  const companyFile =
+    typeof row.company_file === "string" && row.company_file.trim() ? row.company_file.trim() : null;
+  const password = randomQbPassword();
+  const passwordHash = await hashQbPassword(password);
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return json({ error: "Not configured" }, 503);
+  const insert = await fetchImpl(restUrl(supabaseUrl, "quickbooks_desktop_connections"), {
+    method: "POST",
+    headers: { ...supabaseHeaders(serviceRole), Prefer: "return=representation" },
+    body: JSON.stringify({
+      org_id: manager.orgId,
+      restaurant_id: restaurantId,
+      name,
+      qb_username: randomQbUsername(),
+      password_hash: passwordHash,
+      company_file: companyFile,
+      is_active: true,
+    }),
+  });
+  if (!insert.ok) {
+    return json({ error: "Could not create connection" }, insert.status === 409 ? 409 : 400);
+  }
+  const created = (await insert.json()) as QbwcConnectionRow[];
+  const connection = created[0];
+  if (!connection) return json({ error: "Could not create connection" }, 400);
+  return json({ connection: publicConnection(connection), password }, 201);
+}
+
+export async function handleRotatePassword(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection) return json({ error: "Not found" }, 404);
+  const password = randomQbPassword();
+  const passwordHash = await hashQbPassword(password);
+  const ok = await patchConnection(
+    env,
+    connection.id,
+    { password_hash: passwordHash, is_active: true, last_error: null },
+    fetchImpl,
+  );
+  if (!ok) return json({ error: "Could not rotate password" }, 400);
+  await revokeSessionsForConnection(env, connection.id, fetchImpl);
+  return json({ connection_id: connection.id, password });
+}
+
+export async function handleRevokeConnection(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection) return json({ error: "Not found" }, 404);
+  const ok = await patchConnection(env, connection.id, { is_active: false }, fetchImpl);
+  if (!ok) return json({ error: "Could not revoke connection" }, 400);
+  await revokeSessionsForConnection(env, connection.id, fetchImpl);
+  return json({ ok: true, connection_id: connection.id });
+}
+
+export async function handleDownloadQwc(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection || !connection.is_active) return json({ error: "Not found" }, 404);
+  const xml = qwcForConnection(env, connection);
+  return new Response(xml, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="Berrify.qwc"',
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+export function parseManagerPath(pathname: string):
+  | { kind: "create" }
+  | { kind: "rotate"; id: string }
+  | { kind: "revoke"; id: string }
+  | { kind: "qwc"; id: string }
+  | null {
+  if (pathname === "/api/qbwc/connections") return { kind: "create" };
+  const rotate = /^\/api\/qbwc\/connections\/([^/]+)\/rotate$/.exec(pathname);
+  if (rotate) return { kind: "rotate", id: rotate[1] };
+  const revoke = /^\/api\/qbwc\/connections\/([^/]+)\/revoke$/.exec(pathname);
+  if (revoke) return { kind: "revoke", id: revoke[1] };
+  const qwc = /^\/api\/qbwc\/connections\/([^/]+)\/qwc$/.exec(pathname);
+  if (qwc) return { kind: "qwc", id: qwc[1] };
+  return null;
+}
+
+export async function handleQbwcManager(
+  request: Request,
+  env: QbwcManagerEnv,
+  pathname: string,
+  fetchImpl: typeof fetch,
+): Promise<Response | null> {
+  const route = parseManagerPath(pathname);
+  if (!route) return null;
+  const manager = await requireManager(request, env, fetchImpl);
+  if (manager instanceof Response) return manager;
+  switch (route.kind) {
+    case "create":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleCreateConnection(request, env, manager, fetchImpl);
+    case "rotate":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleRotatePassword(env, manager, route.id, fetchImpl);
+    case "revoke":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleRevokeConnection(env, manager, route.id, fetchImpl);
+    case "qwc":
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
+      }
+      return handleDownloadQwc(env, manager, route.id, fetchImpl);
+    default: {
+      const exhaustive: never = route;
+      return exhaustive;
+    }
+  }
+}

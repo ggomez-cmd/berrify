@@ -472,6 +472,29 @@ describe("Worker API", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns a short QBWC service body on GET", async () => {
+    const response = await api("/api/qbwc");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/plain");
+    expect(await response.text()).toBe("Berrify QBWC service");
+  });
+
+  it("answers serverVersion as SOAP XML", async () => {
+    const response = await api("/api/qbwc", {
+      method: "POST",
+      headers: { "Content-Type": "text/xml" },
+      body: `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><serverVersion></serverVersion></soap:Body>
+</soap:Envelope>`,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/xml");
+    const xml = await response.text();
+    expect(xml).toContain("<serverVersionResult>1.0.0</serverVersionResult>");
+    expect(xml).not.toContain("{");
+  });
+
   it("verifies the WhatsApp webhook challenge", async () => {
     const response = await api(
       "/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=demo-verify&hub.challenge=abc123",

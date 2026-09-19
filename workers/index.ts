@@ -2,6 +2,8 @@ import { boundAssetFetch, boundFetch } from "./bound-fetch";
 import { handleEmptyBottleIdentifyPost } from "./empty-bottle-identify-post";
 import { handleInvoiceExtractPost } from "./invoice-extract-post";
 import { handleOcrPost } from "./ocr-post";
+import { handleQbwcManager } from "./qbwc-manager";
+import { handleQbwcSoapPost } from "./qbwc-soap";
 import { handleTelegramPost } from "./telegram-post";
 import { handleWhatsAppPost } from "./whatsapp-post";
 
@@ -21,6 +23,7 @@ export type WorkerEnv = {
   TELEGRAM_ORG_ID?: string;
   NEXT_PUBLIC_SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  PUBLIC_APP_URL?: string;
   GOOGLE_VISION_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
@@ -162,6 +165,27 @@ export async function handleApi(
         return withSecurityHeaders(await handleEmptyBottleIdentifyPost(request, env, fetchImpl));
       default: {
         return methodNotAllowed(["POST"]);
+      }
+    }
+  }
+
+  const qbwcManager = await handleQbwcManager(request, env, path, fetchImpl);
+  if (qbwcManager) return withSecurityHeaders(qbwcManager);
+
+  if (path === "/api/qbwc") {
+    switch (request.method) {
+      case "GET":
+      case "HEAD":
+        return withSecurityHeaders(
+          new Response("Berrify QBWC service", {
+            status: 200,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+          }),
+        );
+      case "POST":
+        return withSecurityHeaders(await handleQbwcSoapPost(request, env, fetchImpl));
+      default: {
+        return methodNotAllowed(["GET", "HEAD", "POST"]);
       }
     }
   }
