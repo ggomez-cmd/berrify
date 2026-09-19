@@ -34,6 +34,9 @@ const requiredTables = [
   "empty_bottle_events",
   "empty_bottle_lines",
   "empty_bottle_pending",
+  "quickbooks_desktop_connections",
+  "quickbooks_desktop_sessions",
+  "quickbooks_sync_jobs",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -68,6 +71,9 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
     "empty_bottle_lines_delete_pending",
   ],
   empty_bottle_pending: [],
+  quickbooks_desktop_connections: ["quickbooks_desktop_connections_select_manager"],
+  quickbooks_desktop_sessions: [],
+  quickbooks_sync_jobs: ["quickbooks_sync_jobs_select_manager"],
 };
 
 const client = createPgClient();
