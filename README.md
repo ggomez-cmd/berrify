@@ -127,8 +127,10 @@ npm run whatsapp:ingest -- --file ./ocr.txt --caption "Semilla factura"
 ```
 
 The webhook JSON shape is documented at the top of
-`scripts/whatsapp-ingest.ts`. Live QBO Desktop Web Connector, QBO Online OAuth,
-and unofficial group bots are out of scope. Invoices **Camera/Upload** and
+`scripts/whatsapp-ingest.ts`. Posting Bills through QuickBooks Web Connector,
+QBO Online OAuth, and unofficial group bots are out of scope. SOAP connector
+foundation (company query only) is documented in [docs/qbwc-desktop.md](docs/qbwc-desktop.md).
+Invoices **Camera/Upload** and
 **Review** call `POST /api/ocr` first (Cloud Vision Document Text Detection,
 Spanish + English). After OCR, Camera / Upload / Review call
 `POST /api/invoice-extract` (Gemini Flash, `GEMINI_API_KEY` on the Worker).

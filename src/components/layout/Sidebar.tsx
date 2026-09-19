@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookMarked,
   Boxes,
   CalendarDays,
   ClipboardList,
@@ -107,6 +108,7 @@ export function Sidebar({
         ...(admin ? [{ to: "/employees", label: "Employees", icon: Users, end: false }] : []),
         { to: "/inventory", label: "Inventory", icon: Boxes, end: false },
         { to: "/invoices", label: "Invoices", icon: Receipt, end: false },
+        { to: "/quickbooks", label: "QuickBooks", icon: BookMarked, end: false },
         { to: "/empty-bottles", label: "Empty bottles", icon: Wine, end: false },
         { to: "/payroll", label: "Payroll", icon: Wallet, end: false },
         { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },

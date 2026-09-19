@@ -410,3 +410,43 @@ export type PayrollExportLine = {
   gross: number;
   created_at: string;
 };
+
+export type QuickbooksDesktopConnection = {
+  id: string;
+  org_id: string;
+  restaurant_id: string | null;
+  name: string;
+  qb_username: string;
+  owner_id: string;
+  file_id: string;
+  company_file: string | null;
+  qb_company_name: string | null;
+  qb_product_name: string | null;
+  qb_major_version: string | null;
+  qb_minor_version: string | null;
+  is_active: boolean;
+  last_connected_at: string | null;
+  last_successful_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuickbooksSyncJobStatus = "pending" | "sending" | "completed" | "failed";
+
+export type QuickbooksSyncJob = {
+  id: string;
+  org_id: string;
+  connection_id: string;
+  status: QuickbooksSyncJobStatus;
+  operation: string;
+  entity_type: string;
+  entity_id: string;
+  attempt_count: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QbwcUiStatus = "not_configured" | "waiting" | "connected" | "syncing" | "error";

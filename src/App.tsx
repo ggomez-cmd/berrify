@@ -9,6 +9,7 @@ import { EmployeesPage } from "./features/employees/EmployeesPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { EmptyBottlesPage } from "./features/empty-bottles/EmptyBottlesPage";
 import { InvoicesPage } from "./features/invoices/InvoicesPage";
+import { QuickbooksPage } from "./features/quickbooks/QuickbooksPage";
 import { KioskPage } from "./features/kiosk/KioskPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="employees" element={<EmployeesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
+              <Route path="quickbooks" element={<QuickbooksPage />} />
               <Route path="empty-bottles" element={<EmptyBottlesPage />} />
               <Route path="suppliers" element={<SuppliersPage />} />
               <Route path="movements" element={<MovementsPage />} />

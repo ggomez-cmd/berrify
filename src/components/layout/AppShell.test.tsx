@@ -82,6 +82,7 @@ describe("AppShell mobile navigation", () => {
     const nav = drawer() as HTMLElement;
     expect(within(nav).getByRole("link", { name: "Inventory" })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: "Invoices" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "QuickBooks" })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: "Empty bottles" })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: "Payroll" })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: "Kiosk" })).toBeInTheDocument();
@@ -98,6 +99,7 @@ describe("AppShell mobile navigation", () => {
     expect(within(nav).queryByRole("link", { name: "Dashboard" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Inventory" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Invoices" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "QuickBooks" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Empty bottles" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Payroll" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Employees" })).toBeNull();
