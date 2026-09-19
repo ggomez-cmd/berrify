@@ -59,8 +59,24 @@ export async function requireManager(
 }
 
 function publicConnection(row: QbwcConnectionRow): Omit<QbwcConnectionRow, "password_hash"> {
-  const { password_hash: _passwordHash, ...rest } = row;
-  return rest;
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    restaurant_id: row.restaurant_id,
+    name: row.name,
+    qb_username: row.qb_username,
+    owner_id: row.owner_id,
+    file_id: row.file_id,
+    company_file: row.company_file,
+    qb_company_name: row.qb_company_name,
+    qb_product_name: row.qb_product_name,
+    qb_major_version: row.qb_major_version,
+    qb_minor_version: row.qb_minor_version,
+    is_active: row.is_active,
+    last_connected_at: row.last_connected_at,
+    last_successful_sync_at: row.last_successful_sync_at,
+    last_error: row.last_error,
+  };
 }
 
 async function loadOwnedConnection(

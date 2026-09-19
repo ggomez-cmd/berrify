@@ -26,6 +26,6 @@ describe("QBWC password and tickets", () => {
     );
     const expires = sessionExpiryIso(1_000);
     expect(sessionIsExpired({ expires_at: expires }, 500)).toBe(false);
-    expect(sessionIsExpired({ expires_at: expires }, 1_000 + 1)).toBe(true);
+    expect(sessionIsExpired({ expires_at: expires }, Date.parse(expires) + 1)).toBe(true);
   });
 });
