@@ -23,6 +23,7 @@ describe("parseTelegramInboundImages", () => {
         from: "@cook",
         caption: "Semilla factura",
         fileId: "LARGE",
+        mediaGroupId: null,
       },
     ]);
     expect(
@@ -55,6 +56,7 @@ describe("parseTelegramInboundImages", () => {
         from: "777",
         caption: "Kane factura",
         fileId: "DOC_IMG",
+        mediaGroupId: null,
       },
     ]);
     expect(
@@ -66,6 +68,28 @@ describe("parseTelegramInboundImages", () => {
         },
       }),
     ).toEqual([]);
+  });
+
+  it("keeps Telegram album media_group_id", () => {
+    expect(
+      parseTelegramInboundImages({
+        message: {
+          message_id: 50,
+          caption: "page 2",
+          media_group_id: "album-9",
+          chat: { id: -100 },
+          photo: [{ file_id: "P2", file_size: 10 }],
+        },
+      }),
+    ).toEqual([
+      {
+        messageId: "-100:50",
+        from: "-100",
+        caption: "page 2",
+        fileId: "P2",
+        mediaGroupId: "album-9",
+      },
+    ]);
   });
 
   it("returns nothing for a non-photo payload", () => {

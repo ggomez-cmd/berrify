@@ -13,6 +13,7 @@ export type TelegramInboundImage = {
   from: string;
   caption: string | null;
   fileId: string;
+  mediaGroupId: string | null;
 };
 
 type TelegramPhotoSize = {
@@ -36,6 +37,7 @@ type TelegramMessage = {
   message_id?: number;
   caption?: string;
   text?: string;
+  media_group_id?: string | number;
   entities?: TelegramMessageEntity[];
   photo?: TelegramPhotoSize[];
   document?: TelegramDocument;
@@ -185,6 +187,7 @@ export function parseTelegramUpdate(body: unknown): TelegramParsedUpdate {
         from: senderFrom(message, chatId),
         caption,
         fileId,
+        mediaGroupId: message.media_group_id != null ? String(message.media_group_id) : null,
       },
       ...(typeof rawMessageId === "number" ? { replyToMessageId: rawMessageId } : {}),
     };

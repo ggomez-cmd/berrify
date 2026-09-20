@@ -8,6 +8,7 @@ export type TelegramInvoiceInsert = {
   terms: "Net 15";
   telegram_from: string;
   telegram_message_id: string;
+  telegram_media_group_id: string | null;
   caption: string | null;
   image_data: string;
   image_mime: string;
@@ -19,6 +20,7 @@ export function buildTelegramInvoiceInsert(input: {
   from: string;
   caption: string | null;
   messageId: string;
+  mediaGroupId?: string | null;
   imageData: string;
   imageMime: string;
   restaurants: Restaurant[];
@@ -37,6 +39,7 @@ export function buildTelegramInvoiceInsert(input: {
     terms: "Net 15",
     telegram_from: input.from,
     telegram_message_id: input.messageId,
+    telegram_media_group_id: input.mediaGroupId ?? null,
     caption: input.caption,
     image_data: input.imageData,
     image_mime: input.imageMime,

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildBillAddRq,
   buildCompanyQueryRq,
+  buildVendorQueryRq,
   parseBillAddRs,
   parseCompanyQueryRs,
   parseQbStatus,
+  parseVendorQueryRs,
   xmlEscape,
 } from "./qbxml";
 
@@ -55,6 +57,48 @@ describe("CompanyQuery qbXML", () => {
 
   it("escapes XML special characters", () => {
     expect(xmlEscape(`A&B <C>`)).toBe("A&amp;B &lt;C&gt;");
+  });
+});
+
+describe("VendorQuery qbXML", () => {
+  it("builds VendorQueryRq for a full vendor list", () => {
+    const xml = buildVendorQueryRq();
+    expect(xml).toContain("<VendorQueryRq>");
+    expect(xml).toContain("<ActiveStatus>All</ActiveStatus>");
+    expect(xml).not.toContain("BillAddRq");
+    expect(xml).not.toContain("CompanyQueryRq");
+  });
+
+  it("parses VendorRet FullName and ListID", () => {
+    const parsed = parseVendorQueryRs(`<VendorQueryRs statusCode="0" statusMessage="Status OK">
+      <VendorRet>
+        <ListID>80000001-1</ListID>
+        <Name>Jose Santiago Inc (food)</Name>
+        <FullName>Jose Santiago Inc (food)</FullName>
+        <CompanyName>Jose Santiago</CompanyName>
+        <IsActive>true</IsActive>
+      </VendorRet>
+      <VendorRet>
+        <ListID>80000002-2</ListID>
+        <FullName>Jose Santiago Inc (liquor)</FullName>
+        <IsActive>true</IsActive>
+      </VendorRet>
+    </VendorQueryRs>`);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.vendors).toEqual([
+      {
+        listId: "80000001-1",
+        fullName: "Jose Santiago Inc (food)",
+        companyName: "Jose Santiago",
+        isActive: true,
+      },
+      {
+        listId: "80000002-2",
+        fullName: "Jose Santiago Inc (liquor)",
+        companyName: null,
+        isActive: true,
+      },
+    ]);
   });
 });
 

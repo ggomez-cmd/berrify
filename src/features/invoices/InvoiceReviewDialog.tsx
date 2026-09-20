@@ -18,8 +18,10 @@ import {
 } from "../../lib/invoice-extract";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
 import { formatMoney } from "../../lib/format";
-import { toRasterDataUrl } from "../../lib/invoice-image";
+import { assertInvoiceImage, toRasterDataUrl } from "../../lib/invoice-image";
+import { composeInvoicePageImages, invoicesToPersistFromPhoto, nextInvoicePageSortOrder } from "../../lib/invoice-pages";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
+import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
 import { toThrownError } from "../../lib/thrown-error";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
@@ -37,8 +39,9 @@ import type {
 import { sendInvoiceToQuickBooks } from "../../lib/qbwc-manager-api";
 import { invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { QuickbooksSyncJob } from "../../lib/types";
+import { useQuickbooksConnections, useQuickbooksVendors } from "../quickbooks/hooks";
 import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
-import { useCreateInvoice, useDeleteInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
+import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
 
@@ -112,7 +115,7 @@ async function billsFromOcr(
       excludeInvoiceId: current.id,
     }),
   });
-  const [first, ...extras] = extracted;
+  const [first] = invoicesToPersistFromPhoto(extracted);
   if (!first) {
     return {
       first: null,
@@ -145,7 +148,7 @@ async function billsFromOcr(
     );
     restaurantId = route?.restaurant.id ?? null;
   }
-  return { first, extras, restaurantId, extractNote: extractEngineNote(engine, error) };
+  return { first, extras: [], restaurantId, extractNote: extractEngineNote(engine, error) };
 }
 
 export function InvoiceReviewDialog({
@@ -176,9 +179,12 @@ export function InvoiceReviewDialog({
   onQbJobChange?: () => void;
 }) {
   const save = useUpdateInvoice();
-  const create = useCreateInvoice();
   const remove = useDeleteInvoice();
+  const addPage = useAddInvoicePage();
   const media = useInvoiceMedia(open && invoice ? invoice.id : null);
+  const pagesQuery = useInvoicePages(open && invoice ? invoice.id : null);
+  const { data: qbConnections = [] } = useQuickbooksConnections();
+  const { data: qbVendors = [] } = useQuickbooksVendors();
   const ocrStartedFor = useRef<string | null>(null);
   const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -194,11 +200,14 @@ export function InvoiceReviewDialog({
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState<string | null>(null);
-  const [extraBills, setExtraBills] = useState<ExtractedInvoice[]>([]);
   const [extractTotal, setExtractTotal] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [photoSrc, setPhotoSrc] = useState<string | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [qbVendorName, setQbVendorName] = useState("");
+  const [vendorOptions, setVendorOptions] = useState<string[]>([]);
   const [qbBusy, setQbBusy] = useState(false);
+  const addPageInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open || !invoice) return;
@@ -240,9 +249,11 @@ export function InvoiceReviewDialog({
     setOcrBusy(false);
     setOcrNote(null);
     setOcrText(null);
-    setExtraBills([]);
     setLightboxOpen(false);
     setPhotoSrc(null);
+    setPageIndex(0);
+    setQbVendorName(invoice.vendor_name ?? "");
+    setVendorOptions([]);
     setQbBusy(false);
     ocrStartedFor.current = null;
   }, [open, invoice]);
@@ -294,8 +305,19 @@ export function InvoiceReviewDialog({
         note ? `${note} · ${preview.extractNote}` : preview.extractNote,
       );
       if (!preview.first) return;
-      setVendorName(preview.first.vendor_name ?? "");
-      setSupplierId(preview.first.supplier_id ?? "");
+      const connectionId = connectionIdForInvoiceVendors(preview.restaurantId, qbConnections);
+      const match = matchQbVendor({
+        printName: preview.first.vendor_name,
+        ocrText: text,
+        lines: preview.first.lines,
+        vendors: vendorsForConnection(connectionId, qbVendors),
+        aliases: toVendorAliases(vendorAliases),
+      });
+      const mixed = match.reason === "mixed" || match.reason === "unclear";
+      setVendorName(mixed ? "" : (preview.first.vendor_name ?? ""));
+      setSupplierId(mixed ? "" : (preview.first.supplier_id ?? ""));
+      setQbVendorName(match.fullName ?? "");
+      setVendorOptions(match.options);
       setNumber(preview.first.invoice_number ?? "");
       setDate(preview.first.invoice_date ?? "");
       setDue(preview.first.due_date ?? "");
@@ -306,7 +328,7 @@ export function InvoiceReviewDialog({
       setExpenses(
         expensesFromLinesOrExtract(preview.first.lines, preview.first.tax, preview.first),
       );
-      setExtraBills(allowExtras ? preview.extras : []);
+      void allowExtras;
     };
 
     const existingOcr = media.data.ocr_text;
@@ -355,6 +377,8 @@ export function InvoiceReviewDialog({
     accountRules,
     extractExamples,
     photoSrc,
+    qbConnections,
+    qbVendors,
   ]);
 
   const totals = useMemo(
@@ -364,7 +388,9 @@ export function InvoiceReviewDialog({
 
   if (!invoice) return null;
 
-  const displaySrc = photoSrc ?? media.data?.image_data;
+  const pageImages = composeInvoicePageImages(media.data, pagesQuery.data ?? []);
+  const currentPage = pageImages[pageIndex] ?? pageImages[0];
+  const displaySrc = currentPage?.image_data ?? photoSrc ?? media.data?.image_data;
 
   const persist = async (status: "reviewed" | "exported", exportedAt?: string) => {
     setError(null);
@@ -375,7 +401,7 @@ export function InvoiceReviewDialog({
         expenses,
         restaurant_id: restaurantId || null,
         supplier_id: supplierId || null,
-        vendor_name: vendorName || null,
+        vendor_name: qbVendorName || vendorName || null,
         invoice_number: number,
         invoice_date: date,
         due_date: due,
@@ -387,36 +413,6 @@ export function InvoiceReviewDialog({
         exported_at: exportedAt ?? null,
         ...(ocrText !== null ? { ocr_text: ocrText } : {}),
       });
-      if (extraBills.length > 0) {
-        const image = photoSrc ?? media.data?.image_data ?? invoice.image_data;
-        const mime = media.data?.image_mime ?? invoice.image_mime;
-        for (const bill of extraBills) {
-          await create.mutateAsync({
-            source: invoice.source,
-            image_data: image,
-            image_mime: mime,
-            ocr_text: ocrText,
-            caption: invoice.caption ?? undefined,
-            whatsapp_from: invoice.whatsapp_from ?? undefined,
-            whatsapp_group: invoice.whatsapp_group ?? undefined,
-            restaurant_id: restaurantId || invoice.restaurant_id,
-            vendor_name: bill.vendor_name,
-            supplier_id: bill.supplier_id,
-            invoice_number: bill.invoice_number,
-            invoice_date: bill.invoice_date,
-            due_date: bill.due_date,
-            terms: bill.terms,
-            subtotal: bill.subtotal,
-            tax: bill.tax,
-            total: bill.total,
-            ap_account: invoice.ap_account || ACCOUNTS.ap,
-            status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
-            lines: bill.lines,
-            expenses: bill.expenses,
-          });
-        }
-        setExtraBills([]);
-      }
     } catch (err) {
       setError(toThrownError(err, "Could not save invoice").message);
       throw err;
@@ -424,6 +420,7 @@ export function InvoiceReviewDialog({
   };
 
   const vendor =
+    qbVendorName.trim() ||
     suppliers.find((s) => s.id === supplierId)?.name ??
     invoice.suppliers?.name ??
     invoice.vendor_name ??
@@ -526,7 +523,60 @@ export function InvoiceReviewDialog({
               open={lightboxOpen}
               src={displaySrc}
               onClose={() => setLightboxOpen(false)}
+              pageLabel={pageImages.length > 1 ? `Page ${pageIndex + 1} / ${pageImages.length}` : null}
+              onPrevPage={
+                pageImages.length > 1
+                  ? () => setPageIndex((index) => (index - 1 + pageImages.length) % pageImages.length)
+                  : undefined
+              }
+              onNextPage={
+                pageImages.length > 1
+                  ? () => setPageIndex((index) => (index + 1) % pageImages.length)
+                  : undefined
+              }
             />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                ref={addPageInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file || !invoice) return;
+                  void (async () => {
+                    try {
+                      assertInvoiceImage(file);
+                      const { data, mime } = await fileToDataUrl(file);
+                      await addPage.mutateAsync({
+                        orgId: invoice.org_id,
+                        invoiceId: invoice.id,
+                        sortOrder: nextInvoicePageSortOrder(pagesQuery.data ?? []),
+                        image_data: data,
+                        image_mime: mime,
+                      });
+                      setPageIndex(pageImages.length);
+                    } catch (err) {
+                      setError(toThrownError(err, "Could not add page").message);
+                    }
+                  })();
+                }}
+              />
+              <Button
+                variant="outline"
+                type="button"
+                disabled={addPage.isPending || save.isPending}
+                onClick={() => addPageInput.current?.click()}
+              >
+                Add page
+              </Button>
+              {pageImages.length > 1 ? (
+                <p className="text-xs text-muted">
+                  Page {pageIndex + 1} of {pageImages.length}
+                </p>
+              ) : null}
+            </div>
           </>
         ) : (
           <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
@@ -544,12 +594,31 @@ export function InvoiceReviewDialog({
               ))}
             </Select>
           </Field>
-          <Field label="QuickBooks vendor" htmlFor="inv-sup">
-            <Select id="inv-sup" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+          <Field label="QuickBooks vendor" htmlFor="inv-qb-vendor">
+            <Select
+              id="inv-qb-vendor"
+              value={qbVendorName}
+              onChange={(e) => {
+                const name = e.target.value;
+                setQbVendorName(name);
+                const supplier = suppliers.find((row) => row.name === name);
+                if (supplier) setSupplierId(supplier.id);
+              }}
+            >
               <option value="">Select vendor</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
+              {Array.from(
+                new Set([
+                  ...vendorOptions,
+                  ...vendorsForConnection(
+                    connectionIdForInvoiceVendors(restaurantId || null, qbConnections),
+                    qbVendors,
+                  ).map((row) => row.full_name),
+                  ...suppliers.map((row) => row.name),
+                  ...(qbVendorName ? [qbVendorName] : []),
+                ]),
+              ).map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </Select>
@@ -744,10 +813,9 @@ export function InvoiceReviewDialog({
       ) : (
         <>
           {ocrNote ? <p className="mt-3 text-sm text-muted">{ocrNote}</p> : null}
-          {extraBills.length > 0 ? (
+          {vendorOptions.length > 1 && !qbVendorName ? (
             <p className="mt-3 text-sm text-muted">
-              This photo has {extraBills.length} more bill{extraBills.length === 1 ? "" : "s"}. Saving
-              review creates those extra rows without reusing the WhatsApp message id.
+              Mixed food and liquor — pick the QuickBooks vendor ({vendorOptions.join(" or ")}).
             </p>
           ) : null}
         </>
@@ -772,7 +840,7 @@ export function InvoiceReviewDialog({
         <Button
           variant="danger"
           className="mr-auto"
-          disabled={save.isPending || create.isPending || remove.isPending || ocrBusy || qbBusy}
+          disabled={save.isPending || addPage.isPending || remove.isPending || ocrBusy || qbBusy}
           onClick={() => {
             const vendor = vendorName || invoice.suppliers?.name || invoice.vendor_name;
             const detail = [vendor, number || invoice.invoice_number].filter(Boolean).join(" · ");
@@ -794,28 +862,28 @@ export function InvoiceReviewDialog({
         </Button>
         <Button
           variant="ghost"
-          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
+          disabled={save.isPending || addPage.isPending || ocrBusy || qbBusy}
           onClick={() => void persist("reviewed")}
         >
           Save review
         </Button>
         <Button
           variant="ghost"
-          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
+          disabled={save.isPending || addPage.isPending || ocrBusy || qbBusy}
           onClick={() => void exportCsv()}
         >
           Export CSV
         </Button>
         <Button
           variant="ghost"
-          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
+          disabled={save.isPending || addPage.isPending || ocrBusy || qbBusy}
           onClick={() => void exportIif()}
         >
           Export Desktop IIF
         </Button>
         <Button
           disabled={
-            save.isPending || create.isPending || ocrBusy || qbBusy || !canSendToQb || qbLocked
+            save.isPending || addPage.isPending || ocrBusy || qbBusy || !canSendToQb || qbLocked
           }
           onClick={() => void sendToQuickBooks()}
         >

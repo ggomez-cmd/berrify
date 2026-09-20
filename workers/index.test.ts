@@ -268,6 +268,9 @@ function mockIngestFetch(options?: { alreadyExists?: boolean; insertStatus?: num
         { restaurant_id: "r-semilla", match_kind: "caption", match_text: "semilla" },
       ]);
     }
+    if (url.includes("/rest/v1/quickbooks_vendors") && method === "GET") {
+      return Response.json([]);
+    }
     if (url.includes("/rest/v1/invoices") && method === "GET") {
       return Response.json(options?.alreadyExists ? [{ id: "inv-1" }] : []);
     }

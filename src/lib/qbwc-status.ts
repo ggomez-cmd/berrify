@@ -1,4 +1,4 @@
-import type { QbwcUiStatus, QuickbooksDesktopConnection, QuickbooksSyncJob } from "./types";
+import type { QbwcUiStatus, QuickbooksDesktopConnection, QuickbooksSyncJob, QuickbooksVendor } from "./types";
 
 export function qbwcUiStatus(
   connection: QuickbooksDesktopConnection | null | undefined,
@@ -56,6 +56,32 @@ export function invoiceQbJobLabel(job: QuickbooksSyncJob, txnId?: string | null)
       return exhaustive;
     }
   }
+}
+
+export function vendorQueryJob(jobs: QuickbooksSyncJob[], connectionId: string): QuickbooksSyncJob | null {
+  return (
+    jobs.find(
+      (job) =>
+        job.connection_id === connectionId &&
+        job.operation === "vendor_query" &&
+        job.entity_type === "connection",
+    ) ?? null
+  );
+}
+
+export function vendorSyncSummary(
+  connectionId: string,
+  jobs: QuickbooksSyncJob[],
+  vendors: QuickbooksVendor[],
+): { synced: boolean; count: number; at: string | null } {
+  const job = vendorQueryJob(jobs, connectionId);
+  const completed = job?.status === "completed";
+  const count = vendors.filter((row) => row.connection_id === connectionId && row.is_active).length;
+  return {
+    synced: Boolean(completed),
+    count: completed ? count : 0,
+    at: completed ? job?.updated_at ?? null : null,
+  };
 }
 
 export function qbwcStatusLabel(status: QbwcUiStatus): string {

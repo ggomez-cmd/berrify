@@ -14,7 +14,9 @@ import {
   type AccountRule,
   type VendorAlias,
 } from "../../lib/invoice-extract";
+import { invoicesToPersistFromPhoto } from "../../lib/invoice-pages";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
+import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
@@ -24,7 +26,7 @@ import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
 import { invoiceBillJob, invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
-import { useQuickbooksJobs } from "../quickbooks/hooks";
+import { useQuickbooksConnections, useQuickbooksJobs, useQuickbooksVendors } from "../quickbooks/hooks";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
@@ -85,6 +87,8 @@ export function InvoicesPage() {
   const { role } = useAuth();
   const { data: invoices = [], isLoading, error, refetch: refetchInvoices } = useInvoices();
   const { data: qbJobs = [], refetch: refetchQbJobs } = useQuickbooksJobs();
+  const { data: qbConnections = [] } = useQuickbooksConnections();
+  const { data: qbVendors = [] } = useQuickbooksVendors();
   const { data: suppliers = [] } = useSuppliers();
   const { data: restaurants = [] } = useRestaurants();
   const { data: restaurantAliases = [] } = useRestaurantAliases();
@@ -166,7 +170,18 @@ export function InvoicesPage() {
         }),
       });
       const ids: string[] = [];
-      for (const bill of extracted) {
+      for (const bill of invoicesToPersistFromPhoto(extracted)) {
+        const match = matchQbVendor({
+          printName: bill.vendor_name,
+          ocrText,
+          lines: bill.lines,
+          vendors: vendorsForConnection(
+            connectionIdForInvoiceVendors(route?.restaurant.id ?? null, qbConnections),
+            qbVendors,
+          ),
+          aliases: vendorAliases,
+        });
+        const mixed = match.reason === "mixed" || match.reason === "unclear";
         const id = await create.mutateAsync({
           source,
           image_data: data,
@@ -174,8 +189,8 @@ export function InvoicesPage() {
           ocr_text: ocr.text,
           caption,
           restaurant_id: route?.restaurant.id ?? null,
-          vendor_name: bill.vendor_name,
-          supplier_id: bill.supplier_id,
+          vendor_name: mixed ? null : (match.fullName ?? bill.vendor_name),
+          supplier_id: mixed ? null : bill.supplier_id,
           invoice_number: bill.invoice_number,
           invoice_date: bill.invoice_date,
           due_date: bill.due_date,

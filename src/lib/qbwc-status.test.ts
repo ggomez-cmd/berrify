@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { invoiceBillJob, invoiceQbJobLabel, qbwcStatusLabel, qbwcUiStatus } from "./qbwc-status";
+import { invoiceBillJob, invoiceQbJobLabel, qbwcStatusLabel, qbwcUiStatus, vendorSyncSummary } from "./qbwc-status";
 import type { QuickbooksDesktopConnection, QuickbooksSyncJob } from "./types";
 
 function connection(overrides: Partial<QuickbooksDesktopConnection> = {}): QuickbooksDesktopConnection {
@@ -70,6 +70,31 @@ describe("qbwcUiStatus", () => {
 
   it("is error when last_error is set", () => {
     expect(qbwcUiStatus(connection({ last_error: "status 3120" }))).toBe("error");
+  });
+});
+
+describe("vendor sync summary", () => {
+  it("does not claim vendors synced until vendor_query completed", () => {
+    const vendors = [
+      {
+        id: "v1",
+        org_id: "org-1",
+        connection_id: "c1",
+        list_id: "1",
+        full_name: "Local Farm",
+        company_name: null,
+        is_active: true,
+        created_at: "2026-09-20T00:00:00.000Z",
+        updated_at: "2026-09-20T00:00:00.000Z",
+      },
+    ];
+    expect(vendorSyncSummary("c1", [], vendors).synced).toBe(false);
+    expect(vendorSyncSummary("c1", [job({ operation: "vendor_query", status: "pending" })], vendors).synced).toBe(
+      false,
+    );
+    expect(
+      vendorSyncSummary("c1", [job({ operation: "vendor_query", status: "completed" })], vendors),
+    ).toMatchObject({ synced: true, count: 1 });
   });
 });
 

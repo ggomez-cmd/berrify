@@ -15,6 +15,7 @@ import type {
   InvoiceExpenseLine,
   InvoiceLine,
   InvoiceExtractExampleRow,
+  InvoicePage,
   InvoiceSkuAliasRow,
   InvoiceSource,
   InvoiceStatus,
@@ -50,6 +51,47 @@ export function useInvoices() {
           ocr_text: null,
         }),
       );
+    },
+  });
+}
+
+export function useInvoicePages(invoiceId: string | null) {
+  return useQuery({
+    queryKey: ["invoice_pages", invoiceId],
+    enabled: Boolean(invoiceId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoice_pages")
+        .select("id, org_id, invoice_id, sort_order, image_data, image_mime, created_at")
+        .eq("invoice_id", invoiceId!)
+        .order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as InvoicePage[];
+    },
+  });
+}
+
+export function useAddInvoicePage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      orgId: string;
+      invoiceId: string;
+      sortOrder: number;
+      image_data: string;
+      image_mime: string;
+    }) => {
+      const { error } = await supabase.from("invoice_pages").insert({
+        org_id: input.orgId,
+        invoice_id: input.invoiceId,
+        sort_order: input.sortOrder,
+        image_data: input.image_data,
+        image_mime: input.image_mime,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_data, input) => {
+      void qc.invalidateQueries({ queryKey: ["invoice_pages", input.invoiceId] });
     },
   });
 }

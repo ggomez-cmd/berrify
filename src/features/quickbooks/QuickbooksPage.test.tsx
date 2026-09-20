@@ -61,6 +61,7 @@ vi.mock("./hooks", () => ({
     refetch: vi.fn(),
   }),
   useQuickbooksJobs: () => ({ data: [], refetch: vi.fn() }),
+  useQuickbooksVendors: () => ({ data: [], refetch: vi.fn() }),
 }));
 
 function renderPage(role: AuthState["role"] = "admin") {

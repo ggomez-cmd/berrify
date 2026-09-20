@@ -53,6 +53,16 @@ export function xmlText(xml: string, tag: string): string | null {
   return text.length > 0 ? text : null;
 }
 
+export function xmlBlocks(xml: string, tag: string): string[] {
+  const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "gi");
+  const blocks: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(xml))) {
+    blocks.push(match[0]);
+  }
+  return blocks;
+}
+
 export function xmlAttr(xml: string, tag: string, attr: string): string | null {
   const open = new RegExp(`<${tag}\\b([^>]*)>`, "i").exec(xml);
   if (!open) return null;
@@ -194,6 +204,53 @@ export function buildBillAddRq(input: BillAddFields): string {
     `  </QBXMLMsgsRq>`,
     `</QBXML>`,
   ].join("\n");
+}
+
+export type VendorQueryRow = {
+  listId: string;
+  fullName: string;
+  companyName: string | null;
+  isActive: boolean;
+};
+
+export type VendorQueryResult = ParsedQbStatus & {
+  vendors: VendorQueryRow[];
+};
+
+export function buildVendorQueryRq(): string {
+  return [
+    `<?xml version="1.0"?>`,
+    `<?qbxml version="${QBXML_VERSION}"?>`,
+    `<QBXML>`,
+    `  <QBXMLMsgsRq onError="stopOnError">`,
+    `    <VendorQueryRq>`,
+    `      <ActiveStatus>All</ActiveStatus>`,
+    `    </VendorQueryRq>`,
+    `  </QBXMLMsgsRq>`,
+    `</QBXML>`,
+  ].join("\n");
+}
+
+function parseIsActive(value: string | null): boolean {
+  if (!value) return true;
+  return !/^(false|0|n)$/i.test(value.trim());
+}
+
+export function parseVendorQueryRs(xml: string): VendorQueryResult {
+  const status = parseQbStatus(xml, "VendorQueryRs");
+  const vendors: VendorQueryRow[] = [];
+  for (const block of xmlBlocks(xml, "VendorRet")) {
+    const listId = xmlText(block, "ListID");
+    const fullName = xmlText(block, "FullName") ?? xmlText(block, "Name");
+    if (!listId || !fullName) continue;
+    vendors.push({
+      listId,
+      fullName,
+      companyName: xmlText(block, "CompanyName"),
+      isActive: parseIsActive(xmlText(block, "IsActive")),
+    });
+  }
+  return { ...status, vendors };
 }
 
 export function parseBillAddRs(xml: string): BillAddResult {

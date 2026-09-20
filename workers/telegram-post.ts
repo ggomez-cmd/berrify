@@ -19,7 +19,10 @@ import { consumeEmptyPhotoPending, markEmptyPhotoPending } from "../src/lib/empt
 import { boundFetch } from "./bound-fetch";
 import { downloadTelegramFile } from "../src/lib/telegram-media";
 import { assertTelegramMethodOk } from "../src/lib/telegram-api";
+import { nextInvoicePageSortOrder } from "../src/lib/invoice-pages";
+import { guessVendorFullNameFromText } from "../src/lib/qb-vendor-match";
 import { buildTelegramInvoiceInsert } from "../src/lib/telegram-invoice";
+import { pickTelegramAttachCandidate } from "../src/lib/telegram-page-attach";
 import type { Restaurant, RestaurantAlias } from "../src/lib/restaurant-route";
 import { matchRestaurant } from "../src/lib/restaurant-route";
 import {
@@ -177,6 +180,41 @@ async function alreadyIngested(
   return rows.length > 0;
 }
 
+async function attachInvoicePage(
+  url: string,
+  serviceRole: string,
+  orgId: string,
+  invoiceId: string,
+  imageData: string,
+  imageMime: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const pages = await restGet<Array<{ sort_order: number }>>(
+    url,
+    serviceRole,
+    `invoice_pages?invoice_id=eq.${encodeURIComponent(invoiceId)}&select=sort_order`,
+    fetchImpl,
+  );
+  const response = await restSend(
+    url,
+    serviceRole,
+    "invoice_pages",
+    "POST",
+    {
+      org_id: orgId,
+      invoice_id: invoiceId,
+      sort_order: nextInvoicePageSortOrder(pages),
+      image_data: imageData,
+      image_mime: imageMime,
+    },
+    fetchImpl,
+  );
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Could not attach invoice page (${response.status}): ${detail}`);
+  }
+}
+
 async function insertInvoice(
   url: string,
   serviceRole: string,
@@ -209,7 +247,7 @@ async function ingestOne(
   >,
   routing: { restaurants: Restaurant[]; aliases: RestaurantAlias[] },
   fetchImpl: typeof fetch,
-): Promise<"inserted" | "duplicate"> {
+): Promise<"inserted" | "duplicate" | "attached"> {
   if (
     await alreadyIngested(
       env.NEXT_PUBLIC_SUPABASE_URL,
@@ -222,11 +260,53 @@ async function ingestOne(
     return "duplicate";
   }
   const media = await downloadTelegramFile(inbound.fileId, env.TELEGRAM_BOT_TOKEN, fetchImpl);
+  const recent = await restGet<
+    Array<{
+      id: string;
+      vendor_name: string | null;
+      invoice_number: string | null;
+      created_at: string;
+      telegram_message_id: string | null;
+      telegram_media_group_id: string | null;
+    }>
+  >(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.SUPABASE_SERVICE_ROLE_KEY,
+    `invoices?org_id=eq.${encodeURIComponent(env.TELEGRAM_ORG_ID)}&source=eq.telegram&select=id,vendor_name,invoice_number,created_at,telegram_message_id,telegram_media_group_id&order=created_at.desc&limit=20`,
+    fetchImpl,
+  );
+  const vendors = await restGet<Array<{ connection_id: string; list_id: string; full_name: string; is_active: boolean }>>(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.SUPABASE_SERVICE_ROLE_KEY,
+    `quickbooks_vendors?org_id=eq.${encodeURIComponent(env.TELEGRAM_ORG_ID)}&is_active=eq.true&select=connection_id,list_id,full_name,is_active`,
+    fetchImpl,
+  );
+  const incomingVendor = guessVendorFullNameFromText(inbound.caption, vendors);
+  const attach = pickTelegramAttachCandidate({
+    mediaGroupId: inbound.mediaGroupId,
+    caption: inbound.caption,
+    chatId: inbound.messageId.split(":")[0] ?? "",
+    invoices: recent,
+    incomingVendorFullName: incomingVendor,
+  });
+  if (attach) {
+    await attachInvoicePage(
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      env.SUPABASE_SERVICE_ROLE_KEY,
+      env.TELEGRAM_ORG_ID,
+      attach.id,
+      media.dataUrl,
+      media.mimeType,
+      fetchImpl,
+    );
+    return "attached";
+  }
   const row = buildTelegramInvoiceInsert({
     orgId: env.TELEGRAM_ORG_ID,
     from: inbound.from,
     caption: inbound.caption,
     messageId: inbound.messageId,
+    mediaGroupId: inbound.mediaGroupId,
     imageData: media.dataUrl,
     imageMime: media.mimeType,
     restaurants: routing.restaurants,
@@ -1008,7 +1088,7 @@ export async function handleTelegramPost(
       const errors: string[] = [];
       try {
         const result = await ingestOne(update.image, configured, routing, fetchImpl);
-        if (result === "inserted") ingested += 1;
+        if (result === "inserted" || result === "attached") ingested += 1;
         else skipped += 1;
       } catch (err) {
         skipped += 1;

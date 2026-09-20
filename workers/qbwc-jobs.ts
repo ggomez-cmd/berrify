@@ -4,10 +4,12 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
-import { buildCompanyQueryRq } from "./qbxml";
+import { buildCompanyQueryRq, buildVendorQueryRq } from "./qbxml";
 
 export const COMPANY_QUERY_OPERATION = "company_query";
 export const COMPANY_QUERY_ENTITY_TYPE = "connection";
+export const VENDOR_QUERY_OPERATION = "vendor_query";
+export const VENDOR_QUERY_ENTITY_TYPE = "connection";
 export const BILL_ADD_OPERATION = "bill_add";
 export const BILL_ADD_ENTITY_TYPE = "invoice";
 
@@ -46,6 +48,18 @@ export function shouldEnqueueCompanyQuery(connection: Pick<QbwcConnectionRow, "l
   return !connection.last_connected_at;
 }
 
+export function vendorQueryJobKey(connectionId: string): {
+  operation: typeof VENDOR_QUERY_OPERATION;
+  entity_type: typeof VENDOR_QUERY_ENTITY_TYPE;
+  entity_id: string;
+} {
+  return {
+    operation: VENDOR_QUERY_OPERATION,
+    entity_type: VENDOR_QUERY_ENTITY_TYPE,
+    entity_id: connectionId,
+  };
+}
+
 export function billAddJobKey(invoiceId: string): {
   operation: typeof BILL_ADD_OPERATION;
   entity_type: typeof BILL_ADD_ENTITY_TYPE;
@@ -61,6 +75,7 @@ export function billAddJobKey(invoiceId: string): {
 export function qbxmlRequestForClaim(job: Pick<QbwcJobRow, "operation" | "qbxml_request">): string | null {
   if (job.qbxml_request) return job.qbxml_request;
   if (job.operation === COMPANY_QUERY_OPERATION) return buildCompanyQueryRq();
+  if (job.operation === VENDOR_QUERY_OPERATION) return buildVendorQueryRq();
   return null;
 }
 
@@ -100,6 +115,61 @@ export async function enqueueCompanyQueryJob(
         entity_type: key.entity_type,
         entity_id: key.entity_id,
         qbxml_request: buildCompanyQueryRq(),
+      }),
+    },
+  );
+  if (response.status === 409) return "duplicate";
+  if (!response.ok) return "error";
+  return "inserted";
+}
+
+export async function enqueueVendorQueryJob(
+  env: QbwcRestEnv,
+  connection: Pick<QbwcConnectionRow, "id" | "org_id">,
+  fetchImpl: typeof fetch,
+  options: { refresh?: boolean } = {},
+): Promise<"inserted" | "duplicate" | "retried" | "error"> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return "error";
+  const key = vendorQueryJobKey(connection.id);
+  const existing = await loadJobByKey(env, connection.id, key, fetchImpl);
+  if (existing?.status === "pending" || existing?.status === "sending") {
+    return "duplicate";
+  }
+  if (existing && (existing.status === "failed" || (options.refresh && existing.status === "completed"))) {
+    const reset = await fetchImpl(
+      restUrl(supabaseUrl, `quickbooks_sync_jobs?id=eq.${encodeURIComponent(existing.id)}`),
+      {
+        method: "PATCH",
+        headers: { ...supabaseHeaders(serviceRole), Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status: "pending",
+          error_code: null,
+          error_message: null,
+          qbxml_request: buildVendorQueryRq(),
+          qbxml_response: null,
+        }),
+      },
+    );
+    return reset.ok ? "retried" : "error";
+  }
+  const response = await fetchImpl(
+    restUrl(supabaseUrl, "quickbooks_sync_jobs?on_conflict=connection_id,entity_type,entity_id,operation"),
+    {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(serviceRole),
+        Prefer: "return=minimal,resolution=ignore-duplicates",
+      },
+      body: JSON.stringify({
+        org_id: connection.org_id,
+        connection_id: connection.id,
+        status: "pending",
+        operation: key.operation,
+        entity_type: key.entity_type,
+        entity_id: key.entity_id,
+        qbxml_request: buildVendorQueryRq(),
       }),
     },
   );
