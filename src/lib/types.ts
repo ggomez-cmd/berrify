@@ -317,6 +317,19 @@ export type QuickbooksVendor = {
   updated_at: string;
 };
 
+export type QuickbooksAccount = {
+  id: string;
+  org_id: string;
+  connection_id: string;
+  list_id: string;
+  full_name: string;
+  account_number: string | null;
+  account_type: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type InvoiceWithSupplier = Invoice & {
   suppliers: Pick<Supplier, "id" | "name"> | null;
   restaurants: Pick<Restaurant, "id" | "name" | "qbo_company_name" | "slug"> | null;

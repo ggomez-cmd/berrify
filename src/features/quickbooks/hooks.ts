@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
-import type { QuickbooksDesktopConnection, QuickbooksSyncJob, QuickbooksVendor } from "../../lib/types";
+import type {
+  QuickbooksAccount,
+  QuickbooksDesktopConnection,
+  QuickbooksSyncJob,
+  QuickbooksVendor,
+} from "../../lib/types";
 
 const CONNECTION_SELECT =
   "id, org_id, restaurant_id, name, qb_username, owner_id, file_id, company_file, qb_company_name, qb_product_name, qb_major_version, qb_minor_version, is_active, last_connected_at, last_successful_sync_at, last_error, created_at, updated_at";
@@ -37,6 +42,25 @@ export function useQuickbooksVendors() {
         .order("full_name");
       if (error) throw error;
       return (data ?? []) as QuickbooksVendor[];
+    },
+  });
+}
+
+export function useQuickbooksAccounts() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["quickbooks_accounts", org?.id],
+    enabled: Boolean(org?.id) && isManager(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("quickbooks_accounts")
+        .select(
+          "id, org_id, connection_id, list_id, full_name, account_number, account_type, is_active, created_at, updated_at",
+        )
+        .eq("org_id", org!.id)
+        .order("full_name");
+      if (error) throw error;
+      return (data ?? []) as QuickbooksAccount[];
     },
   });
 }

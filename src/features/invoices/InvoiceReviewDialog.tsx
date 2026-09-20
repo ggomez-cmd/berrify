@@ -21,6 +21,12 @@ import { formatMoney } from "../../lib/format";
 import { assertInvoiceImage, toRasterDataUrl } from "../../lib/invoice-image";
 import { composeInvoicePageImages, invoicesToPersistFromPhoto, nextInvoicePageSortOrder } from "../../lib/invoice-pages";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
+import {
+  accountsForConnection,
+  applyQbAccountNames,
+  connectionIdForInvoiceAccounts,
+  matchQbApAccount,
+} from "../../lib/qb-account-match";
 import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
 import { toThrownError } from "../../lib/thrown-error";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
@@ -39,7 +45,7 @@ import type {
 import { sendInvoiceToQuickBooks } from "../../lib/qbwc-manager-api";
 import { invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { QuickbooksSyncJob } from "../../lib/types";
-import { useQuickbooksConnections, useQuickbooksVendors } from "../quickbooks/hooks";
+import { useQuickbooksAccounts, useQuickbooksConnections, useQuickbooksVendors } from "../quickbooks/hooks";
 import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
 import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
@@ -185,6 +191,7 @@ export function InvoiceReviewDialog({
   const pagesQuery = useInvoicePages(open && invoice ? invoice.id : null);
   const { data: qbConnections = [] } = useQuickbooksConnections();
   const { data: qbVendors = [] } = useQuickbooksVendors();
+  const { data: qbAccounts = [] } = useQuickbooksAccounts();
   const ocrStartedFor = useRef<string | null>(null);
   const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -306,6 +313,10 @@ export function InvoiceReviewDialog({
       );
       if (!preview.first) return;
       const connectionId = connectionIdForInvoiceVendors(preview.restaurantId, qbConnections);
+      const scopedAccounts = accountsForConnection(
+        connectionIdForInvoiceAccounts(preview.restaurantId, qbConnections),
+        qbAccounts,
+      );
       const match = matchQbVendor({
         printName: preview.first.vendor_name,
         ocrText: text,
@@ -326,7 +337,10 @@ export function InvoiceReviewDialog({
       setLines(preview.first.lines);
       setExtractTotal(preview.first.total);
       setExpenses(
-        expensesFromLinesOrExtract(preview.first.lines, preview.first.tax, preview.first),
+        applyQbAccountNames(
+          expensesFromLinesOrExtract(preview.first.lines, preview.first.tax, preview.first),
+          scopedAccounts,
+        ),
       );
       void allowExtras;
     };
@@ -379,6 +393,7 @@ export function InvoiceReviewDialog({
     photoSrc,
     qbConnections,
     qbVendors,
+    qbAccounts,
   ]);
 
   const totals = useMemo(
@@ -432,7 +447,10 @@ export function InvoiceReviewDialog({
     invoiceDate: date || new Date().toISOString().slice(0, 10),
     dueDate: due || date || new Date().toISOString().slice(0, 10),
     terms,
-    apAccount: invoice.ap_account || ACCOUNTS.ap,
+    apAccount: matchQbApAccount(
+      accountsForConnection(connectionIdForInvoiceAccounts(restaurantId || null, qbConnections), qbAccounts),
+      invoice.ap_account || ACCOUNTS.ap,
+    ),
     expenses,
     total: totals.total,
   };
@@ -740,7 +758,13 @@ export function InvoiceReviewDialog({
               variant="subtle"
               onClick={() =>
                 setExpenses(
-                  expensesFromLinesOrExtract(lines, tax, { total: extractTotal, expenses: [] }),
+                  applyQbAccountNames(
+                    expensesFromLinesOrExtract(lines, tax, { total: extractTotal, expenses: [] }),
+                    accountsForConnection(
+                      connectionIdForInvoiceAccounts(restaurantId || null, qbConnections),
+                      qbAccounts,
+                    ),
+                  ),
                 )
               }
             >

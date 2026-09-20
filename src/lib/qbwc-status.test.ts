@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { invoiceBillJob, invoiceQbJobLabel, qbwcStatusLabel, qbwcUiStatus, vendorSyncSummary } from "./qbwc-status";
+import {
+  accountSyncSummary,
+  invoiceBillJob,
+  invoiceQbJobLabel,
+  qbwcStatusLabel,
+  qbwcUiStatus,
+  vendorSyncSummary,
+} from "./qbwc-status";
 import type { QuickbooksDesktopConnection, QuickbooksSyncJob } from "./types";
 
 function connection(overrides: Partial<QuickbooksDesktopConnection> = {}): QuickbooksDesktopConnection {
@@ -94,6 +101,32 @@ describe("vendor sync summary", () => {
     );
     expect(
       vendorSyncSummary("c1", [job({ operation: "vendor_query", status: "completed" })], vendors),
+    ).toMatchObject({ synced: true, count: 1 });
+  });
+});
+
+describe("account sync summary", () => {
+  it("does not claim accounts synced until account_query completed", () => {
+    const accounts = [
+      {
+        id: "a1",
+        org_id: "org-1",
+        connection_id: "c1",
+        list_id: "1",
+        full_name: "SalesTaxExpense",
+        account_number: "68200",
+        account_type: "Expense",
+        is_active: true,
+        created_at: "2026-09-20T00:00:00.000Z",
+        updated_at: "2026-09-20T00:00:00.000Z",
+      },
+    ];
+    expect(accountSyncSummary("c1", [], accounts).synced).toBe(false);
+    expect(
+      accountSyncSummary("c1", [job({ operation: "account_query", status: "pending" })], accounts).synced,
+    ).toBe(false);
+    expect(
+      accountSyncSummary("c1", [job({ operation: "account_query", status: "completed" })], accounts),
     ).toMatchObject({ synced: true, count: 1 });
   });
 });

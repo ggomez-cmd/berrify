@@ -23,10 +23,11 @@ page still works. Berrify does **not** auto-enqueue Bills.
 9. Check the Berrify row and click **Update Selected**.
 10. In Berrify, the card should move from **Waiting for QuickBooks** to
     **Connected** after the company query succeeds. The first Connected sync
-    also queues a `vendor_query`. Click **Refresh vendors** any time after
-    Connected, then **Update Selected** again. Do not treat vendors as synced
-    until that VendorQuery finishes. Then you may turn on Auto-Run in QBWC if
-    you want periodic polls.
+    also queues a `vendor_query` and an `account_query`. Click **Refresh
+    vendors** or **Refresh accounts** any time after Connected, then **Update
+    Selected** again. Do not treat vendors or accounts as synced until that
+    VendorQuery / AccountQuery finishes. Then you may turn on Auto-Run in QBWC
+    if you want periodic polls.
 
 Scheduler minutes are included in a new `.qwc` download only after the first
 successful company query. Re-download does not change OwnerID or FileID.
@@ -49,6 +50,14 @@ Berrify matches the letterhead to that company file’s vendor **FullName**
 beverage SKUs pick `(liquor)`. Mixed food + liquor is left unset on Review so
 you pick the FullName. If the QB vendor list is empty, `vendor_aliases` is the
 fallback. BillAdd / IIF use the exact FullName.
+
+Expense rollup on extract and **Recalc rollup** maps SKU categories onto that
+company file’s accounts (never Kane’s list for Semilla): tax → SalesTax /
+68200-style, wine / liquor / beer → WinePurchase / beverage COGS, food /
+kitchen → food or kitchen expense, cleaning → cleaning/supplies when present.
+The stored expense account is the QuickBooks FullName, or `number · name` when
+that is how the company file labels the account. If nothing matches,
+`account_rules` and the current defaults stay. Review remains editable.
 
 One photo is one invoice. Two letterheads in one shot stay on one row — pick
 the vendor on Review (photograph separately for two Bills). Extra pages attach
@@ -105,8 +114,10 @@ own connector (or the org shared file) is Connected.
 
 - No automatic Bills. A manager must click **Send to QuickBooks**.
 - No `VendorAddRq`. Vendor names must already exist in that company file.
-- A **Connected** company query is not proof that vendors synced. Treat the
-  vendor list as current only after Web Connector completes a `vendor_query`.
+- A **Connected** company query is not proof that vendors or accounts synced.
+  Treat the vendor list as current only after Web Connector completes a
+  `vendor_query`. Treat the account list as current only after Web Connector
+  completes an `account_query`.
 - A **Connected** company query is not proof that a Bill landed. Treat a Bill
   as posted only after Web Connector completes a `bill_add` job and the invoice
   shows **Synced** with a `TxnID`.

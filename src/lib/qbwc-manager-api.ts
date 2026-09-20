@@ -136,6 +136,28 @@ export async function refreshQbwcVendors(
   }
 }
 
+export async function refreshQbwcAccounts(
+  connectionId: string,
+  fetchImpl: typeof fetch = fetch,
+  getAccessToken: () => Promise<string | null> = defaultAccessToken,
+): Promise<void> {
+  const headers = await authHeaders(getAccessToken);
+  const response = await fetchImpl(`/api/qbwc/connections/${encodeURIComponent(connectionId)}/accounts`, {
+    method: "POST",
+    headers,
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw new Error(readError(payload, response.status, "Could not refresh accounts"));
+  }
+}
+
 export async function sendInvoiceToQuickBooks(
   invoiceId: string,
   fetchImpl: typeof fetch = fetch,
