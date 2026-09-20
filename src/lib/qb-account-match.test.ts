@@ -8,6 +8,7 @@ import {
   connectionIdForInvoiceAccounts,
   matchQbAccount,
   qbAccountLabel,
+  resolveQbAccountRef,
 } from "./qb-account-match";
 
 const kaneTax = {
@@ -70,6 +71,32 @@ describe("QB account match", () => {
     expect(qbAccountLabel({ full_name: "68200 · SalesTaxExpense", account_number: "68200" })).toBe(
       "68200 · SalesTaxExpense",
     );
+  });
+
+  it("resolves display labels to ListID and stored FullName", () => {
+    const kanePayable = {
+      connection_id: "conn-kane",
+      list_id: "80000026-6",
+      full_name: "Sales Tax Payable",
+      account_number: "266000",
+      account_type: "OtherCurrentLiability",
+      is_active: true,
+    };
+    const wine = {
+      ...kaneWine,
+      full_name: "Wine Purchase",
+      list_id: "80000051-5",
+    };
+    expect(resolveQbAccountRef("266000 · Sales Tax Payable", [kanePayable, wine])).toEqual({
+      listId: "80000026-6",
+      fullName: "Sales Tax Payable",
+    });
+    expect(resolveQbAccountRef("51500 · Wine Purchase", [kanePayable, wine])).toEqual({
+      listId: "80000051-5",
+      fullName: "Wine Purchase",
+    });
+    expect(resolveQbAccountRef("266000 · Sales Tax Payable", []).fullName).toBe("Sales Tax Payable");
+    expect(resolveQbAccountRef("266000 · Sales Tax Payable", []).listId).toBeNull();
   });
 
   it("maps tax to the tax expense account", () => {

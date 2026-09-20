@@ -142,6 +142,26 @@ function sendFetch(options: {
       if (options.invoice === "missing") return Response.json([]);
       return Response.json(options.invoice ?? [invoiceRow()]);
     }
+    if (url.includes("quickbooks_accounts") && method === "GET") {
+      return Response.json([
+        {
+          connection_id: "conn-kane",
+          list_id: "80000012-3",
+          full_name: "Accounts Payable",
+          account_number: "20000",
+          account_type: "AccountsPayable",
+          is_active: true,
+        },
+        {
+          connection_id: "conn-kane",
+          list_id: "80000010-1",
+          full_name: "Food Purchases",
+          account_number: "50000",
+          account_type: "Expense",
+          is_active: true,
+        },
+      ]);
+    }
     if (url.includes("quickbooks_desktop_connections") && method === "GET") {
       const rows = (options.connections ?? [kaneConn]) as Array<{ restaurant_id: string | null }>;
       if (url.includes("restaurant_id=is.null")) {
@@ -255,6 +275,37 @@ describe("invoice Send to QuickBooks", () => {
     expect(response.status).toBe(200);
     expect(String(jobs[0]?.qbxml_request)).toContain("Jose Santiago Inc (food)");
     expect(String(jobs[0]?.qbxml_request)).not.toContain("<FullName>Jose Santiago</FullName>");
+  });
+
+  it("writes ListID account refs and omits invalid terms from BillAdd XML", async () => {
+    const jobs: Array<Record<string, unknown>> = [];
+    const response = await handleSendInvoice(
+      env,
+      manager,
+      "inv-1",
+      sendFetch({
+        invoice: [
+          invoiceRow({
+            vendor_name: "B. Fernández",
+            invoice_number: "01016543",
+            terms: "Net30",
+            ap_account: "20000 · Accounts payable",
+            invoice_expense_lines: [{ account: "50000 · Food Purchases", amount: 10, memo: "Food" }],
+          }),
+        ],
+        jobs,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const xml = String(jobs[0]?.qbxml_request);
+    expect(xml).toContain('<?xml version="1.0" encoding="utf-8"?>');
+    expect(xml).toContain("<FullName>B. Fernández</FullName>");
+    expect(xml).toContain("<ListID>80000012-3</ListID>");
+    expect(xml).toContain("<ListID>80000010-1</ListID>");
+    expect(xml).not.toContain("20000 ·");
+    expect(xml).not.toContain("50000 ·");
+    expect(xml).not.toContain("TermsRef");
+    expect(xml).toContain("<DueDate>2026-08-27</DueDate>");
   });
 
   it("queues vendor_query on Refresh vendors for a Connected file", async () => {

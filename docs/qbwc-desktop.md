@@ -55,8 +55,11 @@ Expense rollup on extract and **Recalc rollup** maps SKU categories onto that
 company file’s accounts (never Kane’s list for Semilla): tax → SalesTax /
 68200-style, wine / liquor / beer → WinePurchase / beverage COGS, food /
 kitchen → food or kitchen expense, cleaning → cleaning/supplies when present.
-The stored expense account is the QuickBooks FullName, or `number · name` when
-that is how the company file labels the account. If nothing matches,
+Review may show `number · name` labels. BillAdd `AccountRef` / `APAccountRef`
+use the company file **ListID** when `quickbooks_accounts` has it, otherwise
+the stored **FullName** column — never the middle-dot display string. `TermsRef`
+is sent only when terms match an exact QuickBooks name (`Net 15`, `Net 30`);
+`Net30` is omitted and `DueDate` is kept. If nothing matches,
 `account_rules` and the current defaults stay. Review remains editable.
 
 One photo is one invoice. Two letterheads in one shot stay on one row — pick
