@@ -80,16 +80,22 @@ export function parseQbStatus(xml: string, responseTag: string): ParsedQbStatus 
   return { statusCode, statusSeverity, statusMessage, ok };
 }
 
-export function buildCompanyQueryRq(): string {
+export const QBXML_XML_DECLARATION = `<?xml version="1.0" encoding="utf-8"?>`;
+
+function qbxmlDocument(innerLines: string[]): string {
   return [
-    `<?xml version="1.0"?>`,
+    QBXML_XML_DECLARATION,
     `<?qbxml version="${QBXML_VERSION}"?>`,
     `<QBXML>`,
     `  <QBXMLMsgsRq onError="stopOnError">`,
-    `    <CompanyQueryRq></CompanyQueryRq>`,
+    ...innerLines,
     `  </QBXMLMsgsRq>`,
     `</QBXML>`,
   ].join("\n");
+}
+
+export function buildCompanyQueryRq(): string {
+  return qbxmlDocument([`    <CompanyQueryRq></CompanyQueryRq>`]);
 }
 
 export function parseCompanyQueryRs(xml: string): CompanyQueryResult {
@@ -119,16 +125,44 @@ export function parseHcpHostInfo(xml: string): Pick<
   };
 }
 
+export type QbListRef = {
+  listId?: string | null;
+  fullName?: string | null;
+};
+
 export type BillAddFields = {
   vendorName: string;
   refNumber: string | null;
   txnDate: string | null;
   dueDate: string | null;
   terms: string | null;
-  apAccount: string;
-  expenses: Array<{ account: string; amount: number; memo: string }>;
+  apAccount: QbListRef;
+  expenses: Array<{ account: QbListRef; amount: number; memo: string }>;
   total: number;
 };
+
+export const EXACT_QB_TERMS_NAMES = [
+  "Due on receipt",
+  "Net 10",
+  "Net 15",
+  "Net 30",
+  "Net 60",
+  "COD",
+] as const;
+
+export function exactQbTermsName(terms: string | null | undefined): string | null {
+  const value = terms?.trim() ?? "";
+  if (!value) return null;
+  return (EXACT_QB_TERMS_NAMES as readonly string[]).includes(value) ? value : null;
+}
+
+export function qbListRefXml(ref: QbListRef, indent: string): string | null {
+  const listId = ref.listId?.trim() ?? "";
+  if (listId) return `${indent}<ListID>${xmlEscape(listId)}</ListID>`;
+  const fullName = ref.fullName?.trim() ?? "";
+  if (!fullName) return null;
+  return `${indent}<FullName>${xmlEscape(fullName)}</FullName>`;
+}
 
 export type BillAddResult = ParsedQbStatus & {
   txnId: string | null;
@@ -149,16 +183,20 @@ function qbxmlAmount(amount: number): string {
 export function buildBillAddRq(input: BillAddFields): string {
   const txnDate = qbxmlDate(input.txnDate);
   const dueDate = qbxmlDate(input.dueDate);
-  const terms = input.terms?.trim() ?? "";
+  const terms = exactQbTermsName(input.terms);
   const refNumber = input.refNumber?.trim() ?? "";
   const expenses = input.expenses
-    .filter((line) => Number.isFinite(line.amount) && line.amount !== 0 && line.account.trim())
+    .filter((line) => {
+      const hasAccount = Boolean(line.account.listId?.trim() || line.account.fullName?.trim());
+      return Number.isFinite(line.amount) && line.amount !== 0 && hasAccount;
+    })
     .map((line) => {
       const memo = line.memo.trim();
+      const accountRef = qbListRefXml(line.account, "            ");
       return [
         `        <ExpenseLineAdd>`,
         `          <AccountRef>`,
-        `            <FullName>${xmlEscape(line.account.trim())}</FullName>`,
+        accountRef,
         `          </AccountRef>`,
         `          <Amount>${qbxmlAmount(line.amount)}</Amount>`,
         memo ? `          <Memo>${xmlEscape(memo)}</Memo>` : null,
@@ -167,31 +205,18 @@ export function buildBillAddRq(input: BillAddFields): string {
         .filter((row): row is string => row !== null)
         .join("\n");
     });
+  const apRef = qbListRefXml(input.apAccount, "          ");
   const optional = [
     txnDate ? `        <TxnDate>${xmlEscape(txnDate)}</TxnDate>` : null,
     refNumber ? `        <RefNumber>${xmlEscape(refNumber)}</RefNumber>` : null,
     terms
-      ? [
-          `        <TermsRef>`,
-          `          <FullName>${xmlEscape(terms)}</FullName>`,
-          `        </TermsRef>`,
-        ].join("\n")
+      ? [`        <TermsRef>`, `          <FullName>${xmlEscape(terms)}</FullName>`, `        </TermsRef>`].join("\n")
       : null,
     dueDate ? `        <DueDate>${xmlEscape(dueDate)}</DueDate>` : null,
-    input.apAccount.trim()
-      ? [
-          `        <APAccountRef>`,
-          `          <FullName>${xmlEscape(input.apAccount.trim())}</FullName>`,
-          `        </APAccountRef>`,
-        ].join("\n")
-      : null,
+    apRef ? [`        <APAccountRef>`, apRef, `        </APAccountRef>`].join("\n") : null,
   ].filter((row): row is string => row !== null);
 
-  return [
-    `<?xml version="1.0"?>`,
-    `<?qbxml version="${QBXML_VERSION}"?>`,
-    `<QBXML>`,
-    `  <QBXMLMsgsRq onError="stopOnError">`,
+  return qbxmlDocument([
     `    <BillAddRq>`,
     `      <BillAdd>`,
     `        <VendorRef>`,
@@ -201,9 +226,7 @@ export function buildBillAddRq(input: BillAddFields): string {
     ...expenses,
     `      </BillAdd>`,
     `    </BillAddRq>`,
-    `  </QBXMLMsgsRq>`,
-    `</QBXML>`,
-  ].join("\n");
+  ]);
 }
 
 export type VendorQueryRow = {
@@ -218,17 +241,11 @@ export type VendorQueryResult = ParsedQbStatus & {
 };
 
 export function buildVendorQueryRq(): string {
-  return [
-    `<?xml version="1.0"?>`,
-    `<?qbxml version="${QBXML_VERSION}"?>`,
-    `<QBXML>`,
-    `  <QBXMLMsgsRq onError="stopOnError">`,
+  return qbxmlDocument([
     `    <VendorQueryRq>`,
     `      <ActiveStatus>All</ActiveStatus>`,
     `    </VendorQueryRq>`,
-    `  </QBXMLMsgsRq>`,
-    `</QBXML>`,
-  ].join("\n");
+  ]);
 }
 
 function parseIsActive(value: string | null): boolean {
@@ -279,17 +296,11 @@ export function isKeptQbAccountType(value: string | null): value is KeptQbAccoun
 }
 
 export function buildAccountQueryRq(): string {
-  return [
-    `<?xml version="1.0"?>`,
-    `<?qbxml version="${QBXML_VERSION}"?>`,
-    `<QBXML>`,
-    `  <QBXMLMsgsRq onError="stopOnError">`,
+  return qbxmlDocument([
     `    <AccountQueryRq>`,
     `      <ActiveStatus>All</ActiveStatus>`,
     `    </AccountQueryRq>`,
-    `  </QBXMLMsgsRq>`,
-    `</QBXML>`,
-  ].join("\n");
+  ]);
 }
 
 export function parseAccountQueryRs(xml: string): AccountQueryResult {

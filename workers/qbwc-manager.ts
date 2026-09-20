@@ -13,6 +13,7 @@ import {
 import { enqueueAccountQueryJob, enqueueBillAddJob, enqueueVendorQueryJob } from "./qbwc-jobs";
 import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
 import { buildBillAddRq } from "./qbxml";
+import { resolveQbAccountRef, type QbAccountRow } from "../src/lib/qb-account-match";
 
 export type QbwcManagerEnv = QbwcRestEnv & {
   PUBLIC_APP_URL?: string;
@@ -345,6 +346,25 @@ type InvoiceSendRow = {
   invoice_expense_lines: Array<{ account: string; amount: number; memo: string | null }>;
 };
 
+async function loadConnectionAccounts(
+  env: QbwcManagerEnv,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<QbAccountRow[]> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return [];
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_accounts?connection_id=eq.${encodeURIComponent(connectionId)}&is_active=eq.true&select=connection_id,list_id,full_name,account_number,account_type,is_active`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return [];
+  return (await response.json()) as QbAccountRow[];
+}
+
 function supplierName(row: InvoiceSendRow): string | null {
   const suppliers = row.suppliers;
   if (Array.isArray(suppliers)) return suppliers[0]?.name?.trim() || null;
@@ -437,15 +457,16 @@ export async function handleSendInvoice(
       409,
     );
   }
+  const accounts = await loadConnectionAccounts(env, connection.id, fetchImpl);
   const qbxmlRequest = buildBillAddRq({
     vendorName: vendor,
     refNumber: invoice.invoice_number,
     txnDate: invoice.invoice_date,
     dueDate: invoice.due_date ?? invoice.invoice_date,
     terms: invoice.terms,
-    apAccount: invoice.ap_account,
+    apAccount: resolveQbAccountRef(invoice.ap_account, accounts),
     expenses: expenses.map((line) => ({
-      account: line.account,
+      account: resolveQbAccountRef(line.account, accounts),
       amount: Number(line.amount),
       memo: line.memo ?? "",
     })),

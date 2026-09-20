@@ -4,6 +4,7 @@ import {
   buildBillAddRq,
   buildCompanyQueryRq,
   buildVendorQueryRq,
+  exactQbTermsName,
   parseAccountQueryRs,
   parseBillAddRs,
   parseCompanyQueryRs,
@@ -38,6 +39,7 @@ describe("CompanyQuery qbXML", () => {
   it("builds CompanyQueryRq without BillAddRq", () => {
     const xml = buildCompanyQueryRq();
     expect(xml).toContain("<CompanyQueryRq>");
+    expect(xml).toContain('<?xml version="1.0" encoding="utf-8"?>');
     expect(xml).toContain('<?qbxml version="13.0"?>');
     expect(xml).not.toContain("BillAddRq");
   });
@@ -185,23 +187,69 @@ describe("BillAdd qbXML", () => {
       txnDate: "2026-08-12",
       dueDate: "2026-08-27",
       terms: "Net 15",
-      apAccount: "20000 · Accounts payable",
+      apAccount: { listId: "80000012-3", fullName: "Accounts Payable" },
       expenses: [
-        { account: "50000 · Food Purchases", amount: 1100, memo: "Food" },
-        { account: "60025 · Sales tax expense", amount: 55.59, memo: "Tax" },
+        { account: { listId: "80000010-1", fullName: "Food Purchases" }, amount: 1100, memo: "Food" },
+        { account: { listId: null, fullName: "Sales tax expense" }, amount: 55.59, memo: "Tax" },
       ],
       total: 1155.59,
     });
+    expect(xml).toContain('<?xml version="1.0" encoding="utf-8"?>');
     expect(xml).toContain("<BillAddRq>");
     expect(xml).toContain("<FullName>Jose Santiago Inc</FullName>");
     expect(xml).toContain("<RefNumber>6512495</RefNumber>");
     expect(xml).toContain("<TxnDate>2026-08-12</TxnDate>");
     expect(xml).toContain("<DueDate>2026-08-27</DueDate>");
     expect(xml).toContain("<FullName>Net 15</FullName>");
-    expect(xml).toContain("<FullName>20000 · Accounts payable</FullName>");
+    expect(xml).toContain("<ListID>80000012-3</ListID>");
+    expect(xml).toContain("<ListID>80000010-1</ListID>");
+    expect(xml).toContain("<FullName>Sales tax expense</FullName>");
+    expect(xml).not.toContain("20000 ·");
+    expect(xml).not.toContain("50000 ·");
     expect(xml).toContain("<Amount>1100.00</Amount>");
     expect(xml).toContain("<Amount>55.59</Amount>");
     expect(xml).not.toContain("VendorAddRq");
+  });
+
+  it("prefers ListID and uses stored FullName, never number · name", () => {
+    const xml = buildBillAddRq({
+      vendorName: "B. Fernández",
+      refNumber: "01016543",
+      txnDate: "2026-09-18",
+      dueDate: "2026-10-18",
+      terms: "Net 30",
+      apAccount: { listId: "80000020-ap", fullName: "Accounts Payable" },
+      expenses: [
+        { account: { listId: "80000021-tax", fullName: "Sales Tax Payable" }, amount: 12.5, memo: "Tax" },
+        { account: { listId: null, fullName: "Wine Purchase" }, amount: 80, memo: "Wine" },
+      ],
+      total: 92.5,
+    });
+    expect(xml).toContain('<?xml version="1.0" encoding="utf-8"?>');
+    expect(xml).toContain("<FullName>B. Fernández</FullName>");
+    expect(xml).toContain("<ListID>80000021-tax</ListID>");
+    expect(xml).toContain("<FullName>Wine Purchase</FullName>");
+    expect(xml).not.toContain("266000 ·");
+    expect(xml).not.toContain("51500 ·");
+    expect(xml).not.toMatch(/number · name/i);
+  });
+
+  it("omits TermsRef when terms are not an exact QuickBooks name", () => {
+    expect(exactQbTermsName("Net30")).toBeNull();
+    expect(exactQbTermsName("Net 30")).toBe("Net 30");
+    const xml = buildBillAddRq({
+      vendorName: "B. Fernandez",
+      refNumber: "01016543",
+      txnDate: "2026-09-18",
+      dueDate: "2026-10-18",
+      terms: "Net30",
+      apAccount: { fullName: "Accounts Payable" },
+      expenses: [{ account: { fullName: "Wine Purchase" }, amount: 10, memo: "" }],
+      total: 10,
+    });
+    expect(xml).not.toContain("TermsRef");
+    expect(xml).not.toContain("<FullName>Net30</FullName>");
+    expect(xml).toContain("<DueDate>2026-10-18</DueDate>");
   });
 
   it("escapes vendor names in BillAddRq", () => {
@@ -211,11 +259,12 @@ describe("BillAdd qbXML", () => {
       txnDate: "2026-09-20",
       dueDate: null,
       terms: null,
-      apAccount: "20000 · Accounts payable",
-      expenses: [{ account: "50000 · Food Purchases", amount: 10, memo: "" }],
+      apAccount: { fullName: "Accounts Payable" },
+      expenses: [{ account: { fullName: "Food Purchases" }, amount: 10, memo: "" }],
       total: 10,
     });
     expect(xml).toContain("<FullName>A&amp;B &lt;Food&gt;</FullName>");
+    expect(xml).toContain('<?xml version="1.0" encoding="utf-8"?>');
   });
 
   it("parses BillAddRs success TxnID", () => {

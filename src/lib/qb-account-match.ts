@@ -44,6 +44,50 @@ export function qbAccountLabel(row: Pick<QbAccountRow, "full_name" | "account_nu
   return `${number} · ${fullName}`;
 }
 
+export type QbAccountRef = {
+  listId: string | null;
+  fullName: string | null;
+};
+
+const DISPLAY_ACCOUNT_RE = /^(\d[\d.]*)\s*[·•]\s*(.+)$/;
+
+export function parseAccountDisplay(value: string): { number: string | null; name: string } {
+  const trimmed = value.trim();
+  const match = DISPLAY_ACCOUNT_RE.exec(trimmed);
+  if (!match) return { number: null, name: trimmed };
+  return { number: match[1], name: match[2].trim() };
+}
+
+export function resolveQbAccountRef(stored: string, accounts: QbAccountRow[]): QbAccountRef {
+  const trimmed = stored.trim();
+  if (!trimmed) return { listId: null, fullName: null };
+  const parsed = parseAccountDisplay(trimmed);
+  const active = accounts.filter((row) => row.is_active);
+
+  const matched =
+    active.find((row) => row.list_id === trimmed) ??
+    active.find((row) => row.full_name.trim() === trimmed) ??
+    active.find((row) => qbAccountLabel(row) === trimmed) ??
+    active.find((row) => row.full_name.trim() === parsed.name) ??
+    (parsed.number
+      ? active.find(
+          (row) =>
+            (row.account_number?.trim() ?? "") === parsed.number &&
+            foldAccount(row.full_name) === foldAccount(parsed.name),
+        )
+      : undefined) ??
+    (parsed.number
+      ? active.find((row) => (row.account_number?.trim() ?? "") === parsed.number)
+      : undefined) ??
+    active.find((row) => foldAccount(row.full_name) === foldAccount(parsed.name));
+
+  if (matched) {
+    return { listId: matched.list_id.trim() || null, fullName: matched.full_name.trim() || null };
+  }
+
+  return { listId: null, fullName: parsed.name || trimmed };
+}
+
 function foldAccount(value: string): string {
   return value
     .normalize("NFKD")
