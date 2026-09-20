@@ -421,9 +421,9 @@ export function InvoiceReviewDialog({
 
   const vendor =
     qbVendorName.trim() ||
-    suppliers.find((s) => s.id === supplierId)?.name ??
-    invoice.suppliers?.name ??
-    invoice.vendor_name ??
+    suppliers.find((s) => s.id === supplierId)?.name ||
+    invoice.suppliers?.name ||
+    invoice.vendor_name ||
     "Unknown vendor";
 
   const exportPayload = {
