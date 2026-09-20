@@ -206,14 +206,16 @@ export function buildBillAddRq(input: BillAddFields): string {
         .join("\n");
     });
   const apRef = qbListRefXml(input.apAccount, "          ");
+  // Intuit BillAdd XSD sequence: VendorRef, APAccountRef, TxnDate, DueDate,
+  // RefNumber, TermsRef, then ExpenseLineAdd. Wrong order is 0x80040400.
   const optional = [
+    apRef ? [`        <APAccountRef>`, apRef, `        </APAccountRef>`].join("\n") : null,
     txnDate ? `        <TxnDate>${xmlEscape(txnDate)}</TxnDate>` : null,
+    dueDate ? `        <DueDate>${xmlEscape(dueDate)}</DueDate>` : null,
     refNumber ? `        <RefNumber>${xmlEscape(refNumber)}</RefNumber>` : null,
     terms
       ? [`        <TermsRef>`, `          <FullName>${xmlEscape(terms)}</FullName>`, `        </TermsRef>`].join("\n")
       : null,
-    dueDate ? `        <DueDate>${xmlEscape(dueDate)}</DueDate>` : null,
-    apRef ? [`        <APAccountRef>`, apRef, `        </APAccountRef>`].join("\n") : null,
   ].filter((row): row is string => row !== null);
 
   return qbxmlDocument([
