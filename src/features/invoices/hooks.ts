@@ -322,6 +322,7 @@ export function useUpdateInvoice() {
       tax: number;
       subtotal: number;
       total: number;
+      ap_account?: string;
       status: InvoiceStatus;
       exported_at?: string | null;
       ocr_text?: string | null;
@@ -339,6 +340,7 @@ export function useUpdateInvoice() {
           tax: input.tax,
           subtotal: input.subtotal,
           total: input.total,
+          ...(input.ap_account !== undefined ? { ap_account: input.ap_account } : {}),
           status: input.status,
           exported_at: input.exported_at ?? input.invoice.exported_at,
           ...(input.ocr_text !== undefined ? { ocr_text: input.ocr_text } : {}),

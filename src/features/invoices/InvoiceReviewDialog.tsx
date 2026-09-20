@@ -23,9 +23,9 @@ import { composeInvoicePageImages, invoicesToPersistFromPhoto, nextInvoicePageSo
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import {
   accountsForConnection,
+  apAccountsForSelect,
   applyQbAccountNames,
   connectionIdForInvoiceAccounts,
-  matchQbApAccount,
 } from "../../lib/qb-account-match";
 import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
 import { toThrownError } from "../../lib/thrown-error";
@@ -47,6 +47,8 @@ import { invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { QuickbooksSyncJob } from "../../lib/types";
 import { useQuickbooksAccounts, useQuickbooksConnections, useQuickbooksVendors } from "../quickbooks/hooks";
 import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
+import { InvoiceReviewAccountField } from "./InvoiceReviewAccountField";
+import { InvoiceReviewPhotoColumn } from "./InvoiceReviewPhotoColumn";
 import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
@@ -213,6 +215,7 @@ export function InvoiceReviewDialog({
   const [pageIndex, setPageIndex] = useState(0);
   const [qbVendorName, setQbVendorName] = useState("");
   const [vendorOptions, setVendorOptions] = useState<string[]>([]);
+  const [apAccount, setApAccount] = useState<string>(ACCOUNTS.ap);
   const [qbBusy, setQbBusy] = useState(false);
   const addPageInput = useRef<HTMLInputElement>(null);
 
@@ -261,6 +264,7 @@ export function InvoiceReviewDialog({
     setPageIndex(0);
     setQbVendorName(invoice.vendor_name ?? "");
     setVendorOptions([]);
+    setApAccount(invoice.ap_account || ACCOUNTS.ap);
     setQbBusy(false);
     ocrStartedFor.current = null;
   }, [open, invoice]);
@@ -403,6 +407,11 @@ export function InvoiceReviewDialog({
 
   if (!invoice) return null;
 
+  const scopedAccounts = accountsForConnection(
+    connectionIdForInvoiceAccounts(restaurantId || null, qbConnections),
+    qbAccounts,
+  );
+  const scopedApAccounts = apAccountsForSelect(scopedAccounts);
   const pageImages = composeInvoicePageImages(media.data, pagesQuery.data ?? []);
   const currentPage = pageImages[pageIndex] ?? pageImages[0];
   const displaySrc = currentPage?.image_data ?? photoSrc ?? media.data?.image_data;
@@ -424,6 +433,7 @@ export function InvoiceReviewDialog({
         tax,
         subtotal: totals.subtotal,
         total: totals.total,
+        ap_account: apAccount,
         status,
         exported_at: exportedAt ?? null,
         ...(ocrText !== null ? { ocr_text: ocrText } : {}),
@@ -447,10 +457,7 @@ export function InvoiceReviewDialog({
     invoiceDate: date || new Date().toISOString().slice(0, 10),
     dueDate: due || date || new Date().toISOString().slice(0, 10),
     terms,
-    apAccount: matchQbApAccount(
-      accountsForConnection(connectionIdForInvoiceAccounts(restaurantId || null, qbConnections), qbAccounts),
-      invoice.ap_account || ACCOUNTS.ap,
-    ),
+    apAccount,
     expenses,
     total: totals.total,
   };
@@ -521,7 +528,7 @@ export function InvoiceReviewDialog({
             Loading photo…
           </div>
         ) : displaySrc ? (
-          <>
+          <InvoiceReviewPhotoColumn>
             <button
               type="button"
               className="relative w-full cursor-pointer rounded-xl text-left"
@@ -595,7 +602,7 @@ export function InvoiceReviewDialog({
                 </p>
               ) : null}
             </div>
-          </>
+          </InvoiceReviewPhotoColumn>
         ) : (
           <div className="grid min-h-40 place-items-center rounded-xl border border-line text-sm text-muted">
             No photo attached
@@ -668,7 +675,7 @@ export function InvoiceReviewDialog({
             {lines.map((line, i) => (
               <div key={`${line.code ?? "sku"}-${i}`} className="grid grid-cols-1 gap-1.5 sm:grid-cols-12">
                 <Input
-                  className="sm:col-span-5"
+                  className="min-w-0 sm:col-span-5"
                   value={line.description}
                   onChange={(e) =>
                     setLines((rows) =>
@@ -677,7 +684,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="sm:col-span-2"
+                  className="min-w-0 sm:col-span-2"
                   type="number"
                   title="Qty shipped (Desp)"
                   value={line.qty_shipped}
@@ -692,7 +699,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="sm:col-span-2"
+                  className="min-w-0 sm:col-span-2"
                   type="number"
                   value={line.amount}
                   onChange={(e) =>
@@ -702,7 +709,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Select
-                  className="sm:col-span-2"
+                  className="min-w-0 sm:col-span-2"
                   value={line.category}
                   onChange={(e) =>
                     setLines((rows) =>
@@ -760,10 +767,7 @@ export function InvoiceReviewDialog({
                 setExpenses(
                   applyQbAccountNames(
                     expensesFromLinesOrExtract(lines, tax, { total: extractTotal, expenses: [] }),
-                    accountsForConnection(
-                      connectionIdForInvoiceAccounts(restaurantId || null, qbConnections),
-                      qbAccounts,
-                    ),
+                    scopedAccounts,
                   ),
                 )
               }
@@ -774,17 +778,18 @@ export function InvoiceReviewDialog({
           <div className="space-y-2">
             {expenses.map((line, i) => (
               <div key={`${line.account}-${i}`} className="grid grid-cols-1 gap-1.5 sm:grid-cols-12">
-                <Input
-                  className="sm:col-span-6"
+                <InvoiceReviewAccountField
+                  className="min-w-0 sm:col-span-6"
+                  accounts={scopedAccounts}
                   value={line.account}
-                  onChange={(e) =>
+                  onChange={(account) =>
                     setExpenses((rows) =>
-                      rows.map((r, idx) => (idx === i ? { ...r, account: e.target.value } : r)),
+                      rows.map((r, idx) => (idx === i ? { ...r, account } : r)),
                     )
                   }
                 />
                 <Input
-                  className="sm:col-span-3"
+                  className="min-w-0 sm:col-span-3"
                   type="number"
                   value={line.amount}
                   onChange={(e) =>
@@ -794,7 +799,7 @@ export function InvoiceReviewDialog({
                   }
                 />
                 <Input
-                  className="sm:col-span-3"
+                  className="min-w-0 sm:col-span-3"
                   value={line.memo}
                   onChange={(e) =>
                     setExpenses((rows) =>
@@ -805,9 +810,24 @@ export function InvoiceReviewDialog({
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-muted">
-            Desktop Bill · A/P {invoice.ap_account || ACCOUNTS.ap} · Expenses tab only
-          </p>
+          {scopedApAccounts.length > 0 ? (
+            <div className="mt-2">
+              <Field label="A/P account" htmlFor="inv-ap">
+                <InvoiceReviewAccountField
+                  id="inv-ap"
+                  className="min-w-0"
+                  accounts={scopedApAccounts}
+                  value={apAccount}
+                  onChange={setApAccount}
+                />
+              </Field>
+              <p className="mt-2 text-xs text-muted">Desktop Bill · Expenses tab only</p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-muted">
+              Desktop Bill · A/P {apAccount} · Expenses tab only
+            </p>
+          )}
         </div>
       </div>
 
