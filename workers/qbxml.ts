@@ -253,6 +253,64 @@ export function parseVendorQueryRs(xml: string): VendorQueryResult {
   return { ...status, vendors };
 }
 
+export const KEPT_QB_ACCOUNT_TYPES = [
+  "Expense",
+  "CostOfGoodsSold",
+  "OtherCurrentLiability",
+  "AccountsPayable",
+] as const;
+
+export type KeptQbAccountType = (typeof KEPT_QB_ACCOUNT_TYPES)[number];
+
+export type AccountQueryRow = {
+  listId: string;
+  fullName: string;
+  accountNumber: string | null;
+  accountType: string;
+  isActive: boolean;
+};
+
+export type AccountQueryResult = ParsedQbStatus & {
+  accounts: AccountQueryRow[];
+};
+
+export function isKeptQbAccountType(value: string | null): value is KeptQbAccountType {
+  return KEPT_QB_ACCOUNT_TYPES.includes(value as KeptQbAccountType);
+}
+
+export function buildAccountQueryRq(): string {
+  return [
+    `<?xml version="1.0"?>`,
+    `<?qbxml version="${QBXML_VERSION}"?>`,
+    `<QBXML>`,
+    `  <QBXMLMsgsRq onError="stopOnError">`,
+    `    <AccountQueryRq>`,
+    `      <ActiveStatus>All</ActiveStatus>`,
+    `    </AccountQueryRq>`,
+    `  </QBXMLMsgsRq>`,
+    `</QBXML>`,
+  ].join("\n");
+}
+
+export function parseAccountQueryRs(xml: string): AccountQueryResult {
+  const status = parseQbStatus(xml, "AccountQueryRs");
+  const accounts: AccountQueryRow[] = [];
+  for (const block of xmlBlocks(xml, "AccountRet")) {
+    const listId = xmlText(block, "ListID");
+    const fullName = xmlText(block, "FullName") ?? xmlText(block, "Name");
+    const accountType = xmlText(block, "AccountType");
+    if (!listId || !fullName || !isKeptQbAccountType(accountType)) continue;
+    accounts.push({
+      listId,
+      fullName,
+      accountNumber: xmlText(block, "AccountNumber"),
+      accountType,
+      isActive: parseIsActive(xmlText(block, "IsActive")),
+    });
+  }
+  return { ...status, accounts };
+}
+
 export function parseBillAddRs(xml: string): BillAddResult {
   const hasRs = /<BillAddRs\b/i.test(xml);
   const status = parseQbStatus(xml, "BillAddRs");

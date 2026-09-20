@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAccountQueryRq,
   buildBillAddRq,
   buildCompanyQueryRq,
   buildVendorQueryRq,
+  parseAccountQueryRs,
   parseBillAddRs,
   parseCompanyQueryRs,
   parseQbStatus,
@@ -96,6 +98,79 @@ describe("VendorQuery qbXML", () => {
         listId: "80000002-2",
         fullName: "Jose Santiago Inc (liquor)",
         companyName: null,
+        isActive: true,
+      },
+    ]);
+  });
+});
+
+describe("AccountQuery qbXML", () => {
+  it("builds AccountQueryRq for a full account list", () => {
+    const xml = buildAccountQueryRq();
+    expect(xml).toContain("<AccountQueryRq>");
+    expect(xml).toContain("<ActiveStatus>All</ActiveStatus>");
+    expect(xml).not.toContain("BillAddRq");
+    expect(xml).not.toContain("VendorQueryRq");
+  });
+
+  it("parses kept account types and drops bank/income", () => {
+    const parsed = parseAccountQueryRs(`<AccountQueryRs statusCode="0" statusMessage="Status OK">
+      <AccountRet>
+        <ListID>80000010-1</ListID>
+        <Name>SalesTaxExpense</Name>
+        <FullName>SalesTaxExpense</FullName>
+        <AccountNumber>68200</AccountNumber>
+        <AccountType>Expense</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+      <AccountRet>
+        <ListID>80000011-2</ListID>
+        <FullName>WinePurchase</FullName>
+        <AccountNumber>51500</AccountNumber>
+        <AccountType>CostOfGoodsSold</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+      <AccountRet>
+        <ListID>80000012-3</ListID>
+        <FullName>Accounts Payable</FullName>
+        <AccountNumber>20000</AccountNumber>
+        <AccountType>AccountsPayable</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+      <AccountRet>
+        <ListID>80000013-4</ListID>
+        <FullName>Checking</FullName>
+        <AccountType>Bank</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+      <AccountRet>
+        <ListID>80000014-5</ListID>
+        <FullName>Sales</FullName>
+        <AccountType>Income</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+    </AccountQueryRs>`);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.accounts).toEqual([
+      {
+        listId: "80000010-1",
+        fullName: "SalesTaxExpense",
+        accountNumber: "68200",
+        accountType: "Expense",
+        isActive: true,
+      },
+      {
+        listId: "80000011-2",
+        fullName: "WinePurchase",
+        accountNumber: "51500",
+        accountType: "CostOfGoodsSold",
+        isActive: true,
+      },
+      {
+        listId: "80000012-3",
+        fullName: "Accounts Payable",
+        accountNumber: "20000",
+        accountType: "AccountsPayable",
         isActive: true,
       },
     ]);

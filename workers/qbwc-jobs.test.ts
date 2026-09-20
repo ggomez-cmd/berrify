@@ -5,6 +5,9 @@ import {
   COMPANY_QUERY_OPERATION,
   companyQueryJobKey,
   completeJob,
+  ACCOUNT_QUERY_OPERATION,
+  accountQueryJobKey,
+  enqueueAccountQueryJob,
   enqueueBillAddJob,
   enqueueCompanyQueryJob,
   enqueueVendorQueryJob,
@@ -229,5 +232,30 @@ describe("QBWC jobs", () => {
     expect(refreshed).toBe("retried");
     expect(store.jobs[0]?.status).toBe("pending");
     expect(store.jobs[0]?.qbxml_request).toContain("VendorQueryRq");
+  });
+
+  it("keys account_query to the connection and rebuilds AccountQuery XML", async () => {
+    expect(accountQueryJobKey("conn-1")).toEqual({
+      operation: ACCOUNT_QUERY_OPERATION,
+      entity_type: "connection",
+      entity_id: "conn-1",
+    });
+    expect(qbxmlRequestForClaim({ operation: ACCOUNT_QUERY_OPERATION, qbxml_request: null })).toContain(
+      "AccountQueryRq",
+    );
+    const store: Store = { jobs: [] };
+    const fetchImpl = mockJobsFetch(store);
+    const first = await enqueueAccountQueryJob(env, { id: "conn-1", org_id: "org-1" }, fetchImpl);
+    const second = await enqueueAccountQueryJob(env, { id: "conn-1", org_id: "org-1" }, fetchImpl);
+    expect(first).toBe("inserted");
+    expect(second).toBe("duplicate");
+    store.jobs[0]!.status = "completed";
+    const refreshed = await enqueueAccountQueryJob(env, { id: "conn-1", org_id: "org-1" }, fetchImpl, {
+      refresh: true,
+    });
+    expect(refreshed).toBe("retried");
+    expect(store.jobs[0]?.status).toBe("pending");
+    expect(store.jobs[0]?.qbxml_request).toContain("AccountQueryRq");
+    expect(store.jobs[0]?.qbxml_request).not.toContain("BillAddRq");
   });
 });

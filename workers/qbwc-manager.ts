@@ -10,7 +10,7 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
-import { enqueueBillAddJob, enqueueVendorQueryJob } from "./qbwc-jobs";
+import { enqueueAccountQueryJob, enqueueBillAddJob, enqueueVendorQueryJob } from "./qbwc-jobs";
 import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
 import { buildBillAddRq } from "./qbxml";
 
@@ -249,6 +249,7 @@ export function parseManagerPath(pathname: string):
   | { kind: "revoke"; id: string }
   | { kind: "qwc"; id: string }
   | { kind: "refresh-vendors"; id: string }
+  | { kind: "refresh-accounts"; id: string }
   | { kind: "send-invoice"; id: string }
   | null {
   if (pathname === "/api/qbwc/connections") return { kind: "create" };
@@ -260,6 +261,8 @@ export function parseManagerPath(pathname: string):
   if (qwc) return { kind: "qwc", id: qwc[1] };
   const vendors = /^\/api\/qbwc\/connections\/([^/]+)\/vendors$/.exec(pathname);
   if (vendors) return { kind: "refresh-vendors", id: vendors[1] };
+  const accounts = /^\/api\/qbwc\/connections\/([^/]+)\/accounts$/.exec(pathname);
+  if (accounts) return { kind: "refresh-accounts", id: accounts[1] };
   const send = /^\/api\/qbwc\/invoices\/([^/]+)\/send$/.exec(pathname);
   if (send) return { kind: "send-invoice", id: send[1] };
   return null;
@@ -364,6 +367,26 @@ export async function handleRefreshVendors(
   return json({
     result: queued,
     operation: "vendor_query",
+    connection_id: connection.id,
+  });
+}
+
+export async function handleRefreshAccounts(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection || !connection.is_active) return json({ error: "Not found" }, 404);
+  if (!isQbwcConnected(connection)) {
+    return json({ error: "Connect this company file first, then Refresh accounts and Update Selected." }, 409);
+  }
+  const queued = await enqueueAccountQueryJob(env, connection, fetchImpl, { refresh: true });
+  if (queued === "error") return json({ error: "Could not queue account query" }, 400);
+  return json({
+    result: queued,
+    operation: "account_query",
     connection_id: connection.id,
   });
 }
@@ -492,6 +515,11 @@ export async function handleQbwcManager(
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
       }
       return handleRefreshVendors(env, manager, route.id, fetchImpl);
+    case "refresh-accounts":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleRefreshAccounts(env, manager, route.id, fetchImpl);
     case "send-invoice":
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });

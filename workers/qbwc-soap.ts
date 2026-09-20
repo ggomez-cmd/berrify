@@ -12,10 +12,12 @@ import {
   type QbwcRestEnv,
 } from "./qbwc-auth";
 import {
+  ACCOUNT_QUERY_OPERATION,
   BILL_ADD_OPERATION,
   COMPANY_QUERY_OPERATION,
   VENDOR_QUERY_OPERATION,
   claimNextPendingJob,
+  enqueueAccountQueryJob,
   enqueueCompanyQueryJob,
   enqueueVendorQueryJob,
   completeJob,
@@ -23,8 +25,10 @@ import {
   markInvoiceQuickbooksBill,
   shouldEnqueueCompanyQuery,
 } from "./qbwc-jobs";
+import { upsertAccountsFromQuery } from "./qbwc-accounts";
 import { upsertVendorsFromQuery } from "./qbwc-vendors";
 import {
+  parseAccountQueryRs,
   parseBillAddRs,
   parseCompanyQueryRs,
   parseHcpHostInfo,
@@ -387,6 +391,53 @@ async function handleReceiveResponseXml(
     });
     return soapIntResult("receiveResponseXML", 100);
   }
+  if (job.operation === ACCOUNT_QUERY_OPERATION) {
+    const parsed = parseAccountQueryRs(responseXml);
+    const statusCode = parsed.statusCode;
+    const statusMessage = parsed.statusMessage;
+    if ((statusCode && statusCode !== "0") || !parsed.ok) {
+      await failJob(
+        env,
+        job.id,
+        { qbxml_response: responseXml, error_code: statusCode, error_message: statusMessage },
+        fetchImpl,
+      );
+      await patchConnection(env, loaded.connection.id, { last_error: statusMessage || statusCode }, fetchImpl);
+      await setSessionError(env, ticket, statusMessage || statusCode || "QuickBooks error", fetchImpl);
+      logSafe("job_fail", {
+        ticket_id: ticket,
+        job_id: job.id,
+        opcode: job.operation,
+        qb_status_code: statusCode,
+        qb_status_message: statusMessage,
+      });
+      return soapIntResult("receiveResponseXML", -1);
+    }
+    await upsertAccountsFromQuery(
+      env,
+      { orgId: loaded.connection.org_id, connectionId: loaded.connection.id, accounts: parsed.accounts },
+      fetchImpl,
+    );
+    await completeJob(env, job.id, { qbxml_response: responseXml }, fetchImpl);
+    await patchConnection(
+      env,
+      loaded.connection.id,
+      {
+        last_successful_sync_at: new Date().toISOString(),
+        last_error: null,
+      },
+      fetchImpl,
+    );
+    logSafe("job_complete", {
+      ticket_id: ticket,
+      job_id: job.id,
+      opcode: job.operation,
+      account_count: parsed.accounts.length,
+      qb_status_code: statusCode ?? "0",
+      qb_status_message: statusMessage,
+    });
+    return soapIntResult("receiveResponseXML", 100);
+  }
   if (job.operation === BILL_ADD_OPERATION) {
     const bill = parseBillAddRs(responseXml);
     if (!bill.ok || (bill.statusCode && bill.statusCode !== "0")) {
@@ -508,6 +559,7 @@ async function handleReceiveResponseXml(
     fetchImpl,
   );
   const vendorQueued = await enqueueVendorQueryJob(env, loaded.connection, fetchImpl);
+  const accountQueued = await enqueueAccountQueryJob(env, loaded.connection, fetchImpl);
   logSafe("job_complete", {
     ticket_id: ticket,
     job_id: job.id,
@@ -515,6 +567,7 @@ async function handleReceiveResponseXml(
     qb_status_code: statusCode ?? "0",
     qb_status_message: statusMessage,
     vendor_query: vendorQueued,
+    account_query: accountQueued,
   });
   return soapIntResult("receiveResponseXML", 100);
 }
