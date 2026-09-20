@@ -33,7 +33,7 @@ export function useQuickbooksJobs() {
       const { data, error } = await supabase
         .from("quickbooks_sync_jobs")
         .select(
-          "id, org_id, connection_id, status, operation, entity_type, entity_id, attempt_count, error_code, error_message, created_at, updated_at",
+          "id, org_id, connection_id, status, operation, entity_type, entity_id, attempt_count, error_code, error_message, quickbooks_txn_id, created_at, updated_at",
         )
         .eq("org_id", org!.id)
         .order("created_at", { ascending: false });

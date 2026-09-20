@@ -12,6 +12,52 @@ export function qbwcUiStatus(
   return "waiting";
 }
 
+export type InvoiceQbJobUi = "queued" | "sending" | "synced" | "failed";
+
+export function invoiceBillJob(jobs: QuickbooksSyncJob[], invoiceId: string): QuickbooksSyncJob | null {
+  return (
+    jobs.find((job) => job.entity_type === "invoice" && job.entity_id === invoiceId && job.operation === "bill_add") ??
+    null
+  );
+}
+
+export function invoiceQbJobUi(job: QuickbooksSyncJob): InvoiceQbJobUi {
+  switch (job.status) {
+    case "pending":
+      return "queued";
+    case "sending":
+      return "sending";
+    case "completed":
+      return "synced";
+    case "failed":
+      return "failed";
+    default: {
+      const exhaustive: never = job.status;
+      return exhaustive;
+    }
+  }
+}
+
+export function invoiceQbJobLabel(job: QuickbooksSyncJob, txnId?: string | null): string {
+  const ui = invoiceQbJobUi(job);
+  switch (ui) {
+    case "queued":
+      return "Queued";
+    case "sending":
+      return "Sending";
+    case "synced": {
+      const id = txnId ?? job.quickbooks_txn_id;
+      return id ? `Synced (${id})` : "Synced";
+    }
+    case "failed":
+      return job.error_message ? `Failed · ${job.error_message}` : "Failed";
+    default: {
+      const exhaustive: never = ui;
+      return exhaustive;
+    }
+  }
+}
+
 export function qbwcStatusLabel(status: QbwcUiStatus): string {
   switch (status) {
     case "not_configured":

@@ -12,13 +12,22 @@ import {
   type QbwcRestEnv,
 } from "./qbwc-auth";
 import {
+  BILL_ADD_OPERATION,
   claimNextPendingJob,
   enqueueCompanyQueryJob,
   completeJob,
   failJob,
+  markInvoiceQuickbooksBill,
   shouldEnqueueCompanyQuery,
 } from "./qbwc-jobs";
-import { parseCompanyQueryRs, parseHcpHostInfo, xmlEscape, xmlText, xmlUnescape } from "./qbxml";
+import {
+  parseBillAddRs,
+  parseCompanyQueryRs,
+  parseHcpHostInfo,
+  xmlEscape,
+  xmlText,
+  xmlUnescape,
+} from "./qbxml";
 
 export const QBWC_SOAP_NS = "http://developer.intuit.com/";
 export const SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/";
@@ -324,6 +333,76 @@ async function handleReceiveResponseXml(
     return soapIntResult("receiveResponseXML", -1);
   }
   if (!job) {
+    return soapIntResult("receiveResponseXML", 100);
+  }
+  if (job.operation === BILL_ADD_OPERATION) {
+    const bill = parseBillAddRs(responseXml);
+    if (!bill.ok || (bill.statusCode && bill.statusCode !== "0")) {
+      await failJob(
+        env,
+        job.id,
+        {
+          qbxml_response: responseXml,
+          error_code: bill.statusCode,
+          error_message: bill.statusMessage,
+        },
+        fetchImpl,
+      );
+      await patchConnection(
+        env,
+        loaded.connection.id,
+        { last_error: bill.statusMessage || bill.statusCode },
+        fetchImpl,
+      );
+      await setSessionError(
+        env,
+        ticket,
+        bill.statusMessage || bill.statusCode || "QuickBooks error",
+        fetchImpl,
+      );
+      logSafe("job_fail", {
+        ticket_id: ticket,
+        job_id: job.id,
+        opcode: job.operation,
+        qb_status_code: bill.statusCode,
+        qb_status_message: bill.statusMessage,
+      });
+      return soapIntResult("receiveResponseXML", -1);
+    }
+    await completeJob(
+      env,
+      job.id,
+      {
+        qbxml_response: responseXml,
+        quickbooks_txn_id: bill.txnId,
+        edit_sequence: bill.editSequence,
+      },
+      fetchImpl,
+    );
+    if (job.entity_type === "invoice") {
+      await markInvoiceQuickbooksBill(
+        env,
+        job.entity_id,
+        { quickbooks_txn_id: bill.txnId, quickbooks_edit_sequence: bill.editSequence },
+        fetchImpl,
+      );
+    }
+    await patchConnection(
+      env,
+      loaded.connection.id,
+      {
+        last_successful_sync_at: new Date().toISOString(),
+        last_error: null,
+      },
+      fetchImpl,
+    );
+    logSafe("job_complete", {
+      ticket_id: ticket,
+      job_id: job.id,
+      opcode: job.operation,
+      qb_status_code: bill.statusCode ?? "0",
+      qb_status_message: bill.statusMessage,
+    });
     return soapIntResult("receiveResponseXML", 100);
   }
   const parsed = parseCompanyQueryRs(responseXml);

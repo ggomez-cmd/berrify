@@ -22,7 +22,9 @@ import { assertInvoiceImage } from "../../lib/invoice-image";
 import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrEngine } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
+import { invoiceBillJob, invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
+import { useQuickbooksJobs } from "../quickbooks/hooks";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
@@ -45,6 +47,23 @@ function confirmDeleteInvoice(invoice: InvoiceWithSupplier) {
   return window.confirm(detail ? `Delete this invoice? ${detail}` : "Delete this invoice?");
 }
 
+function qbJobTone(status: NonNullable<ReturnType<typeof invoiceBillJob>>["status"]) {
+  switch (status) {
+    case "completed":
+      return "ok" as const;
+    case "failed":
+      return "danger" as const;
+    case "sending":
+      return "info" as const;
+    case "pending":
+      return "warn" as const;
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
 function statusTone(status: InvoiceWithSupplier["status"]) {
   switch (status) {
     case "received":
@@ -64,7 +83,8 @@ function statusTone(status: InvoiceWithSupplier["status"]) {
 
 export function InvoicesPage() {
   const { role } = useAuth();
-  const { data: invoices = [], isLoading, error } = useInvoices();
+  const { data: invoices = [], isLoading, error, refetch: refetchInvoices } = useInvoices();
+  const { data: qbJobs = [], refetch: refetchQbJobs } = useQuickbooksJobs();
   const { data: suppliers = [] } = useSuppliers();
   const { data: restaurants = [] } = useRestaurants();
   const { data: restaurantAliases = [] } = useRestaurantAliases();
@@ -321,7 +341,9 @@ export function InvoicesPage() {
               invoices
                 .filter((invoice) => !restaurantFilter || invoice.restaurant_id === restaurantFilter)
                 .filter((invoice) => statusTab === "all" || invoice.status === statusTab)
-                .map((invoice) => (
+                .map((invoice) => {
+                const qbJob = invoiceBillJob(qbJobs, invoice.id);
+                return (
                 <tr key={invoice.id} className="hover:bg-paper">
                   <Td>
                     <div className="flex items-center gap-3">
@@ -339,9 +361,16 @@ export function InvoicesPage() {
                   <Td>{invoice.restaurants?.name ?? "—"}</Td>
                   <Td className="font-semibold">{formatMoney(invoice.total)}</Td>
                   <Td>
-                    <Badge tone={statusTone(invoice.status)} dot>
-                      {invoice.status}
-                    </Badge>
+                    <div className="flex flex-col gap-1">
+                      <Badge tone={statusTone(invoice.status)} dot>
+                        {invoice.status}
+                      </Badge>
+                      {qbJob ? (
+                        <Badge tone={qbJobTone(qbJob.status)} dot>
+                          {invoiceQbJobLabel(qbJob, invoice.quickbooks_txn_id ?? qbJob.quickbooks_txn_id)}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </Td>
                   <Td>
                     <div className="flex justify-end gap-1">
@@ -368,7 +397,8 @@ export function InvoicesPage() {
                     </div>
                   </Td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </Table>
@@ -387,6 +417,11 @@ export function InvoicesPage() {
         skuAliases={skuAliases}
         accountRules={rules}
         extractExamples={extractExamples}
+        qbJob={reviewing ? invoiceBillJob(qbJobs, reviewing.id) : null}
+        onQbJobChange={() => {
+          void refetchQbJobs();
+          void refetchInvoices();
+        }}
       />
     </div>
   );

@@ -25,7 +25,7 @@ import type {
 } from "../../lib/types";
 
 const INVOICE_LIST_SELECT =
-  "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, telegram_from, telegram_message_id, caption, image_mime, created_by, exported_at, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
+  "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, telegram_from, telegram_message_id, caption, image_mime, created_by, exported_at, quickbooks_txn_id, quickbooks_edit_sequence, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
 
 function throwSaveError(error: unknown): never {
   throw toThrownError(error, "Could not save invoice");

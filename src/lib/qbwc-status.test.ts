@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { qbwcStatusLabel, qbwcUiStatus } from "./qbwc-status";
+import { invoiceBillJob, invoiceQbJobLabel, qbwcStatusLabel, qbwcUiStatus } from "./qbwc-status";
 import type { QuickbooksDesktopConnection, QuickbooksSyncJob } from "./types";
 
 function connection(overrides: Partial<QuickbooksDesktopConnection> = {}): QuickbooksDesktopConnection {
@@ -38,6 +38,7 @@ function job(overrides: Partial<QuickbooksSyncJob> = {}): QuickbooksSyncJob {
     attempt_count: 0,
     error_code: null,
     error_message: null,
+    quickbooks_txn_id: null,
     created_at: "2026-09-19T00:00:00.000Z",
     updated_at: "2026-09-19T00:00:00.000Z",
     ...overrides,
@@ -69,5 +70,18 @@ describe("qbwcUiStatus", () => {
 
   it("is error when last_error is set", () => {
     expect(qbwcUiStatus(connection({ last_error: "status 3120" }))).toBe("error");
+  });
+});
+
+describe("invoice QuickBooks job labels", () => {
+  it("maps queue states and Synced TxnID", () => {
+    const queued = job({ operation: "bill_add", entity_type: "invoice", entity_id: "inv-1" });
+    expect(invoiceBillJob([queued], "inv-1")?.id).toBe("j1");
+    expect(invoiceQbJobLabel(queued)).toBe("Queued");
+    expect(invoiceQbJobLabel(job({ status: "sending" }))).toBe("Sending");
+    expect(invoiceQbJobLabel(job({ status: "completed", quickbooks_txn_id: "77" }))).toBe("Synced (77)");
+    expect(invoiceQbJobLabel(job({ status: "failed", error_message: "Vendor not found" }))).toBe(
+      "Failed · Vendor not found",
+    );
   });
 });

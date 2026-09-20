@@ -34,6 +34,9 @@ import type {
   Supplier,
   VendorAliasRow,
 } from "../../lib/types";
+import { sendInvoiceToQuickBooks } from "../../lib/qbwc-manager-api";
+import { invoiceQbJobLabel } from "../../lib/qbwc-status";
+import type { QuickbooksSyncJob } from "../../lib/types";
 import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
 import { useCreateInvoice, useDeleteInvoice, useInvoiceMedia, useUpdateInvoice } from "./hooks";
 
@@ -156,6 +159,8 @@ export function InvoiceReviewDialog({
   skuAliases,
   accountRules,
   extractExamples,
+  qbJob,
+  onQbJobChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -167,6 +172,8 @@ export function InvoiceReviewDialog({
   skuAliases: InvoiceSkuAliasRow[];
   accountRules: AccountRuleRow[];
   extractExamples: InvoiceExtractExampleRow[];
+  qbJob?: QuickbooksSyncJob | null;
+  onQbJobChange?: () => void;
 }) {
   const save = useUpdateInvoice();
   const create = useCreateInvoice();
@@ -191,6 +198,7 @@ export function InvoiceReviewDialog({
   const [extractTotal, setExtractTotal] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [photoSrc, setPhotoSrc] = useState<string | null>(null);
+  const [qbBusy, setQbBusy] = useState(false);
 
   useEffect(() => {
     if (!open || !invoice) return;
@@ -235,6 +243,7 @@ export function InvoiceReviewDialog({
     setExtraBills([]);
     setLightboxOpen(false);
     setPhotoSrc(null);
+    setQbBusy(false);
     ocrStartedFor.current = null;
   }, [open, invoice]);
 
@@ -444,6 +453,29 @@ export function InvoiceReviewDialog({
     onOpenChange(false);
   };
 
+  const canSendToQb =
+    Boolean(restaurantId) &&
+    Boolean(vendor.trim()) &&
+    expenses.some((line) => Number.isFinite(line.amount) && line.amount !== 0 && line.account.trim());
+  const qbLocked = qbJob?.status === "pending" || qbJob?.status === "sending" || qbJob?.status === "completed";
+
+  const sendToQuickBooks = async () => {
+    if (!canSendToQb) {
+      setError("Select a restaurant, vendor, and at least one expense line with an amount.");
+      return;
+    }
+    setQbBusy(true);
+    try {
+      await persist("reviewed");
+      await sendInvoiceToQuickBooks(invoice.id);
+      onQbJobChange?.();
+    } catch (err) {
+      setError(toThrownError(err, "Could not send invoice to QuickBooks").message);
+    } finally {
+      setQbBusy(false);
+    }
+  };
+
   const exportCsv = async () => {
     downloadText(
       `${filePrefix}qbd-bill-${exportPayload.invoiceNumber}.csv`,
@@ -465,7 +497,7 @@ export function InvoiceReviewDialog({
         onOpenChange(next);
       }}
       title={invoice.invoice_number ? `Bill ${invoice.invoice_number}` : "Review invoice"}
-      description="Confirm SKUs and the QuickBooks Desktop Expenses tab, then export an IIF bill."
+      description="Confirm SKUs and the QuickBooks Desktop Expenses tab, then Send to QuickBooks or export IIF."
       className="max-h-[92vh] w-[min(1100px,calc(100vw-1.5rem))] overflow-y-auto"
     >
       <div className="grid gap-4 lg:grid-cols-2">
@@ -730,12 +762,17 @@ export function InvoiceReviewDialog({
         </details>
       ) : null}
 
+      {qbJob ? (
+        <p className="mt-3 text-sm text-muted">
+          QuickBooks: {invoiceQbJobLabel(qbJob, invoice.quickbooks_txn_id ?? qbJob.quickbooks_txn_id)}
+        </p>
+      ) : null}
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         <Button
           variant="danger"
           className="mr-auto"
-          disabled={save.isPending || create.isPending || remove.isPending || ocrBusy}
+          disabled={save.isPending || create.isPending || remove.isPending || ocrBusy || qbBusy}
           onClick={() => {
             const vendor = vendorName || invoice.suppliers?.name || invoice.vendor_name;
             const detail = [vendor, number || invoice.invoice_number].filter(Boolean).join(" · ");
@@ -757,23 +794,32 @@ export function InvoiceReviewDialog({
         </Button>
         <Button
           variant="ghost"
-          disabled={save.isPending || create.isPending || ocrBusy}
+          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
           onClick={() => void persist("reviewed")}
         >
           Save review
         </Button>
         <Button
           variant="ghost"
-          disabled={save.isPending || create.isPending || ocrBusy}
+          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
           onClick={() => void exportCsv()}
         >
           Export CSV
         </Button>
         <Button
-          disabled={save.isPending || create.isPending || ocrBusy}
+          variant="ghost"
+          disabled={save.isPending || create.isPending || ocrBusy || qbBusy}
           onClick={() => void exportIif()}
         >
           Export Desktop IIF
+        </Button>
+        <Button
+          disabled={
+            save.isPending || create.isPending || ocrBusy || qbBusy || !canSendToQb || qbLocked
+          }
+          onClick={() => void sendToQuickBooks()}
+        >
+          Send to QuickBooks
         </Button>
       </div>
     </Dialog>

@@ -8,6 +8,8 @@ import { buildCompanyQueryRq } from "./qbxml";
 
 export const COMPANY_QUERY_OPERATION = "company_query";
 export const COMPANY_QUERY_ENTITY_TYPE = "connection";
+export const BILL_ADD_OPERATION = "bill_add";
+export const BILL_ADD_ENTITY_TYPE = "invoice";
 
 export type JobStatus = "pending" | "sending" | "completed" | "failed";
 
@@ -42,6 +44,24 @@ export function companyQueryJobKey(connectionId: string): {
 
 export function shouldEnqueueCompanyQuery(connection: Pick<QbwcConnectionRow, "last_connected_at">): boolean {
   return !connection.last_connected_at;
+}
+
+export function billAddJobKey(invoiceId: string): {
+  operation: typeof BILL_ADD_OPERATION;
+  entity_type: typeof BILL_ADD_ENTITY_TYPE;
+  entity_id: string;
+} {
+  return {
+    operation: BILL_ADD_OPERATION,
+    entity_type: BILL_ADD_ENTITY_TYPE,
+    entity_id: invoiceId,
+  };
+}
+
+export function qbxmlRequestForClaim(job: Pick<QbwcJobRow, "operation" | "qbxml_request">): string | null {
+  if (job.qbxml_request) return job.qbxml_request;
+  if (job.operation === COMPANY_QUERY_OPERATION) return buildCompanyQueryRq();
+  return null;
 }
 
 export async function enqueueCompanyQueryJob(
@@ -86,6 +106,122 @@ export async function enqueueCompanyQueryJob(
   if (response.status === 409) return "duplicate";
   if (!response.ok) return "error";
   return "inserted";
+}
+
+export async function enqueueBillAddJob(
+  env: QbwcRestEnv,
+  input: {
+    orgId: string;
+    connectionId: string;
+    invoiceId: string;
+    qbxmlRequest: string;
+  },
+  fetchImpl: typeof fetch,
+): Promise<{ result: "inserted" | "duplicate" | "retried" | "error"; job: QbwcJobRow | null }> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return { result: "error", job: null };
+  const key = billAddJobKey(input.invoiceId);
+  const existing = await loadJobByKey(env, input.connectionId, key, fetchImpl);
+  if (existing?.status === "completed") {
+    return { result: "duplicate", job: existing };
+  }
+  if (existing?.status === "pending" || existing?.status === "sending") {
+    return { result: "duplicate", job: existing };
+  }
+  if (existing?.status === "failed") {
+    const reset = await fetchImpl(
+      restUrl(
+        supabaseUrl,
+        `quickbooks_sync_jobs?id=eq.${encodeURIComponent(existing.id)}&status=eq.failed`,
+      ),
+      {
+        method: "PATCH",
+        headers: { ...supabaseHeaders(serviceRole), Prefer: "return=representation" },
+        body: JSON.stringify({
+          status: "pending",
+          error_code: null,
+          error_message: null,
+          qbxml_request: input.qbxmlRequest,
+          qbxml_response: null,
+        }),
+      },
+    );
+    if (!reset.ok) return { result: "error", job: null };
+    const rows = (await reset.json()) as QbwcJobRow[];
+    return { result: "retried", job: rows[0] ?? existing };
+  }
+  const response = await fetchImpl(
+    restUrl(supabaseUrl, "quickbooks_sync_jobs?on_conflict=connection_id,entity_type,entity_id,operation"),
+    {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(serviceRole),
+        Prefer: "return=representation,resolution=ignore-duplicates",
+      },
+      body: JSON.stringify({
+        org_id: input.orgId,
+        connection_id: input.connectionId,
+        status: "pending",
+        operation: key.operation,
+        entity_type: key.entity_type,
+        entity_id: key.entity_id,
+        qbxml_request: input.qbxmlRequest,
+      }),
+    },
+  );
+  if (response.status === 409) {
+    return { result: "duplicate", job: await loadJobByKey(env, input.connectionId, key, fetchImpl) };
+  }
+  if (!response.ok) return { result: "error", job: null };
+  const created = (await response.json()) as QbwcJobRow[];
+  return { result: created[0] ? "inserted" : "duplicate", job: created[0] ?? (await loadJobByKey(env, input.connectionId, key, fetchImpl)) };
+}
+
+async function loadJobByKey(
+  env: QbwcRestEnv,
+  connectionId: string,
+  key: { operation: string; entity_type: string; entity_id: string },
+  fetchImpl: typeof fetch,
+): Promise<QbwcJobRow | null> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return null;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_sync_jobs?connection_id=eq.${encodeURIComponent(connectionId)}&entity_type=eq.${encodeURIComponent(key.entity_type)}&entity_id=eq.${encodeURIComponent(key.entity_id)}&operation=eq.${encodeURIComponent(key.operation)}&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json()) as QbwcJobRow[];
+  return rows[0] ?? null;
+}
+
+export async function markInvoiceQuickbooksBill(
+  env: QbwcRestEnv,
+  invoiceId: string,
+  patch: { quickbooks_txn_id: string | null; quickbooks_edit_sequence: string | null },
+  fetchImpl: typeof fetch,
+): Promise<boolean> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return false;
+  const response = await fetchImpl(
+    restUrl(supabaseUrl, `invoices?id=eq.${encodeURIComponent(invoiceId)}`),
+    {
+      method: "PATCH",
+      headers: { ...supabaseHeaders(serviceRole), Prefer: "return=minimal" },
+      body: JSON.stringify({
+        status: "exported",
+        exported_at: new Date().toISOString(),
+        quickbooks_txn_id: patch.quickbooks_txn_id,
+        quickbooks_edit_sequence: patch.quickbooks_edit_sequence,
+      }),
+    },
+  );
+  return response.ok;
 }
 
 export async function claimNextPendingJob(
@@ -135,7 +271,7 @@ export async function claimNextPendingJob(
       body: JSON.stringify({
         status: "sending",
         attempt_count: (job.attempt_count ?? 0) + 1,
-        qbxml_request: job.qbxml_request ?? buildCompanyQueryRq(),
+        qbxml_request: qbxmlRequestForClaim(job),
       }),
     },
   );

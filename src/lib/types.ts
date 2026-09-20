@@ -209,6 +209,8 @@ export type Invoice = {
   ocr_text: string | null;
   created_by: string | null;
   exported_at: string | null;
+  quickbooks_txn_id: string | null;
+  quickbooks_edit_sequence: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -445,6 +447,7 @@ export type QuickbooksSyncJob = {
   attempt_count: number;
   error_code: string | null;
   error_message: string | null;
+  quickbooks_txn_id: string | null;
   created_at: string;
   updated_at: string;
 };
