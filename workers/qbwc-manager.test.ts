@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   handleDownloadQwc,
+  handleRefreshVendors,
   handleSendInvoice,
   parseManagerPath,
   requireManager,
@@ -29,6 +30,7 @@ describe("QBWC manager routes", () => {
     expect(parseManagerPath("/api/qbwc/connections/abc/rotate")).toEqual({ kind: "rotate", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/revoke")).toEqual({ kind: "revoke", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/qwc")).toEqual({ kind: "qwc", id: "abc" });
+    expect(parseManagerPath("/api/qbwc/connections/abc/vendors")).toEqual({ kind: "refresh-vendors", id: "abc" });
     expect(parseManagerPath("/api/qbwc/invoices/inv-1/send")).toEqual({ kind: "send-invoice", id: "inv-1" });
     expect(parseManagerPath("/api/qbwc")).toBeNull();
   });
@@ -235,6 +237,34 @@ describe("invoice Send to QuickBooks", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { job: { connection_id: string } };
     expect(body.job.connection_id).toBe("conn-shared");
+  });
+
+  it("prefills BillAdd with the invoice vendor_name FullName", async () => {
+    const jobs: Array<Record<string, unknown>> = [];
+    const response = await handleSendInvoice(
+      env,
+      manager,
+      "inv-1",
+      sendFetch({
+        invoice: [invoiceRow({ vendor_name: "Jose Santiago Inc (food)", suppliers: { name: "Jose Santiago" } })],
+        jobs,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(String(jobs[0]?.qbxml_request)).toContain("Jose Santiago Inc (food)");
+    expect(String(jobs[0]?.qbxml_request)).not.toContain("<FullName>Jose Santiago</FullName>");
+  });
+
+  it("queues vendor_query on Refresh vendors for a Connected file", async () => {
+    const jobs: Array<Record<string, unknown>> = [];
+    const response = await handleRefreshVendors(
+      env,
+      manager,
+      "conn-kane",
+      sendFetch({ connections: [kaneConn], jobs }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ operation: "vendor_query", result: "inserted" });
   });
 
   it("does not treat a waiting restaurant connector as Connected", async () => {

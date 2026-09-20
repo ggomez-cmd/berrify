@@ -10,7 +10,7 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
-import { enqueueBillAddJob } from "./qbwc-jobs";
+import { enqueueBillAddJob, enqueueVendorQueryJob } from "./qbwc-jobs";
 import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
 import { buildBillAddRq } from "./qbxml";
 
@@ -248,6 +248,7 @@ export function parseManagerPath(pathname: string):
   | { kind: "rotate"; id: string }
   | { kind: "revoke"; id: string }
   | { kind: "qwc"; id: string }
+  | { kind: "refresh-vendors"; id: string }
   | { kind: "send-invoice"; id: string }
   | null {
   if (pathname === "/api/qbwc/connections") return { kind: "create" };
@@ -257,6 +258,8 @@ export function parseManagerPath(pathname: string):
   if (revoke) return { kind: "revoke", id: revoke[1] };
   const qwc = /^\/api\/qbwc\/connections\/([^/]+)\/qwc$/.exec(pathname);
   if (qwc) return { kind: "qwc", id: qwc[1] };
+  const vendors = /^\/api\/qbwc\/connections\/([^/]+)\/vendors$/.exec(pathname);
+  if (vendors) return { kind: "refresh-vendors", id: vendors[1] };
   const send = /^\/api\/qbwc\/invoices\/([^/]+)\/send$/.exec(pathname);
   if (send) return { kind: "send-invoice", id: send[1] };
   return null;
@@ -345,6 +348,26 @@ function supplierName(row: InvoiceSendRow): string | null {
   return suppliers?.name?.trim() || null;
 }
 
+export async function handleRefreshVendors(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection || !connection.is_active) return json({ error: "Not found" }, 404);
+  if (!isQbwcConnected(connection)) {
+    return json({ error: "Connect this company file first, then Refresh vendors and Update Selected." }, 409);
+  }
+  const queued = await enqueueVendorQueryJob(env, connection, fetchImpl, { refresh: true });
+  if (queued === "error") return json({ error: "Could not queue vendor query" }, 400);
+  return json({
+    result: queued,
+    operation: "vendor_query",
+    connection_id: connection.id,
+  });
+}
+
 export async function handleSendInvoice(
   env: QbwcManagerEnv,
   manager: ManagerUser,
@@ -371,7 +394,7 @@ export async function handleSendInvoice(
   if (!invoice.restaurant_id) {
     return json({ error: "Select a restaurant before sending to QuickBooks" }, 400);
   }
-  const vendor = supplierName(invoice) || invoice.vendor_name?.trim() || "";
+  const vendor = invoice.vendor_name?.trim() || supplierName(invoice) || "";
   if (!vendor) {
     return json({ error: "Enter a vendor name before sending to QuickBooks" }, 400);
   }
@@ -464,6 +487,11 @@ export async function handleQbwcManager(
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
       }
       return handleDownloadQwc(env, manager, route.id, fetchImpl);
+    case "refresh-vendors":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleRefreshVendors(env, manager, route.id, fetchImpl);
     case "send-invoice":
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });

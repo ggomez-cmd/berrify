@@ -1,4 +1,4 @@
-import { Download, KeyRound, Plug, ShieldOff } from "lucide-react";
+import { Download, KeyRound, Plug, RefreshCw, ShieldOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -8,14 +8,15 @@ import { Card } from "../../components/ui/card";
 import {
   createQbwcConnection,
   downloadBerrifyQwc,
+  refreshQbwcVendors,
   revokeQbwcConnection,
   rotateQbwcPassword,
 } from "../../lib/qbwc-manager-api";
-import { qbwcStatusLabel, qbwcUiStatus } from "../../lib/qbwc-status";
+import { qbwcStatusLabel, qbwcUiStatus, vendorSyncSummary } from "../../lib/qbwc-status";
 import { isManager } from "../../lib/schedule";
 import type { QbwcUiStatus, QuickbooksDesktopConnection, Restaurant } from "../../lib/types";
 import { useRestaurants } from "../invoices/hooks";
-import { useQuickbooksConnections, useQuickbooksJobs } from "./hooks";
+import { useQuickbooksConnections, useQuickbooksJobs, useQuickbooksVendors } from "./hooks";
 
 function statusTone(status: QbwcUiStatus) {
   switch (status) {
@@ -48,6 +49,7 @@ export function QuickbooksPage() {
   const { data: restaurants = [] } = useRestaurants();
   const { data: connections = [], isLoading, error, refetch } = useQuickbooksConnections();
   const { data: jobs = [], refetch: refetchJobs } = useQuickbooksJobs();
+  const { data: vendors = [], refetch: refetchVendors } = useQuickbooksVendors();
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [oneTime, setOneTime] = useState<{ connectionId: string; username: string; password: string } | null>(
     null,
@@ -78,7 +80,7 @@ export function QuickbooksPage() {
     connections.find((row) => (row.restaurant_id ?? null) === restaurantId) ?? null;
 
   const refresh = async () => {
-    await Promise.all([refetch(), refetchJobs()]);
+    await Promise.all([refetch(), refetchJobs(), refetchVendors()]);
   };
 
   const connect = async (target: CardTarget) => {
@@ -128,6 +130,20 @@ export function QuickbooksPage() {
       setMessage("Web Connector access revoked.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not revoke connection");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const refreshVendors = async (connection: QuickbooksDesktopConnection) => {
+    setBusyKey(connection.id);
+    setMessage(null);
+    try {
+      await refreshQbwcVendors(connection.id);
+      await refresh();
+      setMessage("Vendor query queued. In Web Connector, click Update Selected. Vendors are not synced until that VendorQuery completes.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not refresh vendors");
     } finally {
       setBusyKey(null);
     }
@@ -204,6 +220,24 @@ export function QuickbooksPage() {
                   Username <span className="font-mono">{connection.qb_username}</span>
                 </p>
               ) : null}
+              {connection
+                ? (() => {
+                    const vendorSync = vendorSyncSummary(connection.id, jobs, vendors);
+                    if (!vendorSync.synced) {
+                      return (
+                        <p className="mt-2 text-xs text-muted">
+                          Vendors not synced yet. After Connected, click Refresh vendors, then Update Selected.
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="mt-2 text-xs text-muted">
+                        {vendorSync.count} vendor{vendorSync.count === 1 ? "" : "s"} from Web Connector
+                        {vendorSync.at ? ` · ${new Date(vendorSync.at).toLocaleString()}` : ""}
+                      </p>
+                    );
+                  })()
+                : null}
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {!connection || !connection.is_active ? (
@@ -216,6 +250,14 @@ export function QuickbooksPage() {
                     <Button onClick={() => void download(connection)} disabled={busy}>
                       <Download className="size-4" />
                       Download Berrify.qwc
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void refreshVendors(connection)}
+                      disabled={busy || !connection.last_connected_at}
+                    >
+                      <RefreshCw className="size-4" />
+                      Refresh vendors
                     </Button>
                     <Button variant="outline" onClick={() => void rotate(connection)} disabled={busy}>
                       <KeyRound className="size-4" />

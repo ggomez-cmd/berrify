@@ -15,10 +15,16 @@ export function InvoicePhotoLightbox({
   open,
   src,
   onClose,
+  pageLabel,
+  onPrevPage,
+  onNextPage,
 }: {
   open: boolean;
   src: string;
   onClose: () => void;
+  pageLabel?: string | null;
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -126,6 +132,17 @@ export function InvoicePhotoLightbox({
         onClick={onClose}
       />
       <div className="absolute right-4 top-4 z-10 flex gap-2">
+        {onPrevPage ? (
+          <Button variant="ghost" className="bg-white px-2" aria-label="Previous page" onClick={onPrevPage}>
+            Prev
+          </Button>
+        ) : null}
+        {pageLabel ? <span className="self-center rounded-lg bg-white px-2 py-1 text-xs text-ink">{pageLabel}</span> : null}
+        {onNextPage ? (
+          <Button variant="ghost" className="bg-white px-2" aria-label="Next page" onClick={onNextPage}>
+            Next
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           className="bg-white px-2"

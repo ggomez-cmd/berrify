@@ -203,6 +203,7 @@ export type Invoice = {
   whatsapp_message_id: string | null;
   telegram_from: string | null;
   telegram_message_id: string | null;
+  telegram_media_group_id: string | null;
   caption: string | null;
   image_data: string | null;
   image_mime: string | null;
@@ -290,6 +291,28 @@ export type InvoiceExtractExampleRow = {
     qbo_vendor_name?: string | null;
     supplier_id?: string | null;
   };
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvoicePage = {
+  id: string;
+  org_id: string;
+  invoice_id: string;
+  sort_order: number;
+  image_data: string | null;
+  image_mime: string | null;
+  created_at: string;
+};
+
+export type QuickbooksVendor = {
+  id: string;
+  org_id: string;
+  connection_id: string;
+  list_id: string;
+  full_name: string;
+  company_name: string | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 };

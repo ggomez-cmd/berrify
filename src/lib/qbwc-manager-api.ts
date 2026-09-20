@@ -114,6 +114,28 @@ export async function revokeQbwcConnection(
   }
 }
 
+export async function refreshQbwcVendors(
+  connectionId: string,
+  fetchImpl: typeof fetch = fetch,
+  getAccessToken: () => Promise<string | null> = defaultAccessToken,
+): Promise<void> {
+  const headers = await authHeaders(getAccessToken);
+  const response = await fetchImpl(`/api/qbwc/connections/${encodeURIComponent(connectionId)}/vendors`, {
+    method: "POST",
+    headers,
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw new Error(readError(payload, response.status, "Could not refresh vendors"));
+  }
+}
+
 export async function sendInvoiceToQuickBooks(
   invoiceId: string,
   fetchImpl: typeof fetch = fetch,

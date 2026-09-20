@@ -22,8 +22,11 @@ page still works. Berrify does **not** auto-enqueue Bills.
 8. In QBWC, paste the one-time password for the Berrify username.
 9. Check the Berrify row and click **Update Selected**.
 10. In Berrify, the card should move from **Waiting for QuickBooks** to
-    **Connected** after the company query succeeds. Then you may turn on
-    Auto-Run in QBWC if you want periodic polls.
+    **Connected** after the company query succeeds. The first Connected sync
+    also queues a `vendor_query`. Click **Refresh vendors** any time after
+    Connected, then **Update Selected** again. Do not treat vendors as synced
+    until that VendorQuery finishes. Then you may turn on Auto-Run in QBWC if
+    you want periodic polls.
 
 Scheduler minutes are included in a new `.qwc` download only after the first
 successful company query. Re-download does not change OwnerID or FileID.
@@ -40,10 +43,21 @@ successful company query. Re-download does not change OwnerID or FileID.
    `TxnID`, or **Failed** with the QuickBooks message. Use **Send to QuickBooks**
    again to retry a failed job.
 
-Vendor **FullName** in QuickBooks must already match the supplier name / print
-name used on the invoice (the same names as IIF). This pass does not create
-vendors. Missing vendor, account, or terms fails the job with the QuickBooks
-status message.
+Berrify matches the letterhead to that company file’s vendor **FullName**
+(never Kane’s list for Semilla). Kane pairs that differ only by `(food)` /
+`(liquor)` are grouped: all food / kitchen / cleaning SKUs pick `(food)`, all
+beverage SKUs pick `(liquor)`. Mixed food + liquor is left unset on Review so
+you pick the FullName. If the QB vendor list is empty, `vendor_aliases` is the
+fallback. BillAdd / IIF use the exact FullName.
+
+One photo is one invoice. Two letterheads in one shot stay on one row — pick
+the vendor on Review (photograph separately for two Bills). Extra pages attach
+to the same invoice: **Add page** on Review, or a Telegram album
+(`media_group_id`) / caption `page 2` / `p. 2` / the same invoice number in a
+short window. A clearly different vendor FullName starts a new invoice.
+
+This pass does not create vendors. Missing vendor, account, or terms fails the
+job with the QuickBooks status message.
 
 Kane can send once that connector is **Connected**. Semilla can send after its
 own connector (or the org shared file) is Connected.
@@ -91,6 +105,8 @@ own connector (or the org shared file) is Connected.
 
 - No automatic Bills. A manager must click **Send to QuickBooks**.
 - No `VendorAddRq`. Vendor names must already exist in that company file.
+- A **Connected** company query is not proof that vendors synced. Treat the
+  vendor list as current only after Web Connector completes a `vendor_query`.
 - A **Connected** company query is not proof that a Bill landed. Treat a Bill
   as posted only after Web Connector completes a `bill_add` job and the invoice
   shows **Synced** with a `TxnID`.
