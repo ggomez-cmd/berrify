@@ -62,6 +62,7 @@ vi.mock("./hooks", () => ({
   }),
   useQuickbooksJobs: () => ({ data: [], refetch: vi.fn() }),
   useQuickbooksVendors: () => ({ data: [], refetch: vi.fn() }),
+  useQuickbooksAccounts: () => ({ data: [], refetch: vi.fn() }),
 }));
 
 function renderPage(role: AuthState["role"] = "admin") {
@@ -83,6 +84,8 @@ describe("QuickbooksPage", () => {
     expect(screen.getByText("Shared company file")).toBeInTheDocument();
     expect(screen.getByText("Waiting for QuickBooks")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download Berrify.qwc" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh vendors" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh accounts" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Regenerate password" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect QuickBooks Desktop" })).toBeInTheDocument();
     expect(screen.queryByText(/service-role/i)).toBeNull();

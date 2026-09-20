@@ -16,6 +16,12 @@ import {
 } from "../../lib/invoice-extract";
 import { invoicesToPersistFromPhoto } from "../../lib/invoice-pages";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
+import {
+  accountsForConnection,
+  applyQbAccountNames,
+  connectionIdForInvoiceAccounts,
+  matchQbApAccount,
+} from "../../lib/qb-account-match";
 import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { formatMoney } from "../../lib/format";
@@ -26,7 +32,12 @@ import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
 import { invoiceBillJob, invoiceQbJobLabel } from "../../lib/qbwc-status";
 import type { InvoiceSource, InvoiceWithSupplier } from "../../lib/types";
-import { useQuickbooksConnections, useQuickbooksJobs, useQuickbooksVendors } from "../quickbooks/hooks";
+import {
+  useQuickbooksAccounts,
+  useQuickbooksConnections,
+  useQuickbooksJobs,
+  useQuickbooksVendors,
+} from "../quickbooks/hooks";
 import { useSuppliers } from "../suppliers/hooks";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
@@ -89,6 +100,7 @@ export function InvoicesPage() {
   const { data: qbJobs = [], refetch: refetchQbJobs } = useQuickbooksJobs();
   const { data: qbConnections = [] } = useQuickbooksConnections();
   const { data: qbVendors = [] } = useQuickbooksVendors();
+  const { data: qbAccounts = [] } = useQuickbooksAccounts();
   const { data: suppliers = [] } = useSuppliers();
   const { data: restaurants = [] } = useRestaurants();
   const { data: restaurantAliases = [] } = useRestaurantAliases();
@@ -171,12 +183,17 @@ export function InvoicesPage() {
       });
       const ids: string[] = [];
       for (const bill of invoicesToPersistFromPhoto(extracted)) {
+        const restaurantId = route?.restaurant.id ?? null;
+        const scopedAccounts = accountsForConnection(
+          connectionIdForInvoiceAccounts(restaurantId, qbConnections),
+          qbAccounts,
+        );
         const match = matchQbVendor({
           printName: bill.vendor_name,
           ocrText,
           lines: bill.lines,
           vendors: vendorsForConnection(
-            connectionIdForInvoiceVendors(route?.restaurant.id ?? null, qbConnections),
+            connectionIdForInvoiceVendors(restaurantId, qbConnections),
             qbVendors,
           ),
           aliases: vendorAliases,
@@ -188,7 +205,7 @@ export function InvoicesPage() {
           image_mime: mime,
           ocr_text: ocr.text,
           caption,
-          restaurant_id: route?.restaurant.id ?? null,
+          restaurant_id: restaurantId,
           vendor_name: mixed ? null : (match.fullName ?? bill.vendor_name),
           supplier_id: mixed ? null : bill.supplier_id,
           invoice_number: bill.invoice_number,
@@ -198,10 +215,10 @@ export function InvoicesPage() {
           subtotal: bill.subtotal,
           tax: bill.tax,
           total: bill.total,
-          ap_account: ACCOUNTS.ap,
+          ap_account: matchQbApAccount(scopedAccounts, ACCOUNTS.ap),
           status: bill.lines.length > 0 || bill.total > 0 ? "extracted" : "received",
           lines: bill.lines,
-          expenses: bill.expenses,
+          expenses: applyQbAccountNames(bill.expenses, scopedAccounts),
         });
         ids.push(id);
       }

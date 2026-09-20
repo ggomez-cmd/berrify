@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   handleDownloadQwc,
+  handleRefreshAccounts,
   handleRefreshVendors,
   handleSendInvoice,
   parseManagerPath,
@@ -31,6 +32,7 @@ describe("QBWC manager routes", () => {
     expect(parseManagerPath("/api/qbwc/connections/abc/revoke")).toEqual({ kind: "revoke", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/qwc")).toEqual({ kind: "qwc", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/vendors")).toEqual({ kind: "refresh-vendors", id: "abc" });
+    expect(parseManagerPath("/api/qbwc/connections/abc/accounts")).toEqual({ kind: "refresh-accounts", id: "abc" });
     expect(parseManagerPath("/api/qbwc/invoices/inv-1/send")).toEqual({ kind: "send-invoice", id: "inv-1" });
     expect(parseManagerPath("/api/qbwc")).toBeNull();
   });
@@ -158,8 +160,8 @@ function sendFetch(options: {
         const created = {
           id: "job-bill",
           status: "pending",
-          operation: "bill_add",
-          entity_type: "invoice",
+          operation: body.operation ?? "bill_add",
+          entity_type: body.entity_type ?? "invoice",
           entity_id: body.entity_id,
           connection_id: body.connection_id,
           error_message: null,
@@ -265,6 +267,22 @@ describe("invoice Send to QuickBooks", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ operation: "vendor_query", result: "inserted" });
+    expect(jobs.some((job) => job.operation === "bill_add")).toBe(false);
+  });
+
+  it("queues account_query on Refresh accounts without creating Bills", async () => {
+    const jobs: Array<Record<string, unknown>> = [];
+    const response = await handleRefreshAccounts(
+      env,
+      manager,
+      "conn-kane",
+      sendFetch({ connections: [kaneConn], jobs }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ operation: "account_query", result: "inserted" });
+    expect(jobs[0]?.qbxml_request).toEqual(expect.stringContaining("AccountQueryRq"));
+    expect(jobs[0]?.qbxml_request).toEqual(expect.not.stringContaining("BillAddRq"));
+    expect(jobs.some((job) => job.operation === "bill_add")).toBe(false);
   });
 
   it("does not treat a waiting restaurant connector as Connected", async () => {

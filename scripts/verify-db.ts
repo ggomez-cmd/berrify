@@ -38,6 +38,7 @@ const requiredTables = [
   "quickbooks_desktop_sessions",
   "quickbooks_sync_jobs",
   "quickbooks_vendors",
+  "quickbooks_accounts",
   "invoice_pages",
 ] as const;
 
@@ -77,6 +78,7 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   quickbooks_desktop_sessions: [],
   quickbooks_sync_jobs: ["quickbooks_sync_jobs_select_manager"],
   quickbooks_vendors: ["quickbooks_vendors_manager"],
+  quickbooks_accounts: ["quickbooks_accounts_manager"],
   invoice_pages: ["invoice_pages_manager"],
 };
 

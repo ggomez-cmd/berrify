@@ -1,4 +1,10 @@
-import type { QbwcUiStatus, QuickbooksDesktopConnection, QuickbooksSyncJob, QuickbooksVendor } from "./types";
+import type {
+  QbwcUiStatus,
+  QuickbooksAccount,
+  QuickbooksDesktopConnection,
+  QuickbooksSyncJob,
+  QuickbooksVendor,
+} from "./types";
 
 export function qbwcUiStatus(
   connection: QuickbooksDesktopConnection | null | undefined,
@@ -77,6 +83,32 @@ export function vendorSyncSummary(
   const job = vendorQueryJob(jobs, connectionId);
   const completed = job?.status === "completed";
   const count = vendors.filter((row) => row.connection_id === connectionId && row.is_active).length;
+  return {
+    synced: Boolean(completed),
+    count: completed ? count : 0,
+    at: completed ? job?.updated_at ?? null : null,
+  };
+}
+
+export function accountQueryJob(jobs: QuickbooksSyncJob[], connectionId: string): QuickbooksSyncJob | null {
+  return (
+    jobs.find(
+      (job) =>
+        job.connection_id === connectionId &&
+        job.operation === "account_query" &&
+        job.entity_type === "connection",
+    ) ?? null
+  );
+}
+
+export function accountSyncSummary(
+  connectionId: string,
+  jobs: QuickbooksSyncJob[],
+  accounts: QuickbooksAccount[],
+): { synced: boolean; count: number; at: string | null } {
+  const job = accountQueryJob(jobs, connectionId);
+  const completed = job?.status === "completed";
+  const count = accounts.filter((row) => row.connection_id === connectionId && row.is_active).length;
   return {
     synced: Boolean(completed),
     count: completed ? count : 0,
