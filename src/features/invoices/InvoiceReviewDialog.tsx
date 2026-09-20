@@ -215,7 +215,7 @@ export function InvoiceReviewDialog({
   const [pageIndex, setPageIndex] = useState(0);
   const [qbVendorName, setQbVendorName] = useState("");
   const [vendorOptions, setVendorOptions] = useState<string[]>([]);
-  const [apAccount, setApAccount] = useState(ACCOUNTS.ap);
+  const [apAccount, setApAccount] = useState<string>(ACCOUNTS.ap);
   const [qbBusy, setQbBusy] = useState(false);
   const addPageInput = useRef<HTMLInputElement>(null);
 
