@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ACCOUNTS, expensesFromLinesOrExtract, rollupExpenses, type ExtractedSku } from "./invoice-extract";
 import {
+  accountSelectValues,
   accountsForConnection,
+  apAccountsForSelect,
   applyQbAccountNames,
   connectionIdForInvoiceAccounts,
   matchQbAccount,
@@ -30,6 +32,14 @@ const kaneFood = {
   full_name: "Food Purchases",
   account_number: "50000",
   account_type: "Expense",
+  is_active: true,
+};
+const kaneAp = {
+  connection_id: "conn-kane",
+  list_id: "4",
+  full_name: "Accounts Payable",
+  account_number: "20000",
+  account_type: "AccountsPayable",
   is_active: true,
 };
 const semillaFood = {
@@ -126,5 +136,39 @@ describe("QB account match", () => {
       [],
     );
     expect(expenses).toEqual([{ account: ACCOUNTS.food, amount: 10, memo: "" }]);
+  });
+
+  it("scopes expense select options to the invoice restaurant connection", () => {
+    const kaneId = connectionIdForInvoiceAccounts("rest-kane", [
+      { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+      { id: "conn-semilla", restaurant_id: "rest-semilla", is_active: true },
+    ]);
+    const semillaId = connectionIdForInvoiceAccounts("rest-semilla", [
+      { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+      { id: "conn-semilla", restaurant_id: "rest-semilla", is_active: true },
+    ]);
+    const all = [kaneTax, kaneWine, kaneFood, kaneAp, semillaFood];
+    expect(accountSelectValues(accountsForConnection(kaneId, all))).toEqual([
+      "68200 · SalesTaxExpense",
+      "51500 · WinePurchase",
+      "50000 · Food Purchases",
+      "20000 · Accounts Payable",
+    ]);
+    expect(accountSelectValues(accountsForConnection(semillaId, all))).toEqual(["Local Produce"]);
+    expect(accountSelectValues(accountsForConnection(semillaId, all))).not.toContain("68200 · SalesTaxExpense");
+  });
+
+  it("keeps an unmatched current expense account selectable", () => {
+    expect(accountSelectValues([kaneTax, kaneWine], "Sales Tax Payable")).toEqual([
+      "68200 · SalesTaxExpense",
+      "51500 · WinePurchase",
+      "Sales Tax Payable",
+    ]);
+  });
+
+  it("lists A/P-typed accounts for the footer select", () => {
+    expect(apAccountsForSelect([kaneTax, kaneWine, kaneFood, kaneAp]).map(qbAccountLabel)).toEqual([
+      "20000 · Accounts Payable",
+    ]);
   });
 });

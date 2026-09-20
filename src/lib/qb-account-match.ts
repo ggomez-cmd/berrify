@@ -24,6 +24,16 @@ export function accountsForConnection(connectionId: string | null, accounts: QbA
   return accounts.filter((row) => row.connection_id === connectionId && row.is_active);
 }
 
+export function accountSelectValues(accounts: QbAccountRow[], currentValue?: string): string[] {
+  const labels = accounts.map(qbAccountLabel);
+  const extra = currentValue?.trim() ?? "";
+  return Array.from(new Set([...labels, ...(extra ? [extra] : [])]));
+}
+
+export function apAccountsForSelect(accounts: QbAccountRow[]): QbAccountRow[] {
+  return accounts.filter((row) => scoreAccount(row, "ap") > 0);
+}
+
 export function qbAccountLabel(row: Pick<QbAccountRow, "full_name" | "account_number">): string {
   const fullName = row.full_name.trim();
   const number = row.account_number?.trim() ?? "";
