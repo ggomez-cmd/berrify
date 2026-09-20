@@ -209,6 +209,18 @@ describe("BillAdd qbXML", () => {
     expect(xml).toContain("<Amount>1100.00</Amount>");
     expect(xml).toContain("<Amount>55.59</Amount>");
     expect(xml).not.toContain("VendorAddRq");
+    const bill = /<BillAdd>([\s\S]*)<\/BillAdd>/.exec(xml)?.[1] ?? "";
+    const tags = [...bill.matchAll(/<([A-Za-z]+)>/g)].map((match) => match[1]);
+    expect(tags.filter((tag) => !["FullName", "ListID", "AccountRef", "Amount", "Memo"].includes(tag))).toEqual([
+      "VendorRef",
+      "APAccountRef",
+      "TxnDate",
+      "DueDate",
+      "RefNumber",
+      "TermsRef",
+      "ExpenseLineAdd",
+      "ExpenseLineAdd",
+    ]);
   });
 
   it("prefers ListID and uses stored FullName, never number · name", () => {
@@ -250,6 +262,10 @@ describe("BillAdd qbXML", () => {
     expect(xml).not.toContain("TermsRef");
     expect(xml).not.toContain("<FullName>Net30</FullName>");
     expect(xml).toContain("<DueDate>2026-10-18</DueDate>");
+    expect(xml.indexOf("<APAccountRef>")).toBeLessThan(xml.indexOf("<TxnDate>"));
+    expect(xml.indexOf("<TxnDate>")).toBeLessThan(xml.indexOf("<DueDate>"));
+    expect(xml.indexOf("<DueDate>")).toBeLessThan(xml.indexOf("<RefNumber>"));
+    expect(xml.indexOf("<RefNumber>")).toBeLessThan(xml.indexOf("<ExpenseLineAdd>"));
   });
 
   it("escapes vendor names in BillAddRq", () => {

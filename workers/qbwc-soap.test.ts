@@ -8,6 +8,7 @@ import {
   soapStringArrayResult,
   soapStringResult,
 } from "./qbwc-soap";
+import { buildBillAddRq, xmlUnescape } from "./qbxml";
 
 function envelope(inner: string): string {
   return `<?xml version="1.0"?>
@@ -69,6 +70,33 @@ describe("QBWC SOAP parse", () => {
     expect(xml).not.toMatch(/^\s*\{/);
     const auth = soapStringArrayResult("authenticate", ["nvu", ""]);
     expect(auth).toContain("<string>nvu</string>");
+  });
+
+  it("puts BillAdd qbXML in sendRequestXML as escaped text without a BOM", () => {
+    const qbxml = buildBillAddRq({
+      vendorName: "Drouyn & Co",
+      refNumber: "018674",
+      txnDate: "2026-08-09",
+      dueDate: "2026-08-16",
+      terms: "NET 7 DAYS",
+      apAccount: { listId: "80000021-1671050285", fullName: "Accounts Payable" },
+      expenses: [{ account: { listId: "8000000A-1671048355", fullName: "Food Purchases" }, amount: 61.5, memo: "" }],
+      total: 61.5,
+    });
+    const soap = soapStringResult("sendRequestXML", qbxml);
+    expect(soap.charCodeAt(0)).not.toBe(0xfeff);
+    expect(soap).toContain("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+    expect(soap).toContain("<sendRequestXMLResult>");
+    expect(soap).toContain("&lt;BillAddRq&gt;");
+    expect(soap).not.toContain("<BillAddRq>");
+    const packed = /<sendRequestXMLResult>([\s\S]*)<\/sendRequestXMLResult>/.exec(soap)?.[1] ?? "";
+    const inner = xmlUnescape(packed);
+    expect(inner).toBe(qbxml);
+    expect(inner.startsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>")).toBe(true);
+    expect(inner.indexOf("<APAccountRef>")).toBeLessThan(inner.indexOf("<TxnDate>"));
+    expect(inner.indexOf("<DueDate>")).toBeLessThan(inner.indexOf("<RefNumber>"));
+    expect(inner).toContain("<FullName>Drouyn &amp; Co</FullName>");
+    expect(inner).not.toContain("TermsRef");
   });
 
   it("authenticate returns a ticket or nvu without logging the password", async () => {
