@@ -10,7 +10,9 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
+import { enqueueBillAddJob } from "./qbwc-jobs";
 import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
+import { buildBillAddRq } from "./qbxml";
 
 export type QbwcManagerEnv = QbwcRestEnv & {
   PUBLIC_APP_URL?: string;
@@ -246,6 +248,7 @@ export function parseManagerPath(pathname: string):
   | { kind: "rotate"; id: string }
   | { kind: "revoke"; id: string }
   | { kind: "qwc"; id: string }
+  | { kind: "send-invoice"; id: string }
   | null {
   if (pathname === "/api/qbwc/connections") return { kind: "create" };
   const rotate = /^\/api\/qbwc\/connections\/([^/]+)\/rotate$/.exec(pathname);
@@ -254,7 +257,180 @@ export function parseManagerPath(pathname: string):
   if (revoke) return { kind: "revoke", id: revoke[1] };
   const qwc = /^\/api\/qbwc\/connections\/([^/]+)\/qwc$/.exec(pathname);
   if (qwc) return { kind: "qwc", id: qwc[1] };
+  const send = /^\/api\/qbwc\/invoices\/([^/]+)\/send$/.exec(pathname);
+  if (send) return { kind: "send-invoice", id: send[1] };
   return null;
+}
+
+export function isQbwcConnected(
+  connection: Pick<QbwcConnectionRow, "is_active" | "last_connected_at"> | null | undefined,
+): boolean {
+  return Boolean(connection?.is_active && connection.last_connected_at);
+}
+
+export async function resolveInvoiceConnection(
+  env: QbwcManagerEnv,
+  orgId: string,
+  restaurantId: string,
+  fetchImpl: typeof fetch,
+): Promise<QbwcConnectionRow | null> {
+  const scoped = await loadConnectionForRestaurant(env, orgId, restaurantId, fetchImpl);
+  if (isQbwcConnected(scoped)) return scoped;
+  const shared = await loadSharedConnection(env, orgId, fetchImpl);
+  if (isQbwcConnected(shared)) return shared;
+  return null;
+}
+
+async function loadConnectionForRestaurant(
+  env: QbwcManagerEnv,
+  orgId: string,
+  restaurantId: string,
+  fetchImpl: typeof fetch,
+): Promise<QbwcConnectionRow | null> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return null;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_desktop_connections?org_id=eq.${encodeURIComponent(orgId)}&restaurant_id=eq.${encodeURIComponent(restaurantId)}&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json()) as QbwcConnectionRow[];
+  return rows[0] ?? null;
+}
+
+async function loadSharedConnection(
+  env: QbwcManagerEnv,
+  orgId: string,
+  fetchImpl: typeof fetch,
+): Promise<QbwcConnectionRow | null> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return null;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_desktop_connections?org_id=eq.${encodeURIComponent(orgId)}&restaurant_id=is.null&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json()) as QbwcConnectionRow[];
+  return rows[0] ?? null;
+}
+
+type InvoiceSendRow = {
+  id: string;
+  org_id: string;
+  restaurant_id: string | null;
+  supplier_id: string | null;
+  vendor_name: string | null;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  terms: string;
+  ap_account: string;
+  status: string;
+  total: number;
+  suppliers: { name: string } | { name: string }[] | null;
+  invoice_expense_lines: Array<{ account: string; amount: number; memo: string | null }>;
+};
+
+function supplierName(row: InvoiceSendRow): string | null {
+  const suppliers = row.suppliers;
+  if (Array.isArray(suppliers)) return suppliers[0]?.name?.trim() || null;
+  return suppliers?.name?.trim() || null;
+}
+
+export async function handleSendInvoice(
+  env: QbwcManagerEnv,
+  manager: ManagerUser,
+  invoiceId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return json({ error: "Not configured" }, 503);
+  const invoiceRes = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `invoices?id=eq.${encodeURIComponent(invoiceId)}&org_id=eq.${encodeURIComponent(manager.orgId)}&select=id,org_id,restaurant_id,supplier_id,vendor_name,invoice_number,invoice_date,due_date,terms,ap_account,status,total,suppliers(name),invoice_expense_lines(account,amount,memo)&limit=1`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!invoiceRes.ok) return json({ error: "Invoice not found" }, 404);
+  const invoices = (await invoiceRes.json()) as InvoiceSendRow[];
+  const invoice = invoices[0];
+  if (!invoice) return json({ error: "Invoice not found" }, 404);
+  if (invoice.status !== "reviewed" && invoice.status !== "exported") {
+    return json({ error: "Invoice must be reviewed before sending to QuickBooks" }, 400);
+  }
+  if (!invoice.restaurant_id) {
+    return json({ error: "Select a restaurant before sending to QuickBooks" }, 400);
+  }
+  const vendor = supplierName(invoice) || invoice.vendor_name?.trim() || "";
+  if (!vendor) {
+    return json({ error: "Enter a vendor name before sending to QuickBooks" }, 400);
+  }
+  const expenses = (invoice.invoice_expense_lines ?? []).filter(
+    (line) => line.account?.trim() && Number.isFinite(Number(line.amount)) && Number(line.amount) !== 0,
+  );
+  if (expenses.length === 0) {
+    return json({ error: "Add at least one expense line with an amount" }, 400);
+  }
+  const connection = await resolveInvoiceConnection(env, manager.orgId, invoice.restaurant_id, fetchImpl);
+  if (!connection) {
+    return json(
+      {
+        error:
+          "QuickBooks is not Connected for this restaurant. Connect this restaurant’s company file (or the org shared file). Semilla invoices are not sent to Kane.",
+      },
+      409,
+    );
+  }
+  const qbxmlRequest = buildBillAddRq({
+    vendorName: vendor,
+    refNumber: invoice.invoice_number,
+    txnDate: invoice.invoice_date,
+    dueDate: invoice.due_date ?? invoice.invoice_date,
+    terms: invoice.terms,
+    apAccount: invoice.ap_account,
+    expenses: expenses.map((line) => ({
+      account: line.account,
+      amount: Number(line.amount),
+      memo: line.memo ?? "",
+    })),
+    total: Number(invoice.total) || expenses.reduce((sum, line) => sum + Number(line.amount), 0),
+  });
+  const queued = await enqueueBillAddJob(
+    env,
+    {
+      orgId: manager.orgId,
+      connectionId: connection.id,
+      invoiceId: invoice.id,
+      qbxmlRequest,
+    },
+    fetchImpl,
+  );
+  if (queued.result === "error" || !queued.job) {
+    return json({ error: "Could not queue QuickBooks bill" }, 400);
+  }
+  return json({
+    job: {
+      id: queued.job.id,
+      status: queued.job.status,
+      operation: queued.job.operation,
+      entity_type: queued.job.entity_type,
+      entity_id: queued.job.entity_id,
+      connection_id: queued.job.connection_id,
+      error_message: queued.job.error_message,
+      quickbooks_txn_id: queued.job.quickbooks_txn_id,
+    },
+    result: queued.result,
+  });
 }
 
 export async function handleQbwcManager(
@@ -288,6 +464,11 @@ export async function handleQbwcManager(
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
       }
       return handleDownloadQwc(env, manager, route.id, fetchImpl);
+    case "send-invoice":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleSendInvoice(env, manager, route.id, fetchImpl);
     default: {
       const exhaustive: never = route;
       return exhaustive;

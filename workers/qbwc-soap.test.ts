@@ -130,4 +130,113 @@ describe("QBWC SOAP parse", () => {
     );
     expect(nvu).toContain("<string>nvu</string>");
   });
+
+  it("completes BillAddRs with TxnID and fails on QuickBooks error", async () => {
+    const env = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    };
+    const job = {
+      id: "job-bill",
+      org_id: "org-1",
+      connection_id: "conn-1",
+      status: "sending",
+      operation: "bill_add",
+      entity_type: "invoice",
+      entity_id: "inv-1",
+      attempt_count: 1,
+      qbxml_request: "<BillAddRq/>",
+      qbxml_response: null,
+      quickbooks_txn_id: null,
+      edit_sequence: null,
+      error_code: null,
+      error_message: null,
+    };
+    const invoicePatches: unknown[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("quickbooks_desktop_sessions") && method === "GET") {
+        return Response.json([
+          { ticket: "t1", connection_id: "conn-1", org_id: "org-1", expires_at: "2099-01-01T00:00:00.000Z", last_error: null },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+        return Response.json([
+          {
+            id: "conn-1",
+            org_id: "org-1",
+            restaurant_id: "rest-kane",
+            name: "Kane",
+            qb_username: "bfy_ok",
+            password_hash: "x",
+            owner_id: "o",
+            file_id: "f",
+            company_file: null,
+            qb_company_name: "Kane",
+            qb_product_name: null,
+            qb_major_version: "13",
+            qb_minor_version: "0",
+            is_active: true,
+            last_connected_at: "2026-09-19T00:00:00.000Z",
+            last_successful_sync_at: null,
+            last_error: null,
+          },
+        ]);
+      }
+      if (url.includes("quickbooks_sync_jobs") && method === "GET") {
+        return Response.json([job]);
+      }
+      if (url.includes("quickbooks_sync_jobs") && method === "PATCH") {
+        Object.assign(job, JSON.parse(String(init?.body ?? "{}")));
+        return Response.json([job]);
+      }
+      if (url.includes("/rest/v1/invoices") && method === "PATCH") {
+        invoicePatches.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "PATCH") {
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_desktop_sessions") && method === "PATCH") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+
+    const ok = await dispatchQbwcSoap(
+      {
+        method: "receiveResponseXML",
+        params: {
+          ticket: "t1",
+          response: `<BillAddRs statusCode="0" statusMessage="Status OK"><BillRet><TxnID>TX-1</TxnID><EditSequence>2</EditSequence></BillRet></BillAddRs>`,
+        },
+      },
+      env,
+      fetchImpl,
+    );
+    expect(ok).toContain("<receiveResponseXMLResult>100</receiveResponseXMLResult>");
+    expect(job.status).toBe("completed");
+    expect(job.quickbooks_txn_id).toBe("TX-1");
+    expect(invoicePatches[0]).toMatchObject({
+      status: "exported",
+      quickbooks_txn_id: "TX-1",
+    });
+
+    job.status = "sending";
+    const fail = await dispatchQbwcSoap(
+      {
+        method: "receiveResponseXML",
+        params: {
+          ticket: "t1",
+          response: `<BillAddRs statusCode="3120" statusSeverity="Error" statusMessage="Vendor not found"></BillAddRs>`,
+        },
+      },
+      env,
+      fetchImpl,
+    );
+    expect(fail).toContain("<receiveResponseXMLResult>-1</receiveResponseXMLResult>");
+    expect(job.status).toBe("failed");
+    expect(job.error_message).toBe("Vendor not found");
+  });
 });

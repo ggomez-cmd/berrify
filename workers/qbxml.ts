@@ -109,8 +109,7 @@ export function parseHcpHostInfo(xml: string): Pick<
   };
 }
 
-/** Stubs for later Invoice → Bill mapping. Do not enqueue these jobs in this pass. */
-export type FutureBillAddFields = {
+export type BillAddFields = {
   vendorName: string;
   refNumber: string | null;
   txnDate: string | null;
@@ -120,6 +119,93 @@ export type FutureBillAddFields = {
   expenses: Array<{ account: string; amount: number; memo: string }>;
   total: number;
 };
+
+export type BillAddResult = ParsedQbStatus & {
+  txnId: string | null;
+  editSequence: string | null;
+};
+
+function qbxmlDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim());
+  if (!match) return iso.trim() || null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function qbxmlAmount(amount: number): string {
+  return (Math.round(amount * 100) / 100).toFixed(2);
+}
+
+export function buildBillAddRq(input: BillAddFields): string {
+  const txnDate = qbxmlDate(input.txnDate);
+  const dueDate = qbxmlDate(input.dueDate);
+  const terms = input.terms?.trim() ?? "";
+  const refNumber = input.refNumber?.trim() ?? "";
+  const expenses = input.expenses
+    .filter((line) => Number.isFinite(line.amount) && line.amount !== 0 && line.account.trim())
+    .map((line) => {
+      const memo = line.memo.trim();
+      return [
+        `        <ExpenseLineAdd>`,
+        `          <AccountRef>`,
+        `            <FullName>${xmlEscape(line.account.trim())}</FullName>`,
+        `          </AccountRef>`,
+        `          <Amount>${qbxmlAmount(line.amount)}</Amount>`,
+        memo ? `          <Memo>${xmlEscape(memo)}</Memo>` : null,
+        `        </ExpenseLineAdd>`,
+      ]
+        .filter((row): row is string => row !== null)
+        .join("\n");
+    });
+  const optional = [
+    txnDate ? `        <TxnDate>${xmlEscape(txnDate)}</TxnDate>` : null,
+    refNumber ? `        <RefNumber>${xmlEscape(refNumber)}</RefNumber>` : null,
+    terms
+      ? [
+          `        <TermsRef>`,
+          `          <FullName>${xmlEscape(terms)}</FullName>`,
+          `        </TermsRef>`,
+        ].join("\n")
+      : null,
+    dueDate ? `        <DueDate>${xmlEscape(dueDate)}</DueDate>` : null,
+    input.apAccount.trim()
+      ? [
+          `        <APAccountRef>`,
+          `          <FullName>${xmlEscape(input.apAccount.trim())}</FullName>`,
+          `        </APAccountRef>`,
+        ].join("\n")
+      : null,
+  ].filter((row): row is string => row !== null);
+
+  return [
+    `<?xml version="1.0"?>`,
+    `<?qbxml version="${QBXML_VERSION}"?>`,
+    `<QBXML>`,
+    `  <QBXMLMsgsRq onError="stopOnError">`,
+    `    <BillAddRq>`,
+    `      <BillAdd>`,
+    `        <VendorRef>`,
+    `          <FullName>${xmlEscape(input.vendorName.trim())}</FullName>`,
+    `        </VendorRef>`,
+    ...optional,
+    ...expenses,
+    `      </BillAdd>`,
+    `    </BillAddRq>`,
+    `  </QBXMLMsgsRq>`,
+    `</QBXML>`,
+  ].join("\n");
+}
+
+export function parseBillAddRs(xml: string): BillAddResult {
+  const hasRs = /<BillAddRs\b/i.test(xml);
+  const status = parseQbStatus(xml, "BillAddRs");
+  return {
+    ...status,
+    ok: hasRs && status.ok,
+    txnId: xmlText(xml, "TxnID"),
+    editSequence: xmlText(xml, "EditSequence"),
+  };
+}
 
 export function futureVendorQueryOpcode(): Extract<QbxmlOpcode, "VendorQuery"> {
   return "VendorQuery";

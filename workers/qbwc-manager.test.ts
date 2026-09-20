@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { handleDownloadQwc, parseManagerPath, requireManager } from "./qbwc-manager";
+import {
+  handleDownloadQwc,
+  handleSendInvoice,
+  parseManagerPath,
+  requireManager,
+  resolveInvoiceConnection,
+} from "./qbwc-manager";
 
 const env = {
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -23,6 +29,7 @@ describe("QBWC manager routes", () => {
     expect(parseManagerPath("/api/qbwc/connections/abc/rotate")).toEqual({ kind: "rotate", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/revoke")).toEqual({ kind: "revoke", id: "abc" });
     expect(parseManagerPath("/api/qbwc/connections/abc/qwc")).toEqual({ kind: "qwc", id: "abc" });
+    expect(parseManagerPath("/api/qbwc/invoices/inv-1/send")).toEqual({ kind: "send-invoice", id: "inv-1" });
     expect(parseManagerPath("/api/qbwc")).toBeNull();
   });
 
@@ -74,5 +81,171 @@ describe("QBWC manager routes", () => {
     );
     expect(response.status).toBe(404);
     expect(await response.text()).not.toContain("OwnerID");
+  });
+});
+
+const kaneConn = {
+  id: "conn-kane",
+  org_id: "org-1",
+  restaurant_id: "rest-kane",
+  name: "Kane",
+  qb_username: "bfy_kane",
+  password_hash: "hash",
+  owner_id: "o",
+  file_id: "f",
+  company_file: null,
+  qb_company_name: "Kane",
+  qb_product_name: null,
+  qb_major_version: null,
+  qb_minor_version: null,
+  is_active: true,
+  last_connected_at: "2026-09-19T00:00:00.000Z",
+  last_successful_sync_at: "2026-09-19T00:00:00.000Z",
+  last_error: null,
+};
+
+function invoiceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "inv-1",
+    org_id: "org-1",
+    restaurant_id: "rest-kane",
+    supplier_id: "sup-1",
+    vendor_name: "Jose Santiago Inc",
+    invoice_number: "6512495",
+    invoice_date: "2026-08-12",
+    due_date: "2026-08-27",
+    terms: "Net 15",
+    ap_account: "20000 · Accounts payable",
+    status: "reviewed",
+    total: 10,
+    suppliers: { name: "Jose Santiago Inc" },
+    invoice_expense_lines: [{ account: "50000 · Food Purchases", amount: 10, memo: "Food" }],
+    ...overrides,
+  };
+}
+
+function sendFetch(options: {
+  invoice?: unknown[] | "missing";
+  connections?: unknown[];
+  jobs?: Array<Record<string, unknown>>;
+}): typeof fetch {
+  const jobs = options.jobs ?? [];
+  return async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url.includes("/rest/v1/invoices") && method === "GET") {
+      if (!url.includes("org_id=eq.org-1")) return Response.json([]);
+      if (options.invoice === "missing") return Response.json([]);
+      return Response.json(options.invoice ?? [invoiceRow()]);
+    }
+    if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+      const rows = (options.connections ?? [kaneConn]) as Array<{ restaurant_id: string | null }>;
+      if (url.includes("restaurant_id=is.null")) {
+        return Response.json(rows.filter((row) => row.restaurant_id == null));
+      }
+      if (url.includes("restaurant_id=eq.")) {
+        const match = /restaurant_id=eq\.([^&]+)/.exec(url);
+        return Response.json(rows.filter((row) => row.restaurant_id === match?.[1]));
+      }
+      return Response.json(rows);
+    }
+    if (url.includes("quickbooks_sync_jobs")) {
+      if (method === "GET") return Response.json(jobs.slice(0, 1));
+      if (method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        const created = {
+          id: "job-bill",
+          status: "pending",
+          operation: "bill_add",
+          entity_type: "invoice",
+          entity_id: body.entity_id,
+          connection_id: body.connection_id,
+          error_message: null,
+          quickbooks_txn_id: null,
+          qbxml_request: body.qbxml_request,
+        };
+        jobs.push(created);
+        return Response.json([created], { status: 201 });
+      }
+      if (method === "PATCH") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        Object.assign(jobs[0] ?? {}, body);
+        return Response.json(jobs.slice(0, 1));
+      }
+    }
+    throw new Error(`unexpected ${method} ${url}`);
+  };
+}
+
+describe("invoice Send to QuickBooks", () => {
+  const manager = { userId: "user-1", orgId: "org-1", role: "manager" };
+
+  it("rejects non-reviewed invoices", async () => {
+    const response = await handleSendInvoice(
+      env,
+      manager,
+      "inv-1",
+      sendFetch({ invoice: [invoiceRow({ status: "extracted" })] }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Invoice must be reviewed before sending to QuickBooks",
+    });
+  });
+
+  it("rejects another org's invoice", async () => {
+    const response = await handleSendInvoice(env, manager, "inv-other", sendFetch({ invoice: "missing" }));
+    expect(response.status).toBe(404);
+  });
+
+  it("does not send Semilla to Kane when Semilla has no Connected connector", async () => {
+    const response = await handleSendInvoice(
+      env,
+      manager,
+      "inv-semilla",
+      sendFetch({
+        invoice: [invoiceRow({ id: "inv-semilla", restaurant_id: "rest-semilla" })],
+        connections: [kaneConn],
+      }),
+    );
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("Semilla invoices are not sent to Kane");
+  });
+
+  it("queues bill_add on the restaurant Connected connector", async () => {
+    const response = await handleSendInvoice(env, manager, "inv-1", sendFetch({}));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { job: { operation: string; connection_id: string } };
+    expect(body.job.operation).toBe("bill_add");
+    expect(body.job.connection_id).toBe("conn-kane");
+  });
+
+  it("uses the org shared connector when the restaurant has none", async () => {
+    const shared = { ...kaneConn, id: "conn-shared", restaurant_id: null, name: "Shared" };
+    const response = await handleSendInvoice(
+      env,
+      manager,
+      "inv-1",
+      sendFetch({
+        invoice: [invoiceRow({ restaurant_id: "rest-semilla" })],
+        connections: [shared],
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { job: { connection_id: string } };
+    expect(body.job.connection_id).toBe("conn-shared");
+  });
+
+  it("does not treat a waiting restaurant connector as Connected", async () => {
+    const picked = await resolveInvoiceConnection(
+      env,
+      "org-1",
+      "rest-kane",
+      sendFetch({
+        connections: [{ ...kaneConn, last_connected_at: null }],
+      }),
+    );
+    expect(picked).toBeNull();
   });
 });

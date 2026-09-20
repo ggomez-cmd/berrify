@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  BILL_ADD_OPERATION,
   claimNextPendingJob,
   COMPANY_QUERY_OPERATION,
   companyQueryJobKey,
   completeJob,
+  enqueueBillAddJob,
   enqueueCompanyQueryJob,
   failJob,
+  qbxmlRequestForClaim,
   shouldEnqueueCompanyQuery,
   type QbwcJobRow,
 } from "./qbwc-jobs";
@@ -49,25 +52,32 @@ function mockJobsFetch(store: Store): typeof fetch {
         (job) => `${job.connection_id}:${job.entity_type}:${job.entity_id}:${job.operation}` === key,
       );
       if (exists) return new Response(null, { status: 409 });
-      store.jobs.push(
-        jobRow({
-          id: `job-${store.jobs.length + 1}`,
-          org_id: body.org_id ?? "org-1",
-          connection_id: body.connection_id ?? "conn-1",
-          status: "pending",
-          operation: body.operation ?? COMPANY_QUERY_OPERATION,
-          entity_type: body.entity_type ?? "connection",
-          entity_id: body.entity_id ?? "conn-1",
-          qbxml_request: body.qbxml_request ?? null,
-        }),
-      );
-      return new Response(null, { status: 201 });
+      const created = jobRow({
+        id: `job-${store.jobs.length + 1}`,
+        org_id: body.org_id ?? "org-1",
+        connection_id: body.connection_id ?? "conn-1",
+        status: "pending",
+        operation: body.operation ?? COMPANY_QUERY_OPERATION,
+        entity_type: body.entity_type ?? "connection",
+        entity_id: body.entity_id ?? "conn-1",
+        qbxml_request: body.qbxml_request ?? null,
+      });
+      store.jobs.push(created);
+      return Response.json([created], { status: 201 });
     }
     if (method === "GET") {
       const connectionId = parsed.searchParams.get("connection_id")?.replace(/^eq\./, "");
       const status = parsed.searchParams.get("status")?.replace(/^eq\./, "");
+      const entityType = parsed.searchParams.get("entity_type")?.replace(/^eq\./, "");
+      const entityId = parsed.searchParams.get("entity_id")?.replace(/^eq\./, "");
+      const operation = parsed.searchParams.get("operation")?.replace(/^eq\./, "");
       const rows = store.jobs.filter(
-        (job) => job.connection_id === connectionId && (!status || job.status === status),
+        (job) =>
+          job.connection_id === connectionId &&
+          (!status || job.status === status) &&
+          (!entityType || job.entity_type === entityType) &&
+          (!entityId || job.entity_id === entityId) &&
+          (!operation || job.operation === operation),
       );
       return Response.json(rows.slice(0, 1));
     }
@@ -131,5 +141,66 @@ describe("QBWC jobs", () => {
     const fetchImpl = mockJobsFetch(store);
     const claimed = await claimNextPendingJob(env, "conn-b", fetchImpl);
     expect(claimed).toBeNull();
+  });
+
+  it("does not rewrite bill_add jobs as CompanyQuery", async () => {
+    const billXml = "<BillAddRq><BillAdd /></BillAddRq>";
+    expect(
+      qbxmlRequestForClaim({
+        operation: BILL_ADD_OPERATION,
+        qbxml_request: billXml,
+      }),
+    ).toBe(billXml);
+    expect(qbxmlRequestForClaim({ operation: BILL_ADD_OPERATION, qbxml_request: null })).toBeNull();
+    const store: Store = {
+      jobs: [
+        jobRow({
+          operation: BILL_ADD_OPERATION,
+          entity_type: "invoice",
+          entity_id: "inv-1",
+          qbxml_request: billXml,
+        }),
+      ],
+    };
+    const claimed = await claimNextPendingJob(env, "conn-1", mockJobsFetch(store));
+    expect(claimed?.qbxml_request).toBe(billXml);
+    expect(claimed?.qbxml_request).not.toContain("CompanyQuery");
+  });
+
+  it("enqueues bill_add once and retries a failed job on the same unique key", async () => {
+    const store: Store = { jobs: [] };
+    const fetchImpl = mockJobsFetch(store);
+    const first = await enqueueBillAddJob(
+      env,
+      { orgId: "org-1", connectionId: "conn-1", invoiceId: "inv-1", qbxmlRequest: "<BillAddRq/>" },
+      fetchImpl,
+    );
+    const second = await enqueueBillAddJob(
+      env,
+      { orgId: "org-1", connectionId: "conn-1", invoiceId: "inv-1", qbxmlRequest: "<BillAddRq/>" },
+      fetchImpl,
+    );
+    expect(first.result).toBe("inserted");
+    expect(second.result).toBe("duplicate");
+    expect(store.jobs).toHaveLength(1);
+    store.jobs[0]!.status = "failed";
+    store.jobs[0]!.error_message = "Vendor not found";
+    const retried = await enqueueBillAddJob(
+      env,
+      { orgId: "org-1", connectionId: "conn-1", invoiceId: "inv-1", qbxmlRequest: "<BillAddRq retry/>" },
+      fetchImpl,
+    );
+    expect(retried.result).toBe("retried");
+    expect(store.jobs[0]).toMatchObject({ status: "pending", error_message: null });
+    expect(store.jobs[0]?.qbxml_request).toContain("retry");
+    store.jobs[0]!.status = "completed";
+    const again = await enqueueBillAddJob(
+      env,
+      { orgId: "org-1", connectionId: "conn-1", invoiceId: "inv-1", qbxmlRequest: "<BillAddRq/>" },
+      fetchImpl,
+    );
+    expect(again.result).toBe("duplicate");
+    expect(store.jobs).toHaveLength(1);
+    expect(store.jobs[0]?.status).toBe("completed");
   });
 });

@@ -114,6 +114,39 @@ export async function revokeQbwcConnection(
   }
 }
 
+export async function sendInvoiceToQuickBooks(
+  invoiceId: string,
+  fetchImpl: typeof fetch = fetch,
+  getAccessToken: () => Promise<string | null> = defaultAccessToken,
+): Promise<{ id: string; status: string; error_message: string | null; quickbooks_txn_id: string | null }> {
+  const headers = await authHeaders(getAccessToken);
+  const response = await fetchImpl(`/api/qbwc/invoices/${encodeURIComponent(invoiceId)}/send`, {
+    method: "POST",
+    headers,
+    credentials: "same-origin",
+  });
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    throw new Error(readError(payload, response.status, "Could not send invoice to QuickBooks"));
+  }
+  const job = (payload as { job?: { id?: string; status?: string; error_message?: string | null; quickbooks_txn_id?: string | null } })
+    .job;
+  if (!job?.id || !job.status) {
+    throw new Error("Could not send invoice to QuickBooks");
+  }
+  return {
+    id: job.id,
+    status: job.status,
+    error_message: job.error_message ?? null,
+    quickbooks_txn_id: job.quickbooks_txn_id ?? null,
+  };
+}
+
 export async function downloadBerrifyQwc(
   connectionId: string,
   fetchImpl: typeof fetch = fetch,

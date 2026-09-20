@@ -4,8 +4,9 @@ Berrify exposes a SOAP service for Intuit QuickBooks Web Connector (QBWC) at
 `https://berrify.app/api/qbwc`. QBWC on Windows **pulls** from Berrify. Berrify
 never opens a connection to the accounting PC.
 
-This first release only runs a read-only `CompanyQueryRq`. It does **not** post
-Bills. Invoice export remains Desktop IIF on the Invoices page.
+After a restaurant (or the org shared file) is **Connected**, a manager can send
+a reviewed invoice as an expense `BillAddRq`. IIF / CSV export on the Invoices
+page still works. Berrify does **not** auto-enqueue Bills.
 
 ## Windows setup
 
@@ -26,6 +27,26 @@ Bills. Invoice export remains Desktop IIF on the Invoices page.
 
 Scheduler minutes are included in a new `.qwc` download only after the first
 successful company query. Re-download does not change OwnerID or FileID.
+
+## Send a reviewed invoice
+
+1. Open the invoice, confirm restaurant, vendor, and expense lines.
+2. **Save review**.
+3. Click **Send to QuickBooks**. Berrify queues a `bill_add` job on that
+   restaurant’s Connected connector, or the org shared connector if the
+   restaurant has none. Semilla invoices are never sent to Kane’s company file.
+4. In Web Connector, click **Update Selected** (or wait for Auto-Run).
+5. Invoice job status moves Queued → Sending → **Synced** with the QuickBooks
+   `TxnID`, or **Failed** with the QuickBooks message. Use **Send to QuickBooks**
+   again to retry a failed job.
+
+Vendor **FullName** in QuickBooks must already match the supplier name / print
+name used on the invoice (the same names as IIF). This pass does not create
+vendors. Missing vendor, account, or terms fails the job with the QuickBooks
+status message.
+
+Kane can send once that connector is **Connected**. Semilla can send after its
+own connector (or the org shared file) is Connected.
 
 ## Check the endpoint
 
@@ -68,5 +89,8 @@ successful company query. Re-download does not change OwnerID or FileID.
 
 ## What is not included
 
-- No `BillAddRq` and no automatic Bills.
-- Do not treat a **Connected** company query as proof that invoices will post.
+- No automatic Bills. A manager must click **Send to QuickBooks**.
+- No `VendorAddRq`. Vendor names must already exist in that company file.
+- A **Connected** company query is not proof that a Bill landed. Treat a Bill
+  as posted only after Web Connector completes a `bill_add` job and the invoice
+  shows **Synced** with a `TxnID`.
