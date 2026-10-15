@@ -6,6 +6,7 @@ import {
   apAccountsForSelect,
   applyQbAccountNames,
   connectionIdForInvoiceAccounts,
+  invoiceReviewAccountSelectValues,
   matchQbAccount,
   qbAccountLabel,
   resolveQbAccountRef,
@@ -183,6 +184,44 @@ describe("QB account match", () => {
     ]);
     expect(accountSelectValues(accountsForConnection(semillaId, all))).toEqual(["Local Produce"]);
     expect(accountSelectValues(accountsForConnection(semillaId, all))).not.toContain("68200 · SalesTaxExpense");
+  });
+
+  it("isolates review account options to the restaurant Online connection", () => {
+    const names = invoiceReviewAccountSelectValues({
+      restaurantId: "rest-semilla",
+      connections: [
+        { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+        { id: "conn-shared", restaurant_id: null, is_active: true },
+      ],
+      onlineConnections: [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
+      accounts: [kaneTax, kaneWine, kaneFood, kaneAp, { ...semillaFood, connection_id: "qbo-semilla" }],
+    });
+    expect(names).toEqual(["Local Produce"]);
+    expect(names).not.toContain("68200 · SalesTaxExpense");
+  });
+
+  it("uses shared Desktop accounts when the restaurant has no Online connection", () => {
+    const names = invoiceReviewAccountSelectValues({
+      restaurantId: "rest-semilla",
+      connections: [
+        { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+        { id: "conn-shared", restaurant_id: null, is_active: true },
+      ],
+      onlineConnections: [{ id: "qbo-kane", restaurant_id: "rest-kane", is_active: true }],
+      accounts: [kaneTax, { ...semillaFood, connection_id: "conn-shared" }],
+    });
+    expect(names).toEqual(["Local Produce"]);
+  });
+
+  it("keeps a stale current expense account after restaurant scope changes", () => {
+    const names = invoiceReviewAccountSelectValues({
+      restaurantId: "rest-semilla",
+      connections: [{ id: "conn-shared", restaurant_id: null, is_active: true }],
+      onlineConnections: [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
+      accounts: [kaneTax, { ...semillaFood, connection_id: "qbo-semilla" }],
+      currentValue: "68200 · SalesTaxExpense",
+    });
+    expect(names).toEqual(["Local Produce", "68200 · SalesTaxExpense"]);
   });
 
   it("keeps an unmatched current expense account selectable", () => {

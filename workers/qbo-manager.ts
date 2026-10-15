@@ -17,6 +17,12 @@ import {
   type QboConnectionRow,
   type QboSendEnv,
 } from "./qbo-send";
+import {
+  applyQboListCopy,
+  parseQboListImportBody,
+  QBO_LIST_IMPORT_MAX_BYTES,
+  readQboListExport,
+} from "./qbo-list-copy";
 import { syncOnlineAccounts, syncOnlineVendors } from "./qbo-sync";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -29,6 +35,8 @@ export type QboRoute =
   | { kind: "callback" }
   | { kind: "refresh-vendors"; id: string }
   | { kind: "refresh-accounts"; id: string }
+  | { kind: "list-export"; id: string }
+  | { kind: "list-import"; id: string }
   | { kind: "disconnect"; id: string };
 
 function json(body: unknown, status = 200): Response {
@@ -47,6 +55,10 @@ export function parseQboPath(pathname: string): QboRoute | null {
   if (vendors?.[1]) return { kind: "refresh-vendors", id: vendors[1] };
   const accounts = /^\/api\/qbo\/connections\/([^/]+)\/accounts$/.exec(pathname);
   if (accounts?.[1]) return { kind: "refresh-accounts", id: accounts[1] };
+  const listExport = /^\/api\/qbo\/connections\/([^/]+)\/list-export$/.exec(pathname);
+  if (listExport?.[1]) return { kind: "list-export", id: listExport[1] };
+  const listImport = /^\/api\/qbo\/connections\/([^/]+)\/list-import$/.exec(pathname);
+  if (listImport?.[1]) return { kind: "list-import", id: listImport[1] };
   const disconnect = /^\/api\/qbo\/connections\/([^/]+)\/disconnect$/.exec(pathname);
   if (disconnect?.[1]) return { kind: "disconnect", id: disconnect[1] };
   return null;
@@ -109,6 +121,16 @@ export async function handleQbo(
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
       }
       return handleRefresh(request, env, route.id, "accounts", fetchImpl);
+    case "list-export":
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
+      }
+      return handleListExport(request, env, route.id, fetchImpl);
+    case "list-import":
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      return handleListImport(request, env, route.id, fetchImpl);
     case "disconnect":
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
@@ -432,6 +454,79 @@ async function handleRefresh(
     fetchImpl,
   );
   return json({ count: synced.count, connection_id: connection.id });
+}
+
+async function handleListExport(
+  request: Request,
+  env: QboSendEnv,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const manager = await requireManager(request, env, fetchImpl);
+  if (manager instanceof Response) return manager;
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection || !connection.is_active) return json({ error: "Not found" }, 404);
+  const access = await ensureOnlineAccessToken(env, connection, fetchImpl);
+  if ("error" in access) return json({ error: access.error }, access.status);
+  const exported = await readQboListExport(fetchImpl, {
+    apiBase: qboApiBase(env.INTUIT_ENVIRONMENT),
+    realmId: connection.realm_id,
+    accessToken: access.accessToken,
+    sourceCompanyName: connection.company_name,
+  });
+  if ("error" in exported) return json({ error: exported.error }, 400);
+  return json({ export: exported });
+}
+
+async function handleListImport(
+  request: Request,
+  env: QboSendEnv,
+  connectionId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const manager = await requireManager(request, env, fetchImpl);
+  if (manager instanceof Response) return manager;
+  const raw = await request.text();
+  if (raw.length > QBO_LIST_IMPORT_MAX_BYTES) return json({ error: "That QuickBooks list export is too large" }, 400);
+  let body: unknown = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    return json({ error: "That QuickBooks list export is not valid JSON" }, 400);
+  }
+  const parsed = parseQboListImportBody(body);
+  if ("error" in parsed) return json({ error: parsed.error }, 400);
+  const connection = await loadOwnedConnection(env, manager.orgId, connectionId, fetchImpl);
+  if (!connection || !connection.is_active) return json({ error: "Not found" }, 404);
+  const access = await ensureOnlineAccessToken(env, connection, fetchImpl);
+  if ("error" in access) return json({ error: access.error }, access.status);
+  const apiBase = qboApiBase(env.INTUIT_ENVIRONMENT);
+  const copied = await applyQboListCopy(fetchImpl, {
+    apiBase,
+    realmId: connection.realm_id,
+    accessToken: access.accessToken,
+    source: parsed.export,
+  });
+  if ("error" in copied) {
+    await patchConnection(env, connection.id, { last_error: copied.error }, fetchImpl);
+    return json({ error: copied.error }, 400);
+  }
+  const synced = await syncCompany(env, connection, access.accessToken, fetchImpl);
+  if ("error" in synced) {
+    await patchConnection(env, connection.id, { last_error: synced.error }, fetchImpl);
+    return json({ error: synced.error, copy: copied }, 400);
+  }
+  await patchConnection(
+    env,
+    connection.id,
+    { last_synced_at: new Date().toISOString(), last_error: copied.errors[0] ?? null },
+    fetchImpl,
+  );
+  return json({
+    connection_id: connection.id,
+    copy: copied,
+    synced,
+  });
 }
 
 async function handleDisconnect(

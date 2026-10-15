@@ -435,6 +435,7 @@ async function seedInvoices(orgId: string, userId: string) {
     "Kane Rum Bar",
     "1060 / 1080 Ave Ashford. WhatsApp group: Kane invoices.",
   );
+  await ensureRestaurant(orgId, "Lelas", "lelas", "Lelas", "Lelas restaurant.");
   const restaurantAliases: RestaurantAlias[] = [
     { restaurant_id: kaneId, match_kind: "whatsapp_group", match_text: "kane invoices" },
     { restaurant_id: semillaId, match_kind: "whatsapp_group", match_text: "semilla kitchen" },

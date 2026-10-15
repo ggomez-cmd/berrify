@@ -31,6 +31,21 @@ export function accountSelectValues(accounts: QbAccountRow[], currentValue?: str
   return Array.from(new Set([...labels, ...(extra ? [extra] : [])]));
 }
 
+export function invoiceReviewAccountSelectValues(input: {
+  restaurantId: string | null;
+  connections: Array<{ id: string; restaurant_id: string | null; is_active: boolean }>;
+  onlineConnections?: Array<{ id: string; restaurant_id: string | null; is_active: boolean }>;
+  accounts: QbAccountRow[];
+  currentValue?: string;
+}): string[] {
+  const connectionId = connectionIdForInvoiceAccounts(
+    input.restaurantId,
+    input.connections,
+    input.onlineConnections ?? [],
+  );
+  return accountSelectValues(accountsForConnection(connectionId, input.accounts), input.currentValue);
+}
+
 export function apAccountsForSelect(accounts: QbAccountRow[]): QbAccountRow[] {
   return accounts.filter((row) => scoreAccount(row, "ap") > 0);
 }

@@ -1,4 +1,4 @@
-import { Download, KeyRound, Plug, RefreshCw, ShieldOff } from "lucide-react";
+import { Download, FileUp, KeyRound, Plug, RefreshCw, ShieldOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -7,9 +7,12 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import {
   disconnectQbo,
+  exportQboLists,
+  importQboLists,
   refreshQboAccounts,
   refreshQboVendors,
   startQboConnect,
+  type QboListExportPayload,
 } from "../../lib/qbo-manager-api";
 import {
   createQbwcConnection,
@@ -239,6 +242,50 @@ export function QuickbooksPage() {
     }
   };
 
+  const exportOnlineLists = async (connection: QuickbooksOnlineConnection, restaurantName: string) => {
+    setBusyKey(connection.id);
+    setMessage(null);
+    try {
+      const listExport = await exportQboLists(connection.id);
+      const blob = new Blob([JSON.stringify(listExport, null, 2)], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `qbo-lists-${restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "company"}.json`;
+      link.click();
+      URL.revokeObjectURL(href);
+      setMessage(
+        `Exported ${listExport.vendors.length} vendors and ${listExport.accounts.length} accounts. Disconnect, connect the sandbox company, then import this file.`,
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not export QuickBooks lists");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const importOnlineLists = async (connection: QuickbooksOnlineConnection, file: File) => {
+    const confirmed = window.confirm(
+      `Create missing vendors and accounts in ${connection.company_name || "the connected company"} from ${file.name}? Existing names are left unchanged.`,
+    );
+    if (!confirmed) return;
+    setBusyKey(connection.id);
+    setMessage(null);
+    try {
+      const parsed = JSON.parse(await file.text()) as QboListExportPayload;
+      const result = await importQboLists(connection.id, parsed);
+      await refresh();
+      const errorNote = result.errors.length > 0 ? ` ${result.errors.length} could not be created.` : "";
+      setMessage(
+        `Imported lists: created ${result.vendorsCreated} vendors and ${result.accountsCreated} accounts, skipped ${result.vendorsSkipped + result.accountsSkipped} existing names.${errorNote}`,
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not import QuickBooks lists");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const disconnectOnline = async (connection: QuickbooksOnlineConnection) => {
     if (!window.confirm(`Disconnect QuickBooks Online for ${connection.company_name || "this restaurant"}?`)) return;
     setBusyKey(connection.id);
@@ -272,7 +319,9 @@ export function QuickbooksPage() {
         QuickBooks Desktop uses Web Connector. QuickBooks Online is a separate connect on a restaurant card.
         This page does not post Bills. A manager sends one invoice at a time. Invoice IIF export is unchanged.
         Windows Web Connector steps are in <span className="font-mono">docs/qbwc-desktop.md</span>. Online
-        setup is in <span className="font-mono">docs/qbo-online.md</span>.
+        setup is in <span className="font-mono">docs/qbo-online.md</span>. Refresh only reads the connected
+        company. Copying vendors and accounts into a sandbox uses an explicit export, then import after
+        reconnecting — Berrify cannot hold production and sandbox OAuth at once.
       </p>
 
       {searchParams.get("qbo") === "connected" ? (
@@ -467,6 +516,39 @@ export function QuickbooksPage() {
                           <RefreshCw className="size-4" />
                           Refresh Online accounts
                         </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void exportOnlineLists(online, target.title)}
+                          disabled={busy}
+                        >
+                          <Download className="size-4" />
+                          Export lists
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={(event) => {
+                            const input = event.currentTarget.parentElement?.querySelector<HTMLInputElement>(
+                              `input[data-qbo-import="${online.id}"]`,
+                            );
+                            input?.click();
+                          }}
+                        >
+                          <FileUp className="size-4" />
+                          Import lists
+                        </Button>
+                        <input
+                          type="file"
+                          accept="application/json,.json"
+                          data-qbo-import={online.id}
+                          className="hidden"
+                          disabled={busy}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) void importOnlineLists(online, file);
+                          }}
+                        />
                         <Button variant="danger" onClick={() => void disconnectOnline(online)} disabled={busy}>
                           <ShieldOff className="size-4" />
                           Disconnect QuickBooks Online

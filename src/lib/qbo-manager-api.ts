@@ -106,6 +106,75 @@ export async function refreshQboAccounts(
   );
 }
 
+export type QboListVendorExport = {
+  displayName: string;
+  companyName: string | null;
+  isActive: boolean;
+};
+
+export type QboListAccountExport = {
+  name: string;
+  fullyQualifiedName: string;
+  accountType: string;
+  accountSubType: string | null;
+  accountNumber: string | null;
+  isActive: boolean;
+};
+
+export type QboListExportPayload = {
+  kind: "berrify.qbo.list-export";
+  version: 1;
+  exportedAt: string;
+  sourceCompanyName: string | null;
+  vendors: QboListVendorExport[];
+  accounts: QboListAccountExport[];
+};
+
+export type QboListCopyResult = {
+  vendorsCreated: number;
+  vendorsSkipped: number;
+  accountsCreated: number;
+  accountsSkipped: number;
+  errors: string[];
+};
+
+export async function exportQboLists(
+  connectionId: string,
+  fetchImpl: typeof fetch = fetch,
+  getAccessToken: () => Promise<string | null> = defaultAccessToken,
+): Promise<QboListExportPayload> {
+  const headers = await authHeaders(getAccessToken);
+  const response = await fetchImpl(`/api/qbo/connections/${encodeURIComponent(connectionId)}/list-export`, {
+    headers,
+    credentials: "same-origin",
+  });
+  const payload = await readPayload(response);
+  if (!response.ok) throw new Error(readError(payload, response.status, "Could not export QuickBooks lists"));
+  const exported = (payload as { export?: unknown }).export;
+  if (!exported || typeof exported !== "object") throw new Error("Could not export QuickBooks lists");
+  return exported as QboListExportPayload;
+}
+
+export async function importQboLists(
+  connectionId: string,
+  listExport: QboListExportPayload,
+  fetchImpl: typeof fetch = fetch,
+  getAccessToken: () => Promise<string | null> = defaultAccessToken,
+): Promise<QboListCopyResult> {
+  const headers = await authHeaders(getAccessToken);
+  const response = await fetchImpl(`/api/qbo/connections/${encodeURIComponent(connectionId)}/list-import`, {
+    method: "POST",
+    headers,
+    credentials: "same-origin",
+    body: JSON.stringify({ confirm: "create-missing-lists", export: listExport }),
+  });
+  const payload = await readPayload(response);
+  if (!response.ok) throw new Error(readError(payload, response.status, "Could not import QuickBooks lists"));
+  const copy = (payload as { copy?: QboListCopyResult }).copy;
+  if (!copy) throw new Error("Could not import QuickBooks lists");
+  return copy;
+}
+
 export async function disconnectQbo(
   connectionId: string,
   fetchImpl: typeof fetch = fetch,

@@ -5,6 +5,14 @@ import { AuthContext, type AuthState } from "../../auth/auth-context";
 import type { Organization } from "../../lib/types";
 import { QuickbooksPage } from "./QuickbooksPage";
 
+vi.mock("../../lib/supabase", () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: "test" } } }),
+    },
+  },
+}));
+
 const org: Organization = {
   id: "org-1",
   name: "Pacifico Kitchen",
@@ -100,6 +108,9 @@ describe("QuickbooksPage", () => {
     expect(screen.getAllByRole("button", { name: "Connect QuickBooks Online" })).toHaveLength(1);
     expect(screen.getByText(/INTUIT_CLIENT_ID and INTUIT_CLIENT_SECRET/)).toBeInTheDocument();
     expect(screen.getByText(/https:\/\/berrify.app\/api\/qbo\/callback/)).toBeInTheDocument();
+    expect(screen.getByText(/explicit export, then import/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export lists" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import lists" })).toBeNull();
     expect(screen.queryByText(/service-role/i)).toBeNull();
   });
 

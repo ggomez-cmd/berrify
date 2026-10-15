@@ -97,6 +97,31 @@ export function vendorsForConnection(connectionId: string | null, vendors: QbVen
   return vendors.filter((row) => row.connection_id === connectionId && row.is_active);
 }
 
+export function vendorSelectValues(vendors: QbVendorRow[], currentValue?: string): string[] {
+  const names = vendors.filter((row) => row.is_active).map((row) => row.full_name);
+  const extra = currentValue?.trim() ?? "";
+  return Array.from(new Set([...names, ...(extra ? [extra] : [])]));
+}
+
+export function invoiceReviewVendorSelectValues(input: {
+  restaurantId: string | null;
+  connections: Array<{ id: string; restaurant_id: string | null; is_active: boolean }>;
+  onlineConnections?: Array<{ id: string; restaurant_id: string | null; is_active: boolean }>;
+  vendors: QbVendorRow[];
+  currentValue?: string;
+  matchOptions?: string[];
+}): string[] {
+  const connectionId = connectionIdForInvoiceVendors(
+    input.restaurantId,
+    input.connections,
+    input.onlineConnections ?? [],
+  );
+  const scoped = vendorsForConnection(connectionId, input.vendors);
+  const allowed = new Set(scoped.map((row) => row.full_name));
+  const matchOptions = (input.matchOptions ?? []).filter((name) => allowed.has(name));
+  return Array.from(new Set([...matchOptions, ...vendorSelectValues(scoped, input.currentValue)]));
+}
+
 function letterheadCandidates(printName: string | null, ocrText?: string | null): string[] {
   const values = [printName];
   if (ocrText) {
