@@ -113,7 +113,8 @@ export function resolveQbAccountRef(stored: string, accounts: QbAccountRow[]): Q
     (parsed.number
       ? active.find((row) => (row.account_number?.trim() ?? "") === parsed.number)
       : undefined) ??
-    active.find((row) => foldAccount(row.full_name) === foldAccount(parsed.name));
+    active.find((row) => foldAccount(row.full_name) === foldAccount(parsed.name)) ??
+    active.find((row) => stemAccount(row.full_name) === stemAccount(parsed.name));
 
   if (matched) {
     return { listId: matched.list_id.trim() || null, fullName: matched.full_name.trim() || null };
@@ -129,6 +130,13 @@ function foldAccount(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function stemAccount(value: string): string {
+  return foldAccount(value)
+    .split(/\s+/)
+    .map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word))
+    .join(" ");
 }
 
 function haystack(row: QbAccountRow): string {
