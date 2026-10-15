@@ -100,6 +100,21 @@ describe("QB account match", () => {
     expect(resolveQbAccountRef("266000 · Sales Tax Payable", []).listId).toBeNull();
   });
 
+  it("resolves Beverage Purchases to Semilla's Beverage Purchase ListID", () => {
+    const semillaBev = {
+      connection_id: "conn-semilla",
+      list_id: "80000061-1681150852",
+      full_name: "Beverage Purchase",
+      account_number: "50400",
+      account_type: "CostOfGoodsSold",
+      is_active: true,
+    };
+    expect(resolveQbAccountRef("50010 · Beverage Purchases", [semillaBev])).toEqual({
+      listId: "80000061-1681150852",
+      fullName: "Beverage Purchase",
+    });
+  });
+
   it("maps tax to the tax expense account", () => {
     expect(
       matchQbAccount({
