@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import type { ExpenseLine, ExtractedSku } from "../../lib/invoice-extract";
+import { mimeForInvoiceFile } from "../../lib/invoice-image";
 import {
   extractExampleUpsert,
   skuAliasesFromReview,
@@ -562,5 +563,5 @@ export async function fileToDataUrl(file: File): Promise<{ data: string; mime: s
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
-  return { data, mime: file.type || "image/jpeg" };
+  return { data, mime: mimeForInvoiceFile(file) };
 }

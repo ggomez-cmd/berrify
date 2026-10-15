@@ -5,7 +5,7 @@ import {
   type ExtractedInvoice,
   type VendorAlias,
 } from "./invoice-extract";
-import { toRasterDataUrl } from "./invoice-image";
+import { isPdfAttachment, toRasterDataUrl } from "./invoice-image";
 import { isThinOcrText } from "./ocr-thin";
 import { supabase } from "./supabase";
 
@@ -100,8 +100,9 @@ export async function extractInvoicesAfterOcr(
 
   const fetchImpl = input.fetchImpl ?? fetch;
   const getAccessToken = input.getAccessToken ?? defaultAccessToken;
+  const canAttachImage = Boolean(input.image && !isPdfAttachment(input.image));
   const attachImageFirst = Boolean(
-    input.image &&
+    canAttachImage &&
       (isThinOcrText(input.ocrText, input.confidence) || !invoicesHavePositiveAmounts(rulesInvoices)),
   );
 
@@ -121,7 +122,7 @@ export async function extractInvoicesAfterOcr(
       sku_aliases: input.skuAliases ?? [],
       examples: input.examples ?? [],
     };
-    if (attachImage && input.image) {
+    if (attachImage && input.image && !isPdfAttachment(input.image)) {
       if (rasterImage === undefined) {
         rasterImage = await toRasterDataUrl(input.image, fetchImpl);
       }
@@ -152,7 +153,7 @@ export async function extractInvoicesAfterOcr(
     const geminiList = hasGemini ? (geminiInvoices as ExtractedInvoice[]) : [];
 
     if (
-      input.image &&
+      canAttachImage &&
       !attachedImage &&
       ((hasGemini && !invoicesHavePositiveAmounts(geminiList)) ||
         (response.ok && (!Array.isArray(geminiInvoices) || geminiInvoices.length === 0)))

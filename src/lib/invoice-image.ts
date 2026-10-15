@@ -22,14 +22,77 @@ const RASTER_DATA_URL_RE =
 const ANY_BASE64_DATA_URL_RE =
   /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,([\s\S]+)$/;
 
-export function assertInvoiceImage(file: File): void {
+export function isInvoicePdfFile(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  if (mime === "application/pdf") return true;
+  return file.name.toLowerCase().endsWith(".pdf");
+}
+
+export function mimeForInvoiceFile(file: File): string {
+  if (isInvoicePdfFile(file)) return "application/pdf";
+  return file.type || "image/jpeg";
+}
+
+export function isPdfBytes(bytes: Uint8Array): boolean {
+  let i = 0;
+  while (
+    i < bytes.length &&
+    (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0a || bytes[i] === 0x0d)
+  ) {
+    i += 1;
+  }
+  return (
+    bytes.length >= i + 5 &&
+    bytes[i] === 0x25 &&
+    bytes[i + 1] === 0x50 &&
+    bytes[i + 2] === 0x44 &&
+    bytes[i + 3] === 0x46 &&
+    bytes[i + 4] === 0x2d
+  );
+}
+
+export function isPdfDataUrl(image: string): boolean {
+  const trimmed = image.trim();
+  if (/^data:application\/pdf(?:;|$)/i.test(trimmed)) return true;
+  const match = ANY_BASE64_DATA_URL_RE.exec(trimmed);
+  if (!match) return false;
+  try {
+    return isPdfBytes(decodeBase64(match[2]));
+  } catch {
+    return false;
+  }
+}
+
+export function isPdfAttachment(src: string, mime?: string | null): boolean {
+  const declared = (mime || "").split(";")[0].trim().toLowerCase();
+  if (declared === "application/pdf") return true;
+  if (/\.pdf(?:$|[?#])/i.test(src.trim())) return true;
+  return isPdfDataUrl(src);
+}
+
+export function assertInvoiceMedia(file: File, options: { allowPdf?: boolean } = {}): void {
+  const allowPdf = Boolean(options.allowPdf);
   if (file.size > MAX_INVOICE_IMAGE_BYTES) {
-    throw new Error("Invoice photo must be 8 MB or smaller.");
+    throw new Error(
+      allowPdf ? "Invoice file must be 8 MB or smaller." : "Invoice photo must be 8 MB or smaller.",
+    );
+  }
+  if (isInvoicePdfFile(file)) {
+    if (!allowPdf) {
+      throw new Error("Invoice must be a raster image file.");
+    }
+    return;
   }
   const mime = file.type.toLowerCase();
   if (mime === "image/svg+xml" || (mime && !mime.startsWith("image/"))) {
-    throw new Error("Invoice must be a raster image file.");
+    throw new Error(
+      allowPdf ? "Invoice must be a PDF or raster image file." : "Invoice must be a raster image file.",
+    );
   }
+}
+
+export function assertInvoiceImage(file: File): void {
+  assertInvoiceMedia(file, { allowPdf: false });
 }
 
 export function isRasterDataUrl(image: string): boolean {
@@ -107,6 +170,21 @@ function decodeBase64(content: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+export function decodeDataUrlPayload(dataUrl: string): { mime: string; bytes: Uint8Array } {
+  const trimmed = dataUrl.trim();
+  if (!trimmed) {
+    throw new Error("Invoice file is missing.");
+  }
+  const match = ANY_BASE64_DATA_URL_RE.exec(trimmed);
+  if (!match) {
+    throw new Error("Invoice file must be a data URL.");
+  }
+  return {
+    mime: (match[1] || "").toLowerCase(),
+    bytes: decodeBase64(match[2]),
+  };
 }
 
 export function visionTargetSize(

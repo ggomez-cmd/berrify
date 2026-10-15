@@ -18,7 +18,8 @@ import {
 } from "../../lib/invoice-extract";
 import { extractEngineNote, extractInvoicesAfterOcr } from "../../lib/invoice-extract-api";
 import { formatMoney } from "../../lib/format";
-import { assertInvoiceImage, toRasterDataUrl } from "../../lib/invoice-image";
+import { assertInvoiceMedia, isPdfAttachment, toRasterDataUrl } from "../../lib/invoice-image";
+import { extractPdfTextFromDataUrl } from "../../lib/invoice-pdf";
 import { composeInvoicePageImages, invoicesToPersistFromPhoto, nextInvoicePageSortOrder } from "../../lib/invoice-pages";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import {
@@ -34,7 +35,7 @@ import {
   vendorsForConnection,
 } from "../../lib/qb-vendor-match";
 import { toThrownError } from "../../lib/thrown-error";
-import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
+import { getOcrEngine, ocrEngineNote, ocrImage, type OcrResult } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
 import type {
   AccountRuleRow,
@@ -56,8 +57,8 @@ import {
   useQuickbooksOnlineConnections,
   useQuickbooksVendors,
 } from "../quickbooks/hooks";
-import { InvoicePhotoLightbox } from "./InvoicePhotoLightbox";
 import { InvoiceReviewAccountField } from "./InvoiceReviewAccountField";
+import { InvoiceReviewMedia } from "./InvoiceReviewMedia";
 import { InvoiceReviewPhotoColumn } from "./InvoiceReviewPhotoColumn";
 import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
@@ -288,6 +289,10 @@ export function InvoiceReviewDialog({
       return;
     }
     const raw = media.data.image_data;
+    if (isPdfAttachment(raw, media.data.image_mime)) {
+      setPhotoSrc(raw);
+      return;
+    }
     let cancelled = false;
     void toRasterDataUrl(raw)
       .then((src) => {
@@ -299,7 +304,7 @@ export function InvoiceReviewDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, media.data?.image_data]);
+  }, [open, media.data?.image_data, media.data?.image_mime]);
 
   useEffect(() => {
     if (!open || !invoice || media.isLoading || !media.data) return;
@@ -368,12 +373,14 @@ export function InvoiceReviewDialog({
 
     const existingOcr = media.data.ocr_text;
     const image = photoSrc ?? media.data.image_data;
+    const pdfMedia = Boolean(image && isPdfAttachment(image, media.data.image_mime));
+    const extractImage = pdfMedia ? null : image;
     if (existingOcr) {
       ocrStartedFor.current = invoice.id;
       setOcrText(existingOcr);
       if (invoice.invoice_lines.length === 0) {
         setOcrBusy(true);
-        void applyPreview(existingOcr, false, image)
+        void applyPreview(existingOcr, false, extractImage)
           .catch((err) => {
             ocrStartedFor.current = null;
             setError(err instanceof Error ? err.message : "Could not extract invoice");
@@ -389,12 +396,20 @@ export function InvoiceReviewDialog({
 
     ocrStartedFor.current = invoice.id;
     setOcrBusy(true);
-    void ocrImage(image, { engine: getOcrEngine() })
+    const readText: Promise<OcrResult> = pdfMedia
+      ? extractPdfTextFromDataUrl(image).then((text) => ({
+          text,
+          confidence: 100,
+          rotation: 0,
+          engine: "pdf",
+        }))
+      : ocrImage(image, { engine: getOcrEngine() });
+    void readText
       .then(async (ocr) => {
         setOcrText(ocr.text);
         setOcrNote(ocrEngineNote(ocr));
         if (ocr.warning) setError(ocr.warning);
-        await applyPreview(ocr.text, true, image, ocr.confidence);
+        await applyPreview(ocr.text, true, extractImage, ocr.confidence);
       })
       .catch((err) => {
         ocrStartedFor.current = null;
@@ -451,6 +466,7 @@ export function InvoiceReviewDialog({
   const pageImages = composeInvoicePageImages(media.data, pagesQuery.data ?? []);
   const currentPage = pageImages[pageIndex] ?? pageImages[0];
   const displaySrc = currentPage?.image_data ?? photoSrc ?? media.data?.image_data;
+  const displayMime = currentPage?.image_mime ?? media.data?.image_mime;
 
   const persist = async (status: "reviewed" | "exported", exportedAt?: string) => {
     setError(null);
@@ -572,25 +588,11 @@ export function InvoiceReviewDialog({
           </div>
         ) : displaySrc ? (
           <InvoiceReviewPhotoColumn>
-            <button
-              type="button"
-              className="relative w-full cursor-pointer rounded-xl text-left"
-              aria-label="Click to zoom"
-              onClick={() => setLightboxOpen(true)}
-            >
-              <img
-                src={displaySrc}
-                alt="Invoice photo"
-                className="pointer-events-none max-h-80 w-full rounded-xl border border-line bg-paper object-contain"
-              />
-              <span className="absolute bottom-2 left-2 rounded-lg bg-navy/70 px-2 py-1 text-xs text-white">
-                Click to zoom
-              </span>
-            </button>
-            <InvoicePhotoLightbox
-              open={lightboxOpen}
+            <InvoiceReviewMedia
               src={displaySrc}
-              onClose={() => setLightboxOpen(false)}
+              mime={displayMime}
+              lightboxOpen={lightboxOpen}
+              onLightboxOpenChange={setLightboxOpen}
               pageLabel={pageImages.length > 1 ? `Page ${pageIndex + 1} / ${pageImages.length}` : null}
               onPrevPage={
                 pageImages.length > 1
@@ -607,7 +609,7 @@ export function InvoiceReviewDialog({
               <input
                 ref={addPageInput}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 className="hidden"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -615,7 +617,7 @@ export function InvoiceReviewDialog({
                   if (!file || !invoice) return;
                   void (async () => {
                     try {
-                      assertInvoiceImage(file);
+                      assertInvoiceMedia(file, { allowPdf: true });
                       const { data, mime } = await fileToDataUrl(file);
                       await addPage.mutateAsync({
                         orgId: invoice.org_id,

@@ -4,12 +4,13 @@ import { supabase } from "./supabase";
 import { downscaleForVision } from "./vision-jpeg";
 
 export type OcrEngine = "vision" | "tesseract";
+export type InvoiceTextEngine = OcrEngine | "pdf";
 
 export type OcrResult = {
   text: string;
   confidence: number;
   rotation: number;
-  engine: OcrEngine;
+  engine: InvoiceTextEngine;
   /** Set when Vision failed and Tesseract supplied the text. */
   warning?: string;
 };
@@ -214,6 +215,8 @@ export function ocrEngineNote(ocr: OcrResult): string {
       return "Vision OCR";
     case "tesseract":
       return `Tesseract OCR rotation ${ocr.rotation}°`;
+    case "pdf":
+      return "PDF text extract";
     default: {
       const exhaustive: never = ocr.engine;
       return exhaustive;
