@@ -313,7 +313,8 @@ export function InvoiceReviewDialog({
     !paymentTouched &&
     invoice.payment_kind === DEFAULT_INVOICE_PAYMENT_KIND &&
     !invoice.quickbooks_txn_id &&
-    Boolean(ocrText);
+    Boolean(ocrText) &&
+    (invoice.status === "received" || invoice.status === "extracted");
   useEffect(() => {
     // The reset effect above clears ocrStartedFor in this same flush, so a stale
     // ocrText from the previously opened invoice is never read here.
