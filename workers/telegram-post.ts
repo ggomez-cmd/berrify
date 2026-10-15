@@ -806,18 +806,13 @@ async function handleEmptyCallback(input: {
   }
 
   if (decision.applyDebit) {
-    let result: { ok: boolean; already_handled?: boolean; debited?: number };
-    try {
-      result = await callEmptyBottleRpc(
-        input.env.NEXT_PUBLIC_SUPABASE_URL,
-        input.env.SUPABASE_SERVICE_ROLE_KEY,
-        "confirm_empty_bottle",
-        event.id,
-        input.fetchImpl,
-      );
-    } catch (err) {
-      throw err;
-    }
+    const result: { ok: boolean; already_handled?: boolean; debited?: number } = await callEmptyBottleRpc(
+      input.env.NEXT_PUBLIC_SUPABASE_URL,
+      input.env.SUPABASE_SERVICE_ROLE_KEY,
+      "confirm_empty_bottle",
+      event.id,
+      input.fetchImpl,
+    );
     if (result.already_handled) {
       await telegramMethod(
         input.env.TELEGRAM_BOT_TOKEN,
