@@ -1,9 +1,23 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthState } from "../../auth/auth-context";
-import type { Organization } from "../../lib/types";
+import type { Organization, QuickbooksOnlineConnection } from "../../lib/types";
 import { QuickbooksPage } from "./QuickbooksPage";
+
+const { onlineConnections, importQboLists } = vi.hoisted(() => ({
+  onlineConnections: [] as QuickbooksOnlineConnection[],
+  importQboLists: vi.fn(),
+}));
+
+vi.mock("../../lib/qbo-manager-api", () => ({
+  disconnectQbo: vi.fn(),
+  exportQboLists: vi.fn(),
+  importQboLists,
+  refreshQboAccounts: vi.fn(),
+  refreshQboVendors: vi.fn(),
+  startQboConnect: vi.fn(),
+}));
 
 vi.mock("../../lib/supabase", () => ({
   supabase: {
@@ -71,7 +85,7 @@ vi.mock("./hooks", () => ({
   useQuickbooksJobs: () => ({ data: [], refetch: vi.fn() }),
   useQuickbooksVendors: () => ({ data: [], refetch: vi.fn() }),
   useQuickbooksAccounts: () => ({ data: [], refetch: vi.fn() }),
-  useQuickbooksOnlineConnections: () => ({ data: [], refetch: vi.fn() }),
+  useQuickbooksOnlineConnections: () => ({ data: onlineConnections, refetch: vi.fn() }),
   useQuickbooksOnlineConfig: () => ({
     data: {
       configured: false,
@@ -118,4 +132,59 @@ describe("QuickbooksPage", () => {
     renderPage("staff");
     expect(screen.getByText("Schedule content")).toBeInTheDocument();
   });
+
+  it("shows every partial import error with the affected name and reason", async () => {
+    const errors = [
+      'Utilities:Gas: parent account "Utilities" is missing',
+      "SuperMax: Duplicate Name Exists Error",
+    ];
+    onlineConnections.push({
+      id: "qbo-semilla",
+      org_id: "org-1",
+      restaurant_id: "r-1",
+      realm_id: "12345",
+      company_name: "Semilla Sandbox",
+      is_active: true,
+      last_synced_at: null,
+      last_error: null,
+      created_at: "2026-10-06T00:00:00.000Z",
+      updated_at: "2026-10-06T00:00:00.000Z",
+    });
+    importQboLists.mockResolvedValue({
+      vendorsCreated: 1,
+      vendorsSkipped: 2,
+      accountsCreated: 0,
+      accountsSkipped: 3,
+      errors,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+
+    const input = document.querySelector<HTMLInputElement>('input[type="file"][data-qbo-import="qbo-semilla"]');
+    if (!input) throw new Error("Import file input was not rendered");
+    const file = new File(
+      [
+        JSON.stringify({
+          kind: "berrify.qbo.list-export",
+          version: 1,
+          vendors: [{ displayName: "SuperMax" }],
+          accounts: [{ fullyQualifiedName: "Utilities:Gas" }],
+        }),
+      ],
+      "qbo-lists-semilla.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await screen.findByText(/Imported lists:/);
+    const pageText = document.body.textContent ?? "";
+    expect(pageText).toContain('Utilities:Gas: parent account "Utilities" is missing');
+    expect(pageText).toContain("SuperMax: Duplicate Name Exists Error");
+  });
+});
+
+afterEach(() => {
+  onlineConnections.length = 0;
+  importQboLists.mockReset();
+  vi.restoreAllMocks();
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { QBO_LIST_IMPORT_MAX_BYTES } from "./qbo-list-copy";
 import { handleSendInvoice } from "./qbwc-manager";
 import { handleQbo, parseQboPath } from "./qbo-manager";
 
@@ -657,6 +658,66 @@ describe("QuickBooks Online list copy", () => {
     });
     expect(created).toEqual(["vendor", "account"]);
     expect(JSON.stringify(body)).not.toContain("refresh-semilla");
+  });
+
+  it("rejects a UTF-8 list-import over the byte cap even when string length is under it", async () => {
+    const chunkText = "é".repeat(80_000);
+    const chunkBytes = new TextEncoder().encode(chunkText);
+    const totalChunks = 20;
+    const fullCharLength = chunkText.length * totalChunks;
+    const fullByteLength = chunkBytes.byteLength * totalChunks;
+    expect(chunkBytes.byteLength).toBe(chunkText.length * 2);
+    expect(fullCharLength).toBeLessThanOrEqual(QBO_LIST_IMPORT_MAX_BYTES);
+    expect(fullByteLength).toBeGreaterThan(QBO_LIST_IMPORT_MAX_BYTES);
+
+    let chunksPulled = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (chunksPulled >= totalChunks) {
+          controller.close();
+          return;
+        }
+        chunksPulled += 1;
+        controller.enqueue(chunkBytes.slice());
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const requestInit: RequestInit & { duplex: "half" } = {
+      method: "POST",
+      headers: {
+        Origin: "https://berrify.example",
+        Authorization: "Bearer user-token",
+        "Content-Type": "application/json",
+      },
+      body: stream,
+      duplex: "half",
+    };
+    const request = new Request("https://berrify.example/api/qbo/connections/qbo-semilla/list-import", requestInit);
+    const response = await handleQbo(
+      request,
+      intuitEnv,
+      "/api/qbo/connections/qbo-semilla/list-import",
+      withManager(async () => {
+        throw new Error("should not import a body over the byte cap");
+      }),
+    );
+    const payload = (await response?.json()) as { error?: string };
+    expect({
+      status: response?.status ?? null,
+      error: payload.error ?? null,
+      cancelled,
+      stoppedEarly: chunksPulled < totalChunks,
+      crossedCap: chunksPulled * chunkBytes.byteLength > QBO_LIST_IMPORT_MAX_BYTES,
+    }).toEqual({
+      status: 400,
+      error: "That QuickBooks list export is too large",
+      cancelled: true,
+      stoppedEarly: true,
+      crossedCap: true,
+    });
   });
 
   it("refresh reads lists and does not create vendors or accounts", async () => {

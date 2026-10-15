@@ -170,4 +170,161 @@ describe("QuickBooks list-copy helpers", () => {
     expect(created.some((row) => row.url.includes("/vendor") && row.body.DisplayName === "SuperMax")).toBe(true);
     expect(created.some((row) => row.body.DisplayName === "Jose Santiago Inc")).toBe(false);
   });
+
+  it("keeps the account path Utilities:Gas distinct from the top-level name Utilities Gas", () => {
+    const topLevel = {
+      name: "Utilities Gas",
+      fullyQualifiedName: "Utilities Gas",
+      accountType: "Expense",
+      accountSubType: null,
+      accountNumber: null,
+      isActive: true,
+    };
+    const hierarchical = {
+      name: "Gas",
+      fullyQualifiedName: "Utilities:Gas",
+      accountType: "Expense",
+      accountSubType: null,
+      accountNumber: null,
+      isActive: true,
+    };
+    const plan = planQboListCopy(
+      buildQboListExport({
+        sourceCompanyName: "Lelas",
+        exportedAt: "2026-10-06T15:00:00.000Z",
+        vendors: [],
+        accounts: [hierarchical],
+      }),
+      [],
+      [topLevel],
+    );
+    expect({
+      hierarchicalMatchesTopLevel: accountAlreadyExists(hierarchical.fullyQualifiedName, [topLevel]),
+      topLevelMatchesHierarchical: accountAlreadyExists(topLevel.fullyQualifiedName, [hierarchical]),
+      accountsToCreate: plan.accountsToCreate.map((row) => row.fullyQualifiedName),
+      accountsToSkip: plan.accountsToSkip.map((row) => row.fullyQualifiedName),
+    }).toEqual({
+      hierarchicalMatchesTopLevel: false,
+      topLevelMatchesHierarchical: false,
+      accountsToCreate: ["Utilities:Gas"],
+      accountsToSkip: [],
+    });
+  });
+
+  it("does not give a child under Utilities:Gas the id of top-level Utilities Gas", async () => {
+    const child = {
+      name: "Meter",
+      fullyQualifiedName: "Utilities:Gas:Meter",
+      accountType: "Expense",
+      accountSubType: null,
+      accountNumber: null,
+      isActive: true,
+    };
+    const created: Array<Record<string, unknown>> = [];
+    const result = await applyQboListCopy(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/query") && url.includes("Vendor")) {
+        return Response.json({ QueryResponse: { Vendor: [] } });
+      }
+      if (url.includes("/query") && url.includes("Account")) {
+        return Response.json({
+          QueryResponse: {
+            Account: [
+              {
+                Id: "99",
+                Name: "Utilities Gas",
+                FullyQualifiedName: "Utilities Gas",
+                AccountType: "Expense",
+                Active: true,
+              },
+            ],
+          },
+        });
+      }
+      if (method === "POST" && url.includes("/account")) {
+        created.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ Account: { Id: "100" } });
+      }
+      throw new Error(`${method} ${url}`);
+    }, {
+      apiBase: "https://sandbox-quickbooks.api.intuit.com",
+      realmId: "sandbox-1",
+      accessToken: "access-sandbox",
+      source: buildQboListExport({
+        sourceCompanyName: "Lelas",
+        exportedAt: "2026-10-06T15:00:00.000Z",
+        vendors: [],
+        accounts: [child],
+      }),
+    });
+    expect({
+      created: created.map((body) => ({
+        Name: body.Name,
+        ParentRef: body.ParentRef ?? null,
+      })),
+      accountsCreated: "accountsCreated" in result ? result.accountsCreated : null,
+      errors: "errors" in result ? result.errors : [result.error],
+    }).toEqual({
+      created: [],
+      accountsCreated: 0,
+      errors: ['Utilities:Gas:Meter: parent account "Utilities:Gas" is missing'],
+    });
+  });
+
+  it("rejects a vendor entry missing displayName at its 1-based position", () => {
+    const parsed = parseQboListExport({
+      kind: QBO_LIST_EXPORT_KIND,
+      version: 1,
+      exportedAt: "2026-10-06T15:00:00.000Z",
+      sourceCompanyName: "Lelas",
+      vendors: [
+        { displayName: "SuperMax", companyName: null, isActive: true },
+        { companyName: "No display name", isActive: true },
+      ],
+      accounts: [
+        {
+          name: "Food",
+          fullyQualifiedName: "Food",
+          accountType: "Expense",
+          accountSubType: null,
+          accountNumber: null,
+          isActive: true,
+        },
+      ],
+    });
+    expect(parsed).toEqual({
+      error: "That QuickBooks list export has invalid entries: vendor 2 is missing displayName",
+    });
+  });
+
+  it("rejects an account entry missing accountType at its 1-based position", () => {
+    const parsed = parseQboListExport({
+      kind: QBO_LIST_EXPORT_KIND,
+      version: 1,
+      exportedAt: "2026-10-06T15:00:00.000Z",
+      sourceCompanyName: "Lelas",
+      vendors: [{ displayName: "SuperMax", companyName: null, isActive: true }],
+      accounts: [
+        {
+          name: "Food",
+          fullyQualifiedName: "Food",
+          accountType: "Expense",
+          accountSubType: null,
+          accountNumber: null,
+          isActive: true,
+        },
+        {
+          name: "Mystery",
+          fullyQualifiedName: "Mystery",
+          accountSubType: null,
+          accountNumber: null,
+          isActive: true,
+        },
+      ],
+    });
+    expect(parsed).toEqual({
+      error: "That QuickBooks list export has invalid entries: account 2 is missing accountType",
+    });
+  });
 });
