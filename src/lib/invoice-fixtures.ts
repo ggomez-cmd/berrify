@@ -414,3 +414,33 @@ BALANCE DUE
 $1, 155. 59
 `;
 
+/** SuperMax Condado register receipt paid in full by ATH Móvil ($27.66). */
+export const SUPERMAX_ATH_RECEIPT_OCR = `
+SuperMax
+114 Ave De Diego
+Condado
+San Juan PR 00907
+Tel (787)723-1611 Fax (787)721-6988
+BOLSA ULTRA PRIME REUSABLE 57 MIC 0.20 T
+(2 @ 0.1000)
+LOTUS PARCHA 4.59 TF
+* Usted Ahorro 0.16
+LOTUS PARCHA 4.59 TF
+* Usted Ahorro 0.16
+LOTUS MANGO 4.59 TF
+* Usted Ahorro 0.16
+LOTUS MANGO 4.59 TF
+* Usted Ahorro 0.16
+MASTER OF MIX MANGO 3.99 TF
+MASTER OF MIX MANGO 3.99 TF
+SubTotal 26.54
+Tax Municipal 1% 0.26
+Tax Estatal 10.5% 0.86
+Total 27.66
+ATH 27.66
+Total de Articulos = 8
+9/23/2026 9/23/2026 8:57:49 AM 3 2244291
+Cajero: Nashaly A Richard Narvaez (16)
+GRACIAS POR SU PATROCINIO
+`;
+

@@ -23,6 +23,7 @@ import {
   NORTHWESTERN_OCR,
   SAMS_CLUB_RECEIPT_OCR,
   SANTURCE_OCR,
+  SUPERMAX_ATH_RECEIPT_OCR,
   SUPERMAX_OCR,
   VISION_BALLESTER_OCR,
   VISION_BALLESTER_SUPERMAX_OCR,
@@ -214,6 +215,43 @@ describe("SuperMax receipt", () => {
     expect(extracted.lines.length).toBeGreaterThanOrEqual(5);
     expect(extracted.expenses.find((e) => e.account === ACCOUNTS.tax)?.amount).toBeCloseTo(0.49);
     expect(extracted.expenses.find((e) => e.account === ACCOUNTS.food)?.amount).toBeCloseTo(47.95);
+  });
+});
+
+describe("SuperMax register receipt paid by ATH", () => {
+  const extracted = extractInvoiceFromText(SUPERMAX_ATH_RECEIPT_OCR);
+
+  it("reads the register receipt number, date, PR tax, and total", () => {
+    expect(extracted.qbo_vendor_name).toBe("SuperMax");
+    expect(extracted.invoice_number).toBe("2244291");
+    expect(extracted.invoice_date).toBe("2026-09-23");
+    expect(extracted.subtotal).toBe(26.54);
+    expect(extracted.tax).toBe(1.12);
+    expect(extracted.total).toBe(27.66);
+  });
+
+  it("keeps merchandise lines only, not the ATH payment or savings notes", () => {
+    expect(extracted.lines.map((line) => [line.description, line.amount])).toEqual([
+      ["BOLSA ULTRA PRIME REUSABLE 57 MIC", 0.2],
+      ["LOTUS PARCHA", 4.59],
+      ["LOTUS PARCHA", 4.59],
+      ["LOTUS MANGO", 4.59],
+      ["LOTUS MANGO", 4.59],
+      ["MASTER OF MIX MANGO", 3.99],
+      ["MASTER OF MIX MANGO", 3.99],
+    ]);
+    expect(extracted.expenses).toEqual([
+      { account: ACCOUNTS.tax, amount: 1.12, memo: "Tax" },
+      { account: ACCOUNTS.food, amount: 26.54, memo: "" },
+    ]);
+  });
+
+  it("does not read an ATH Móvil payment line as a SKU", () => {
+    const withMovil = SUPERMAX_ATH_RECEIPT_OCR.replace("ATH 27.66", "ATH MOVIL 27.66");
+    expect(extractInvoiceFromText(withMovil).lines.map((line) => line.description)).not.toContain(
+      "ATH MOVIL",
+    );
+    expect(extractInvoiceFromText(withMovil).total).toBe(27.66);
   });
 });
 
