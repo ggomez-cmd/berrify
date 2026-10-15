@@ -113,6 +113,21 @@ export function qboDate(value: string | null | undefined): string | null {
   return trimmed.slice(0, 10);
 }
 
+function qboExpenseLines(lines: QboBillLine[]): Array<Record<string, unknown>> {
+  return lines.map((line) => {
+    const detail: Record<string, unknown> = {
+      DetailType: "AccountBasedExpenseLineDetail",
+      Amount: roundMoney(line.amount),
+      AccountBasedExpenseLineDetail: {
+        AccountRef: { value: line.accountId },
+      },
+    };
+    const description = line.description?.trim();
+    if (description) detail.Description = description;
+    return detail;
+  });
+}
+
 export function buildQboBillBody(input: {
   vendorId: string;
   txnDate: string | null;
@@ -123,18 +138,7 @@ export function buildQboBillBody(input: {
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
     VendorRef: { value: input.vendorId },
-    Line: input.lines.map((line) => {
-      const detail: Record<string, unknown> = {
-        DetailType: "AccountBasedExpenseLineDetail",
-        Amount: roundMoney(line.amount),
-        AccountBasedExpenseLineDetail: {
-          AccountRef: { value: line.accountId },
-        },
-      };
-      const description = line.description?.trim();
-      if (description) detail.Description = description;
-      return detail;
-    }),
+    Line: qboExpenseLines(input.lines),
   };
   if (input.apAccountId) body.APAccountRef = { value: input.apAccountId };
   const txnDate = qboDate(input.txnDate);
@@ -146,11 +150,47 @@ export function buildQboBillBody(input: {
   return body;
 }
 
+export const QBO_DOC_NUMBER_MAX_LENGTH = 21;
+
+export type QboPurchasePaymentType = "CreditCard" | "Check";
+
+/** Purchases are found again by this note, never by DocNumber: many checks share `ATH`. */
+export function qboPurchaseNoteMarker(invoiceId: string): string {
+  return `Berrify invoice ${invoiceId}`;
+}
+
+export function buildQboPurchaseBody(input: {
+  paymentType: QboPurchasePaymentType;
+  accountId: string;
+  vendorId: string;
+  txnDate: string | null;
+  docNumber: string | null;
+  privateNote: string;
+  lines: QboBillLine[];
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    PaymentType: input.paymentType,
+    AccountRef: { value: input.accountId },
+    EntityRef: { value: input.vendorId, type: "Vendor" },
+  };
+  const txnDate = qboDate(input.txnDate);
+  if (txnDate) body.TxnDate = txnDate;
+  const docNumber = input.docNumber?.trim();
+  if (docNumber) body.DocNumber = docNumber;
+  body.PrivateNote = input.privateNote;
+  body.Line = qboExpenseLines(input.lines);
+  return body;
+}
+
 export function parseQboBill(payload: unknown): { id: string; syncToken: string | null } | null {
+  return parseQboTxn(payload, "Bill");
+}
+
+function parseQboTxn(payload: unknown, key: "Bill" | "Purchase"): { id: string; syncToken: string | null } | null {
   if (!payload || typeof payload !== "object") return null;
-  const bill = (payload as { Bill?: { Id?: unknown; SyncToken?: unknown } }).Bill;
-  if (!bill || typeof bill !== "object") return null;
-  return billRef(bill as Record<string, unknown>);
+  const txn = (payload as Record<string, unknown>)[key];
+  if (!txn || typeof txn !== "object") return null;
+  return billRef(txn as Record<string, unknown>);
 }
 
 function billRef(bill: Record<string, unknown>): { id: string; syncToken: string | null } | null {
@@ -425,9 +465,53 @@ function parseCreatedEntity(payload: unknown, key: "Vendor" | "Account"): { id: 
   return id ? { id } : null;
 }
 
+type QboTxnPostInput = { apiBase: string; realmId: string; accessToken: string; body: Record<string, unknown> };
+
+export async function postQboPurchase(
+  fetchImpl: typeof fetch,
+  input: QboTxnPostInput,
+): Promise<{ id: string; syncToken: string | null } | { error: string }> {
+  const url = new URL(`${input.apiBase}/v3/company/${encodeURIComponent(input.realmId)}/purchase`);
+  url.searchParams.set("minorversion", QBO_MINOR_VERSION);
+  const response = await fetchImpl(url.toString(), {
+    method: "POST",
+    headers: {
+      ...intuitHeaders(input.accessToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input.body),
+  });
+  const payload = await readPayload(response);
+  const purchase = response.ok ? parseQboTxn(payload, "Purchase") : null;
+  if (!purchase) return { error: intuitFaultMessage(payload) ?? "QuickBooks Online rejected the purchase" };
+  return purchase;
+}
+
+export async function findQboPurchaseByNote(
+  fetchImpl: typeof fetch,
+  input: { apiBase: string; realmId: string; accessToken: string; txnDate: string | null; invoiceId: string },
+): Promise<{ id: string; syncToken: string | null } | { error: string } | null> {
+  const txnDate = qboDate(input.txnDate);
+  if (!txnDate) return null;
+  const query = `select * from Purchase where TxnDate = ${intuitQueryLiteral(txnDate)} maxresults ${QUERY_PAGE_SIZE}`;
+  const url = new URL(`${input.apiBase}/v3/company/${encodeURIComponent(input.realmId)}/query`);
+  url.searchParams.set("query", query);
+  url.searchParams.set("minorversion", QBO_MINOR_VERSION);
+  const response = await fetchImpl(url.toString(), { headers: intuitHeaders(input.accessToken) });
+  const payload = await readPayload(response);
+  if (!response.ok) {
+    return { error: intuitFaultMessage(payload) ?? "QuickBooks Online rejected the purchase lookup" };
+  }
+  const marker = qboPurchaseNoteMarker(input.invoiceId);
+  const match = queryResponseEntities(payload, "Purchase").find(
+    (row) => typeof row.PrivateNote === "string" && row.PrivateNote.includes(marker),
+  );
+  return match ? billRef(match) : null;
+}
+
 export async function postQboBill(
   fetchImpl: typeof fetch,
-  input: { apiBase: string; realmId: string; accessToken: string; body: Record<string, unknown> },
+  input: QboTxnPostInput,
 ): Promise<{ id: string; syncToken: string | null } | { error: string }> {
   const url = new URL(`${input.apiBase}/v3/company/${encodeURIComponent(input.realmId)}/bill`);
   url.searchParams.set("minorversion", QBO_MINOR_VERSION);

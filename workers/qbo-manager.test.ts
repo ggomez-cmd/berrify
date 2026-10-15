@@ -494,6 +494,156 @@ describe("Send routes Desktop and Online apart", () => {
     expect(harness.intuitUrls.some((line) => line.includes("/bill"))).toBe(false);
   });
 
+  const purchaseAccounts = [
+    ["7", "Food Purchases", "50000", "Expense"],
+    ["35", "BPPR - 016374290", "10000", "Bank"],
+    ["41", "VISA x4007", "23300", "Credit Card"],
+  ].map(([list_id, full_name, account_number, account_type]) => ({
+    connection_id: "qbo-semilla",
+    list_id,
+    full_name,
+    account_number,
+    account_type,
+    is_active: true,
+  }));
+
+  function athInvoice(overrides: Record<string, unknown> = {}) {
+    return invoiceRow({
+      id: "inv-semilla",
+      restaurant_id: "rest-semilla",
+      vendor_name: "Local Farm",
+      invoice_number: "2244291",
+      invoice_date: "2026-09-23",
+      payment_kind: "check",
+      payment_account: "10000 · BPPR - 016374290",
+      payment_ref: "ATH",
+      invoice_expense_lines: [{ account: "50000 · Food Purchases", amount: 26.54, memo: "Food" }],
+      ...overrides,
+    });
+  }
+
+  it("posts an ATH receipt as a QuickBooks Online Check purchase from the bank", async () => {
+    const purchaseQueries: string[] = [];
+    const posted: string[] = [];
+    const harness = sendFetch({
+      invoice: athInvoice(),
+      online: [semillaOnline],
+      desktop: [],
+      vendors: [{ connection_id: "qbo-semilla", list_id: "56", full_name: "Local Farm", is_active: true }],
+      accounts: purchaseAccounts,
+      intuit: async (url, method, body) => {
+        if (method === "GET") {
+          purchaseQueries.push(decodeURIComponent(url.replace(/\+/g, " ")));
+          return Response.json({ QueryResponse: {} });
+        }
+        expect(url).toContain("/v3/company/12345/purchase?");
+        posted.push(body);
+        return Response.json({ Purchase: { Id: "1201", SyncToken: "0" } });
+      },
+    });
+    const response = await handleSendInvoice(intuitEnv, manager, "inv-semilla", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      job: { operation: "qbo_purchase", quickbooks_txn_id: "1201" },
+      result: "posted",
+    });
+    expect(posted).toEqual([
+      JSON.stringify({
+        PaymentType: "Check",
+        AccountRef: { value: "35" },
+        EntityRef: { value: "56", type: "Vendor" },
+        TxnDate: "2026-09-23",
+        DocNumber: "ATH",
+        PrivateNote: "Berrify invoice inv-semilla · Ref 2244291",
+        Line: [
+          {
+            DetailType: "AccountBasedExpenseLineDetail",
+            Amount: 26.54,
+            AccountBasedExpenseLineDetail: { AccountRef: { value: "7" } },
+            Description: "Food",
+          },
+        ],
+      }),
+    ]);
+    expect(purchaseQueries).toHaveLength(1);
+    expect(purchaseQueries[0]).toContain("select * from Purchase where TxnDate = '2026-09-23'");
+    expect(purchaseQueries[0]).not.toContain("DocNumber");
+    expect(harness.intuitUrls.some((line) => line.includes("/bill"))).toBe(false);
+    expect(harness.invoicePatches.at(-1)).toEqual({ quickbooks_txn_id: "1201", quickbooks_edit_sequence: "0" });
+  });
+
+  it("posts a card receipt as a CreditCard purchase and moves a long receipt number into the note", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const harness = sendFetch({
+      invoice: athInvoice({
+        invoice_number: "SAMS-800000074412226-PU",
+        payment_kind: "credit_card",
+        payment_account: "23300 · VISA x4007",
+        payment_ref: null,
+      }),
+      online: [semillaOnline],
+      desktop: [],
+      vendors: [{ connection_id: "qbo-semilla", list_id: "56", full_name: "Local Farm", is_active: true }],
+      accounts: purchaseAccounts,
+      intuit: async (_url, method, body) => {
+        if (method === "GET") return Response.json({ QueryResponse: {} });
+        posted.push(JSON.parse(body) as Record<string, unknown>);
+        return Response.json({ Purchase: { Id: "1300", SyncToken: "0" } });
+      },
+    });
+    const response = await handleSendInvoice(intuitEnv, manager, "inv-semilla", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      PaymentType: "CreditCard",
+      AccountRef: { value: "41" },
+      PrivateNote: "Berrify invoice inv-semilla · Ref SAMS-800000074412226-PU",
+    });
+    expect(posted[0]).not.toHaveProperty("DocNumber");
+  });
+
+  it("reuses the Purchase whose note names this invoice, not another ATH check", async () => {
+    const harness = sendFetch({
+      invoice: athInvoice(),
+      online: [semillaOnline],
+      desktop: [],
+      vendors: [{ connection_id: "qbo-semilla", list_id: "56", full_name: "Local Farm", is_active: true }],
+      accounts: purchaseAccounts,
+      intuit: async (_url, method) => {
+        expect(method).toBe("GET");
+        return Response.json({
+          QueryResponse: {
+            Purchase: [
+              { Id: "900", SyncToken: "2", DocNumber: "ATH", PrivateNote: "Berrify invoice inv-other · Ref 1" },
+              { Id: "901", SyncToken: "3", DocNumber: "ATH", PrivateNote: "Berrify invoice inv-semilla · Ref 2244291" },
+            ],
+          },
+        });
+      },
+    });
+    const response = await handleSendInvoice(intuitEnv, manager, "inv-semilla", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ job: { quickbooks_txn_id: "901" } });
+    expect(harness.intuitUrls.some((line) => line.startsWith("POST"))).toBe(false);
+    expect(harness.invoicePatches).toEqual([{ quickbooks_txn_id: "901", quickbooks_edit_sequence: "3" }]);
+  });
+
+  it("refuses an Online check after the invoice was queued on Desktop as a bill", async () => {
+    const harness = sendFetch({
+      invoice: athInvoice(),
+      online: [semillaOnline],
+      desktop: [],
+      accounts: purchaseAccounts,
+    });
+    harness.jobs.push({ operation: "bill_add", status: "pending", entity_id: "inv-semilla" });
+    const response = await handleSendInvoice(intuitEnv, manager, "inv-semilla", harness.fetchImpl);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This invoice was already sent to QuickBooks as a bill. Fix it in QuickBooks instead of sending it again.",
+    });
+    expect(harness.intuitUrls).toEqual([]);
+  });
+
   it("reads a single vendor object from Intuit when the cache is empty", async () => {
     const harness = sendFetch({
       invoice: invoiceRow({ id: "inv-semilla", restaurant_id: "rest-semilla" }),
