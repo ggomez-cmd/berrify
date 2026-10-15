@@ -12,6 +12,8 @@ Bills are created only when a manager clicks Send.
 
 1. In the Intuit developer app, set the redirect URL to
    `https://berrify.app/api/qbo/callback` (or `{PUBLIC_APP_URL}/api/qbo/callback`).
+   Public placeholder pages for production app onboarding live at
+   `https://berrify.app/terms` and `https://berrify.app/privacy`.
 2. Set Worker secrets (values stay out of the repo):
 
 ```bash
