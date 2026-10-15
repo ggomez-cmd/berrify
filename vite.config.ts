@@ -15,6 +15,9 @@ export default defineConfig({
     host: true,
     port: 4173,
   },
+  worker: {
+    format: "es",
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",

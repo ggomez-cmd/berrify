@@ -106,6 +106,23 @@ describe("extractInvoicesAfterOcr", () => {
     });
   });
 
+  it("does not rasterize or attach a stored PDF", async () => {
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };
+      expect(body.image).toBeUndefined();
+      return Response.json({ error: "Gemini extract is not configured" }, { status: 503 });
+    };
+    const result = await extractInvoicesAfterOcr({
+      ocrText: "hi",
+      image: "data:application/pdf;base64,JVBERi0x",
+      confidence: 10,
+      vendorAliases: [],
+      accountRules: DEFAULT_ACCOUNT_RULES,
+      fetchImpl,
+    });
+    expect(result.engine).toBe("rules");
+  });
+
   it("sends the photo only when OCR text is thin", async () => {
     const fetchImpl: typeof fetch = async (_input, init) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { image?: string };

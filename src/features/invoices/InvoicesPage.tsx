@@ -1,4 +1,3 @@
-import { Camera, FileUp, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -26,8 +25,9 @@ import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } fr
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import { formatMoney } from "../../lib/format";
 import { invoiceSourceLabel } from "../../lib/invoice-source";
-import { assertInvoiceImage } from "../../lib/invoice-image";
-import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrEngine } from "../../lib/ocr";
+import { assertInvoiceMedia, isInvoicePdfFile } from "../../lib/invoice-image";
+import { extractPdfTextFromDataUrl } from "../../lib/invoice-pdf";
+import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrEngine, type OcrResult } from "../../lib/ocr";
 import { isManager } from "../../lib/schedule";
 import { matchRestaurant } from "../../lib/restaurant-route";
 import { invoiceBillJob, invoiceBooksStatus } from "../../lib/qbwc-status";
@@ -40,6 +40,7 @@ import {
   useQuickbooksVendors,
 } from "../quickbooks/hooks";
 import { useSuppliers } from "../suppliers/hooks";
+import { InvoiceCaptureButtons } from "./InvoiceCaptureButtons";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 import {
   fileToDataUrl,
@@ -108,12 +109,20 @@ export function InvoicesPage() {
 
   const ingest = async (file: File, source: InvoiceSource, caption?: string) => {
     setBusy(true);
-    setMessage("Reading invoice photo…");
+    const pdfUpload = isInvoicePdfFile(file);
+    setMessage(pdfUpload ? "Reading PDF…" : "Reading invoice photo…");
     try {
-      assertInvoiceImage(file);
+      assertInvoiceMedia(file, { allowPdf: pdfUpload });
       const { data, mime } = await fileToDataUrl(file);
-      setMessage(ocrEngine === "tesseract" ? "Reading with Tesseract…" : "Reading with Vision…");
-      const ocr = await ocrImage(data, { engine: ocrEngine });
+      let ocr: OcrResult;
+      if (pdfUpload) {
+        setMessage("Reading PDF text…");
+        const text = await extractPdfTextFromDataUrl(data);
+        ocr = { text, confidence: 100, rotation: 0, engine: "pdf" };
+      } else {
+        setMessage(ocrEngine === "tesseract" ? "Reading with Tesseract…" : "Reading with Vision…");
+        ocr = await ocrImage(data, { engine: ocrEngine });
+      }
       const vendorAliases: VendorAlias[] = aliases.map((a) => ({
         match_text: a.match_text,
         supplier_id: a.supplier_id,
@@ -146,7 +155,7 @@ export function InvoicesPage() {
       const { invoices: extracted, engine: extractEngine, error: extractError } =
         await extractInvoicesAfterOcr({
         ocrText,
-        image: data,
+        image: pdfUpload ? null : data,
         confidence: ocr.confidence,
         restaurants: restaurants.map((r) => ({
           name: r.name,
@@ -221,76 +230,18 @@ export function InvoicesPage() {
   return (
     <div>
       <p className="mb-4 max-w-2xl text-sm text-muted">
-        Photograph a supplier invoice or a WhatsApp forward from that restaurant’s group.
+        Photograph a supplier invoice, upload a PDF, or import a WhatsApp forward from that restaurant’s group.
         Berrify picks the books from the group name, caption, or sold-to (Semilla vs Kane
         Rum Bar), then rolls SKUs into that restaurant’s QuickBooks expense accounts.
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap">
-        <label className="inline-flex">
-          <input
-            className="hidden"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void ingest(file, "camera");
-              e.target.value = "";
-            }}
-          />
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
-          >
-            <Camera className="size-4" />
-            Camera
-          </Button>
-        </label>
-        <label className="inline-flex">
-          <input
-            className="hidden"
-            type="file"
-            accept="image/*"
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void ingest(file, "upload");
-              e.target.value = "";
-            }}
-          />
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
-          >
-            <FileUp className="size-4" />
-            Upload photo
-          </Button>
-        </label>
-        <label className="inline-flex">
-          <input
-            className="hidden"
-            type="file"
-            accept="image/*"
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void ingest(file, "whatsapp", "Forwarded from WhatsApp kitchen group");
-              e.target.value = "";
-            }}
-          />
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={(e) => (e.currentTarget.previousSibling as HTMLInputElement)?.click()}
-          >
-            <MessageCircle className="size-4" />
-            WhatsApp
-          </Button>
-        </label>
+        <InvoiceCaptureButtons
+          busy={busy}
+          onFile={(file, source, caption) => {
+            void ingest(file, source, caption);
+          }}
+        />
         <div className="w-full shrink-0 sm:w-44">
           <Select
             aria-label="OCR engine"
@@ -352,7 +303,7 @@ export function InvoicesPage() {
             {invoices.length === 0 ? (
               <tr>
                 <Td colSpan={7} className="py-10 text-center text-muted">
-                  No invoices yet. Photograph a supplier bill or import a WhatsApp photo.
+                  No invoices yet. Photograph a supplier bill, upload a PDF, or import a WhatsApp photo.
                 </Td>
               </tr>
             ) : (

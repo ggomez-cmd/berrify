@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertInvoiceImage,
+  assertInvoiceMedia,
   dataUrlByteLength,
+  isInvoicePdfFile,
+  isPdfAttachment,
+  isPdfBytes,
+  isPdfDataUrl,
   isRasterDataUrl,
   MAX_INVOICE_IMAGE_BYTES,
+  mimeForInvoiceFile,
   toRasterDataUrl,
   VISION_IMAGE_BYTE_BUDGET,
   VISION_LONG_EDGE,
@@ -24,6 +30,26 @@ describe("assertInvoiceImage", () => {
   it("rejects svg and non-images", () => {
     expect(() => assertInvoiceImage(file("bill.svg", "image/svg+xml"))).toThrow(/raster image/);
     expect(() => assertInvoiceImage(file("bill.pdf", "application/pdf"))).toThrow(/raster image/);
+  });
+
+  it("accepts PDFs only when allowPdf is set", () => {
+    const pdf = file("receipt.pdf", "application/pdf");
+    expect(isInvoicePdfFile(pdf)).toBe(true);
+    expect(isInvoicePdfFile(file("receipt.PDF", ""))).toBe(true);
+    expect(mimeForInvoiceFile(pdf)).toBe("application/pdf");
+    expect(() => assertInvoiceMedia(pdf, { allowPdf: true })).not.toThrow();
+    expect(() => assertInvoiceMedia(pdf)).toThrow(/raster image/);
+    expect(() => assertInvoiceMedia(file("bill.svg", "image/svg+xml"), { allowPdf: true })).toThrow(
+      /PDF or raster image/,
+    );
+  });
+
+  it("rejects oversized PDFs at the same 8 MB cap", () => {
+    expect(() =>
+      assertInvoiceMedia(file("huge.pdf", "application/pdf", MAX_INVOICE_IMAGE_BYTES + 1), {
+        allowPdf: true,
+      }),
+    ).toThrow(/8 MB/);
   });
 
   it("rejects oversized files", () => {
@@ -172,6 +198,21 @@ describe("downscaleForVision", () => {
       getContext.mockRestore();
       toDataURL.mockRestore();
     }
+  });
+});
+
+describe("PDF media helpers", () => {
+  const pdfHeader = "%PDF-1.4";
+  const pdfDataUrl = `data:application/pdf;base64,${btoa(pdfHeader)}`;
+
+  it("sniffs PDF bytes and data URLs", () => {
+    expect(isPdfBytes(new TextEncoder().encode(pdfHeader))).toBe(true);
+    expect(isPdfBytes(new TextEncoder().encode("not-a-pdf"))).toBe(false);
+    expect(isPdfDataUrl(pdfDataUrl)).toBe(true);
+    expect(isPdfDataUrl("data:image/jpeg;base64,/9j/4AAQ")).toBe(false);
+    expect(isPdfAttachment(pdfDataUrl, "application/pdf")).toBe(true);
+    expect(isPdfAttachment("https://cdn.example/bill.pdf", "application/octet-stream")).toBe(true);
+    expect(isPdfAttachment("data:image/jpeg;base64,/9j/4AAQ", "image/jpeg")).toBe(false);
   });
 });
 

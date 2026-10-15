@@ -230,6 +230,9 @@ describe("ocrEngineNote", () => {
     expect(
       ocrEngineNote({ text: "a", confidence: 1, rotation: 90, engine: "tesseract" }),
     ).toBe("Tesseract OCR rotation 90°");
+    expect(
+      ocrEngineNote({ text: "a", confidence: 1, rotation: 0, engine: "pdf" }),
+    ).toBe("PDF text extract");
   });
 });
 
