@@ -6,6 +6,8 @@ import {
   publicAppUrl,
   qbwcAppSupportUrl,
   qbwcAppUrl,
+  qwcAppName,
+  qwcDownloadFilename,
 } from "./qbwc-qwc";
 
 const ownerId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -20,8 +22,9 @@ describe("QWC XML", () => {
       ownerId,
       fileId,
       includeScheduler: false,
+      appName: qwcAppName("Kane Rum Bar"),
     });
-    expect(xml).toContain("<AppName>Berrify</AppName>");
+    expect(xml).toContain("<AppName>Berrify · Kane Rum Bar</AppName>");
     expect(xml).toContain("<AppURL>https://berrify.app/api/qbwc</AppURL>");
     expect(xml).toContain("<AppSupport>https://berrify.app/quickbooks</AppSupport>");
     expect(xml).toContain("<UserName>bfy_user</UserName>");
@@ -51,6 +54,14 @@ describe("QWC XML", () => {
     expect(waiting).not.toContain("RunEveryNMinutes");
     expect(connected).toContain("<RunEveryNMinutes>60</RunEveryNMinutes>");
     expect(connected).toContain(`<OwnerID>${braceGuid(ownerId)}</OwnerID>`);
+  });
+
+  it("names the QWC file after the connection", () => {
+    expect(qwcAppName("Kane Rum Bar")).toBe("Berrify · Kane Rum Bar");
+    expect(qwcAppName("  Semilla  ")).toBe("Berrify · Semilla");
+    expect(qwcAppName("")).toBe("Berrify");
+    expect(qwcDownloadFilename("Kane Rum Bar")).toBe("Berrify-Kane-Rum-Bar.qwc");
+    expect(qwcDownloadFilename("")).toBe("Berrify.qwc");
   });
 
   it("defaults PUBLIC_APP_URL to https://berrify.app", () => {

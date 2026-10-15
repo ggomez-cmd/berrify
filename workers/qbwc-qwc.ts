@@ -11,7 +11,23 @@ export type QwcInput = {
   fileId: string;
   includeScheduler: boolean;
   runEveryNMinutes?: number;
+  appName?: string;
 };
+
+export function qwcAppName(connectionName: string | null | undefined): string {
+  const trimmed = connectionName?.trim() ?? "";
+  return trimmed ? `${QBWC_APP_NAME} · ${trimmed}` : QBWC_APP_NAME;
+}
+
+export function qwcDownloadFilename(connectionName: string | null | undefined): string {
+  const slug = (connectionName ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return slug ? `Berrify-${slug}.qwc` : "Berrify.qwc";
+}
 
 export function publicAppUrl(envUrl: string | undefined): string {
   const trimmed = envUrl?.trim().replace(/\/$/, "");
@@ -42,7 +58,7 @@ export function buildQwcXml(input: QwcInput): string {
   return [
     `<?xml version="1.0"?>`,
     `<QBWCXML>`,
-    `  <AppName>${xmlEscape(QBWC_APP_NAME)}</AppName>`,
+    `  <AppName>${xmlEscape(input.appName ?? QBWC_APP_NAME)}</AppName>`,
     `  <AppID></AppID>`,
     `  <AppURL>${xmlEscape(input.appUrl)}</AppURL>`,
     `  <AppDescription>Berrify QuickBooks Desktop connector</AppDescription>`,

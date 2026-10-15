@@ -335,4 +335,238 @@ describe("QBWC SOAP parse", () => {
     expect(invoicePatches[0]?.url).toContain("invoices?id=eq.inv-ath");
     expect(invoicePatches[0]?.body).toMatchObject({ status: "exported", quickbooks_txn_id: txnId });
   });
+
+  it("gives no work when the open company does not match the locked name", async () => {
+    const env = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    };
+    const patches: unknown[] = [];
+    const sessionPatches: unknown[] = [];
+    let claimedJobs = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("quickbooks_desktop_sessions") && method === "GET") {
+        return Response.json([
+          { ticket: "t1", connection_id: "conn-kane", org_id: "org-1", expires_at: "2099-01-01T00:00:00.000Z", last_error: null },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+        return Response.json([
+          {
+            id: "conn-kane",
+            org_id: "org-1",
+            restaurant_id: "rest-kane",
+            name: "Kane Rum Bar",
+            qb_username: "bfy_kane",
+            password_hash: "x",
+            owner_id: "o",
+            file_id: "f",
+            company_file: null,
+            qb_company_name: "Can Enterprise Deux LLC DBA Kane",
+            qb_product_name: null,
+            qb_major_version: "13",
+            qb_minor_version: "0",
+            is_active: true,
+            last_connected_at: "2026-09-19T00:00:00.000Z",
+            last_successful_sync_at: null,
+            last_error: null,
+          },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "PATCH") {
+        patches.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_desktop_sessions") && method === "PATCH") {
+        sessionPatches.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_sync_jobs")) {
+        claimedJobs += 1;
+        return Response.json([]);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+
+    const xml = await dispatchQbwcSoap(
+      {
+        method: "sendRequestXML",
+        params: {
+          ticket: "t1",
+          strhcpresponse: `<HostQueryRs statusCode="0"><CompanyName>Can Enterprise LLC dba Semilla</CompanyName></HostQueryRs>`,
+        },
+      },
+      env,
+      fetchImpl,
+    );
+    expect(xml).toContain("<sendRequestXMLResult></sendRequestXMLResult>");
+    expect(claimedJobs).toBe(0);
+    expect(patches[0]).toMatchObject({
+      last_error:
+        "Wrong company file open: Can Enterprise LLC dba Semilla. Expected Can Enterprise Deux LLC DBA Kane.",
+    });
+    expect(patches[0]).not.toHaveProperty("qb_company_name");
+    expect(sessionPatches[0]).toMatchObject({
+      last_error:
+        "Wrong company file open: Can Enterprise LLC dba Semilla. Expected Can Enterprise Deux LLC DBA Kane.",
+    });
+  });
+
+  it("locks the company name on the first session and still hands out work", async () => {
+    const env = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    };
+    const patches: unknown[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("quickbooks_desktop_sessions") && method === "GET") {
+        return Response.json([
+          { ticket: "t1", connection_id: "conn-1", org_id: "org-1", expires_at: "2099-01-01T00:00:00.000Z", last_error: null },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+        return Response.json([
+          {
+            id: "conn-1",
+            org_id: "org-1",
+            restaurant_id: "rest-semilla",
+            name: "Semilla",
+            qb_username: "bfy_ok",
+            password_hash: "x",
+            owner_id: "o",
+            file_id: "f",
+            company_file: null,
+            qb_company_name: null,
+            qb_product_name: null,
+            qb_major_version: null,
+            qb_minor_version: null,
+            is_active: true,
+            last_connected_at: null,
+            last_successful_sync_at: null,
+            last_error: null,
+          },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "PATCH") {
+        patches.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_sync_jobs") && method === "GET") {
+        return Response.json([
+          {
+            id: "job-1",
+            org_id: "org-1",
+            connection_id: "conn-1",
+            status: "pending",
+            operation: "company_query",
+            entity_type: "connection",
+            entity_id: "conn-1",
+            qbxml_request: "<CompanyQueryRq></CompanyQueryRq>",
+          },
+        ]);
+      }
+      if (url.includes("quickbooks_sync_jobs") && method === "PATCH") {
+        return Response.json([{ id: "job-1", status: "sending" }]);
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+
+    const xml = await dispatchQbwcSoap(
+      {
+        method: "sendRequestXML",
+        params: {
+          ticket: "t1",
+          strhcpresponse: `<HostQueryRs statusCode="0"><CompanyName>Can Enterprise LLC dba Semilla</CompanyName></HostQueryRs>`,
+        },
+      },
+      env,
+      fetchImpl,
+    );
+    expect(xml).toContain("&lt;CompanyQueryRq");
+    expect(patches[0]).toMatchObject({
+      qb_company_name: "Can Enterprise LLC dba Semilla",
+      last_error: null,
+    });
+  });
+
+  it("does not overwrite a locked company name from CompanyQuery", async () => {
+    const env = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    };
+    const job = {
+      id: "job-co",
+      org_id: "org-1",
+      connection_id: "conn-kane",
+      status: "sending",
+      operation: "company_query",
+      entity_type: "connection",
+      entity_id: "conn-kane",
+      qbxml_request: "<CompanyQueryRq/>",
+      qbxml_response: null,
+      error_code: null,
+      error_message: null,
+    };
+    const patches: unknown[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("quickbooks_desktop_sessions") && method === "GET") {
+        return Response.json([
+          { ticket: "t1", connection_id: "conn-kane", org_id: "org-1", expires_at: "2099-01-01T00:00:00.000Z", last_error: null },
+        ]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+        return Response.json([
+          {
+            id: "conn-kane",
+            org_id: "org-1",
+            restaurant_id: "rest-kane",
+            name: "Kane Rum Bar",
+            qb_company_name: "Can Enterprise Deux LLC DBA Kane",
+            is_active: true,
+          },
+        ]);
+      }
+      if (url.includes("quickbooks_sync_jobs") && method === "GET") return Response.json([job]);
+      if (url.includes("quickbooks_sync_jobs") && method === "PATCH") {
+        Object.assign(job, JSON.parse(String(init?.body ?? "{}")));
+        return Response.json([job]);
+      }
+      if (url.includes("quickbooks_desktop_connections") && method === "PATCH") {
+        patches.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("quickbooks_desktop_sessions") && method === "PATCH") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+
+    const result = await dispatchQbwcSoap(
+      {
+        method: "receiveResponseXML",
+        params: {
+          ticket: "t1",
+          response: `<CompanyQueryRs statusCode="0" statusMessage="Status OK"><CompanyRet><CompanyName>Can Enterprise LLC dba Semilla</CompanyName></CompanyRet></CompanyQueryRs>`,
+        },
+      },
+      env,
+      fetchImpl,
+    );
+    expect(result).toContain("<receiveResponseXMLResult>-1</receiveResponseXMLResult>");
+    expect(job.status).toBe("failed");
+    expect(job.error_message).toBe(
+      "Wrong company file open: Can Enterprise LLC dba Semilla. Expected Can Enterprise Deux LLC DBA Kane.",
+    );
+    expect(patches[0]).toMatchObject({
+      last_error:
+        "Wrong company file open: Can Enterprise LLC dba Semilla. Expected Can Enterprise Deux LLC DBA Kane.",
+    });
+    expect(patches[0]).not.toHaveProperty("qb_company_name");
+  });
 });

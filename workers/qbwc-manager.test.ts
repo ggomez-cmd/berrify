@@ -86,6 +86,25 @@ describe("QBWC manager routes", () => {
     expect(response.status).toBe(404);
     expect(await response.text()).not.toContain("OwnerID");
   });
+
+  it("names the downloaded QWC after the connection", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("quickbooks_desktop_connections")) {
+        return Response.json([kaneConn]);
+      }
+      throw new Error(url);
+    };
+    const response = await handleDownloadQwc(
+      env,
+      { userId: "user-1", orgId: "org-1", role: "manager" },
+      "conn-kane",
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe('attachment; filename="Berrify-Kane.qwc"');
+    expect(await response.text()).toContain("<AppName>Berrify · Kane</AppName>");
+  });
 });
 
 const kaneConn = {

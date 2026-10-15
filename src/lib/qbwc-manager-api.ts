@@ -211,7 +211,8 @@ export async function downloadBerrifyQwc(
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "Berrify.qwc";
+  const filename = /filename="([^"]+)"/i.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
+  link.download = filename && filename.endsWith(".qwc") ? filename : "Berrify.qwc";
   document.body.appendChild(link);
   link.click();
   link.remove();
