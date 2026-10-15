@@ -76,6 +76,10 @@ describe("detectInvoicePaymentHint", () => {
     expect(detectInvoicePaymentHint("Pagado con ATH Móvil", 5)).toEqual({ kind: "ath" });
   });
 
+  it("does not read ATH when the printed total and the ATH amount differ", () => {
+    expect(detectInvoicePaymentHint("Total 27.66\nATH 5.00", 0)).toEqual({ kind: "none" });
+  });
+
   it("finds no payment on a supplier invoice or a phone number", () => {
     expect(detectInvoicePaymentHint("Tel (787)723-1611 Fax (787)721-6988\nTOTAL 26.54", 26.54)).toEqual({
       kind: "none",
@@ -124,6 +128,15 @@ describe("suggestInvoicePayment", () => {
   it("books the SuperMax ATH receipt as a bank check numbered ATH", () => {
     expect(
       suggestInvoicePayment({ ocrText: SUPERMAX_ATH_RECEIPT_OCR, total: 27.66, accounts: SEMILLA_ACCOUNTS }),
+    ).toEqual({
+      payment: { kind: "check", account: "10000 · BPPR - 016374290", checkNumber: "ATH" },
+      note: null,
+    });
+  });
+
+  it("books the SuperMax ATH receipt from its own total when none is passed", () => {
+    expect(
+      suggestInvoicePayment({ ocrText: SUPERMAX_ATH_RECEIPT_OCR, total: 0, accounts: SEMILLA_ACCOUNTS }),
     ).toEqual({
       payment: { kind: "check", account: "10000 · BPPR - 016374290", checkNumber: "ATH" },
       note: null,

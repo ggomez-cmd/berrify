@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { InvoiceStatus, InvoiceWithSupplier, QuickbooksAccount } from "../../lib/types";
 import { InvoiceReviewDialog } from "./InvoiceReviewDialog";
 
-const { accounts, connections, media, pages, noRows, saveInvoice, deleteInvoice, addPage } = vi.hoisted(() => {
+const { accounts, connections, media, pages, noRows, saveInvoice, deleteInvoice, addPage, accountsQuery } = vi.hoisted(() => {
   const accounts: QuickbooksAccount[] = [
     {
       id: "acct-cc",
@@ -27,6 +27,7 @@ const { accounts, connections, media, pages, noRows, saveInvoice, deleteInvoice,
     saveInvoice: { mutateAsync: vi.fn(), isPending: false },
     deleteInvoice: { mutateAsync: vi.fn(), isPending: false },
     addPage: { mutateAsync: vi.fn(), isPending: false },
+    accountsQuery: { loading: false },
   };
 });
 
@@ -43,7 +44,7 @@ vi.mock("../quickbooks/hooks", () => ({
   useQuickbooksConnections: () => ({ data: connections }),
   useQuickbooksOnlineConnections: () => noRows,
   useQuickbooksVendors: () => noRows,
-  useQuickbooksAccounts: () => ({ data: accounts }),
+  useQuickbooksAccounts: () => (accountsQuery.loading ? { data: undefined } : { data: accounts }),
 }));
 
 function invoice(status: InvoiceStatus): InvoiceWithSupplier {
@@ -106,12 +107,12 @@ function invoice(status: InvoiceStatus): InvoiceWithSupplier {
   };
 }
 
-function renderDialog(status: InvoiceStatus) {
-  return render(
+function dialogElement(current: InvoiceWithSupplier) {
+  return (
     <InvoiceReviewDialog
       open
       onOpenChange={() => undefined}
-      invoice={invoice(status)}
+      invoice={current}
       suppliers={[]}
       restaurants={[]}
       restaurantAliases={[]}
@@ -119,8 +120,12 @@ function renderDialog(status: InvoiceStatus) {
       skuAliases={[]}
       accountRules={[]}
       extractExamples={[]}
-    />,
+    />
   );
+}
+
+function renderDialog(status: InvoiceStatus) {
+  return render(dialogElement(invoice(status)));
 }
 
 describe("InvoiceReviewDialog", () => {
@@ -136,4 +141,26 @@ describe("InvoiceReviewDialog", () => {
     expect(screen.getByLabelText("Paid with")).toHaveValue("credit_card");
     expect(screen.getByLabelText("Credit card account")).toHaveValue("23300 · VISA x4007");
   });
+
+  it("does not loop while QuickBooks accounts are loading, then prefills the card", () => {
+    accountsQuery.loading = true;
+    // React logs this from useEffect and keeps rendering, so rethrow to fail instead of hanging.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      const text = args.map(String).join(" ");
+      if (text.includes("Maximum update depth")) throw new Error(text);
+    });
+    try {
+      const current = invoice("extracted");
+      const view = render(dialogElement(current));
+      expect(screen.getByLabelText("Paid with")).toHaveValue("bill");
+      accountsQuery.loading = false;
+      view.rerender(dialogElement(current));
+      expect(screen.getByLabelText("Paid with")).toHaveValue("credit_card");
+      expect(screen.getByLabelText("Credit card account")).toHaveValue("23300 · VISA x4007");
+      expect(errorSpy.mock.calls.flat().map(String).join("\n")).not.toContain("Maximum update depth");
+    } finally {
+      errorSpy.mockRestore();
+      accountsQuery.loading = false;
+    }
+  }, 5000);
 });

@@ -132,9 +132,19 @@ const CARD_DIGIT_PATTERNS = [
 const ATH_PAYMENT = /\bath\b[^\d$]{0,20}?\$?\s*([\d,]+\.\d{2})\b/gi;
 const ATH_MOVIL = /\bath\s*m[oó]vil\b/i;
 const FIRST_TOTAL = /(?<!sub\s?)\btotal\b/i;
+const TOTAL_AMOUNT = /^[^\d]{0,8}([\d,]+\.\d{2})\b/;
 
 function cents(value: number): number {
   return Math.round(value * 100);
+}
+
+function totalForAth(flat: string, total: number): number {
+  if (total > 0) return total;
+  const label = FIRST_TOTAL.exec(flat);
+  if (!label) return 0;
+  const amount = TOTAL_AMOUNT.exec(flat.slice(label.index + label[0].length));
+  const value = Number(amount?.[1]?.replace(/,/g, "") ?? "");
+  return value > 0 ? value : 0;
 }
 
 function cardDigits(text: string): string | null {
@@ -153,9 +163,10 @@ export function detectInvoicePaymentHint(text: string, total: number): InvoicePa
   const digits = (tender && cardDigits(tender)) || cardDigits(flat);
   if (digits) return { kind: "card", digits };
   if (ATH_MOVIL.test(flat)) return { kind: "ath" };
+  const payable = totalForAth(flat, total);
   for (const match of flat.matchAll(ATH_PAYMENT)) {
     const amount = Number(match[1]!.replace(/,/g, ""));
-    if (total > 0 && cents(amount) === cents(total)) return { kind: "ath" };
+    if (payable > 0 && cents(amount) === cents(payable)) return { kind: "ath" };
   }
   return { kind: "none" };
 }

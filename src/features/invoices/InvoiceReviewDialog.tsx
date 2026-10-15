@@ -51,6 +51,11 @@ import type {
   InvoiceExtractExampleRow,
   InvoiceSkuAliasRow,
   InvoiceWithSupplier,
+  QuickbooksAccount,
+  QuickbooksDesktopConnection,
+  QuickbooksOnlineConnection,
+  QuickbooksSyncJob,
+  QuickbooksVendor,
   Restaurant,
   RestaurantAliasRow,
   Supplier,
@@ -58,7 +63,6 @@ import type {
 } from "../../lib/types";
 import { sendInvoiceToQuickBooks } from "../../lib/qbwc-manager-api";
 import { invoiceBooksStatus } from "../../lib/qbwc-status";
-import type { QuickbooksSyncJob } from "../../lib/types";
 import {
   useQuickbooksAccounts,
   useQuickbooksConnections,
@@ -72,6 +76,20 @@ import { InvoiceReviewPhotoColumn } from "./InvoiceReviewPhotoColumn";
 import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
 const CATEGORIES: InvoiceCategory[] = ["food", "kitchen", "cleaning", "beverage", "tax", "other"];
+
+const EMPTY_QB_CONNECTIONS: QuickbooksDesktopConnection[] = [];
+const EMPTY_QB_ONLINE_CONNECTIONS: QuickbooksOnlineConnection[] = [];
+const EMPTY_QB_VENDORS: QuickbooksVendor[] = [];
+const EMPTY_QB_ACCOUNTS: QuickbooksAccount[] = [];
+Object.freeze(EMPTY_QB_CONNECTIONS);
+Object.freeze(EMPTY_QB_ONLINE_CONNECTIONS);
+Object.freeze(EMPTY_QB_VENDORS);
+Object.freeze(EMPTY_QB_ACCOUNTS);
+
+function qbQueryLoaded(query: { data?: unknown; isLoading?: boolean; isSuccess?: boolean }): boolean {
+  if (query.isLoading) return false;
+  return query.isSuccess === true || query.data !== undefined;
+}
 
 function downloadText(filename: string, contents: string, mime: string) {
   const blob = new Blob([contents], { type: mime });
@@ -211,11 +229,17 @@ export function InvoiceReviewDialog({
   const addPage = useAddInvoicePage();
   const media = useInvoiceMedia(open && invoice ? invoice.id : null);
   const pagesQuery = useInvoicePages(open && invoice ? invoice.id : null);
-  const { data: qbConnections = [] } = useQuickbooksConnections();
-  const { data: qbOnlineConnections = [] } = useQuickbooksOnlineConnections();
-  const { data: qbVendors = [] } = useQuickbooksVendors();
-  const { data: qbAccounts = [] } = useQuickbooksAccounts();
+  const qbConnectionsQuery = useQuickbooksConnections();
+  const qbOnlineConnectionsQuery = useQuickbooksOnlineConnections();
+  const qbVendorsQuery = useQuickbooksVendors();
+  const qbAccountsQuery = useQuickbooksAccounts();
+  const qbConnections = qbConnectionsQuery.data ?? EMPTY_QB_CONNECTIONS;
+  const qbOnlineConnections = qbOnlineConnectionsQuery.data ?? EMPTY_QB_ONLINE_CONNECTIONS;
+  const qbVendors = qbVendorsQuery.data ?? EMPTY_QB_VENDORS;
+  const qbAccounts = qbAccountsQuery.data ?? EMPTY_QB_ACCOUNTS;
   const ocrStartedFor = useRef<string | null>(null);
+  // Once per open invoice, after the account queries have loaded.
+  const paymentDetectedFor = useRef<string | null>(null);
   const [restaurantId, setRestaurantId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [vendorName, setVendorName] = useState("");
@@ -296,6 +320,7 @@ export function InvoiceReviewDialog({
     setPaymentTouched(false);
     setPaymentNote(null);
     ocrStartedFor.current = null;
+    paymentDetectedFor.current = null;
   }, [open, invoice]);
 
   const paymentAccounts = useMemo(
@@ -307,6 +332,10 @@ export function InvoiceReviewDialog({
     [restaurantId, qbConnections, qbOnlineConnections, qbAccounts],
   );
 
+  const paymentAccountsLoaded =
+    qbQueryLoaded(qbConnectionsQuery) &&
+    qbQueryLoaded(qbOnlineConnectionsQuery) &&
+    qbQueryLoaded(qbAccountsQuery);
   const detectPayment =
     open &&
     invoice !== null &&
@@ -318,11 +347,14 @@ export function InvoiceReviewDialog({
   useEffect(() => {
     // The reset effect above clears ocrStartedFor in this same flush, so a stale
     // ocrText from the previously opened invoice is never read here.
-    if (!detectPayment || !ocrText || ocrStartedFor.current !== invoice?.id) return;
+    const invoiceId = invoice?.id;
+    if (!detectPayment || !ocrText || !invoiceId || ocrStartedFor.current !== invoiceId) return;
+    if (paymentDetectedFor.current === invoiceId || !paymentAccountsLoaded) return;
     const suggestion = suggestInvoicePayment({ ocrText, total: extractTotal, accounts: paymentAccounts });
     setPayment(suggestion.payment);
     setPaymentNote(suggestion.note);
-  }, [detectPayment, ocrText, extractTotal, paymentAccounts, invoice?.id]);
+    paymentDetectedFor.current = invoiceId;
+  }, [detectPayment, ocrText, extractTotal, paymentAccounts, paymentAccountsLoaded, invoice?.id]);
 
   useEffect(() => {
     if (!open || !media.data?.image_data) {
