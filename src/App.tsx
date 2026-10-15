@@ -9,6 +9,8 @@ import { EmployeesPage } from "./features/employees/EmployeesPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { EmptyBottlesPage } from "./features/empty-bottles/EmptyBottlesPage";
 import { InvoicesPage } from "./features/invoices/InvoicesPage";
+import { PrivacyPage } from "./features/legal/PrivacyPage";
+import { TermsPage } from "./features/legal/TermsPage";
 import { QuickbooksPage } from "./features/quickbooks/QuickbooksPage";
 import { KioskPage } from "./features/kiosk/KioskPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
@@ -30,6 +32,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="kiosk" element={<KioskPage />} />
             <Route element={<AppShell />}>
