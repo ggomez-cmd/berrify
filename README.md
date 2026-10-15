@@ -20,7 +20,7 @@ How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with scr
 
 ## Prerequisites
 
-- Node.js 20+ (developed against Node 22)
+- Node.js 22.12+ or 24 (Vitest 5 requires it; developed against Node 22)
 - A Supabase project (URL, anon key, service role, and a Postgres connection string)
 
 ## Local setup

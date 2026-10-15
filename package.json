@@ -10,6 +10,9 @@
     }
   },
   "type": "module",
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0"
+  },
   "description": "Berrify — AI-powered restaurant ERP. Inventory, scheduling, and invoice capture.",
   "scripts": {
     "dev": "vite",
