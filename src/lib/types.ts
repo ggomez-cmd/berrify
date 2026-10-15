@@ -8,6 +8,7 @@ import type {
   TimeExceptionStatus,
   TimeExceptionType,
 } from "./time-clock";
+import type { InvoicePaymentKind } from "./invoice-payment";
 
 export type LoginRole = "manager" | "staff";
 
@@ -196,6 +197,9 @@ export type Invoice = {
   tax: number;
   total: number;
   ap_account: string;
+  payment_kind: InvoicePaymentKind;
+  payment_account: string | null;
+  payment_ref: string | null;
   status: InvoiceStatus;
   source: InvoiceSource;
   whatsapp_from: string | null;

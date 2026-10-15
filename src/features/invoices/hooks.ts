@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
 import type { ExpenseLine, ExtractedSku } from "../../lib/invoice-extract";
 import { mimeForInvoiceFile } from "../../lib/invoice-image";
+import type { InvoicePaymentColumns } from "../../lib/invoice-payment";
 import {
   extractExampleUpsert,
   skuAliasesFromReview,
@@ -27,7 +28,7 @@ import type {
 } from "../../lib/types";
 
 const INVOICE_LIST_SELECT =
-  "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, telegram_from, telegram_message_id, caption, image_mime, created_by, exported_at, quickbooks_txn_id, quickbooks_edit_sequence, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
+  "id, org_id, restaurant_id, supplier_id, vendor_name, invoice_number, invoice_date, due_date, terms, currency, subtotal, tax, total, ap_account, payment_kind, payment_account, payment_ref, status, source, whatsapp_from, whatsapp_group, whatsapp_message_id, telegram_from, telegram_message_id, caption, image_mime, created_by, exported_at, quickbooks_txn_id, quickbooks_edit_sequence, created_at, updated_at, suppliers(id, name), restaurants(id, name, qbo_company_name, slug), invoice_lines(*), invoice_expense_lines(*)";
 
 function throwSaveError(error: unknown): never {
   throw toThrownError(error, "Could not save invoice");
@@ -324,6 +325,7 @@ export function useUpdateInvoice() {
       subtotal: number;
       total: number;
       ap_account?: string;
+      payment?: InvoicePaymentColumns;
       status: InvoiceStatus;
       exported_at?: string | null;
       ocr_text?: string | null;
@@ -342,6 +344,7 @@ export function useUpdateInvoice() {
           subtotal: input.subtotal,
           total: input.total,
           ...(input.ap_account !== undefined ? { ap_account: input.ap_account } : {}),
+          ...(input.payment ?? {}),
           status: input.status,
           exported_at: input.exported_at ?? input.invoice.exported_at,
           ...(input.ocr_text !== undefined ? { ocr_text: input.ocr_text } : {}),

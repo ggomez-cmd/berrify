@@ -238,3 +238,47 @@ describe("QB account match", () => {
     ]);
   });
 });
+
+describe("card and bank accounts stay out of expense, A/P, and tax picks", () => {
+  const visa = {
+    connection_id: "conn-kane",
+    list_id: "cc-1",
+    full_name: "VISA x4007",
+    account_number: "23300",
+    account_type: "CreditCard",
+    is_active: true,
+  };
+  const taxReserve = {
+    connection_id: "conn-kane",
+    list_id: "bank-2",
+    full_name: "Sales Tax Reserve",
+    account_number: "10200",
+    account_type: "Bank",
+    is_active: true,
+  };
+  const onlinePayables = {
+    connection_id: "conn-kane",
+    list_id: "qbo-cc",
+    full_name: "Accounts Payable Visa",
+    account_number: null,
+    account_type: "Credit Card",
+    is_active: true,
+  };
+
+  it("drops CreditCard and Bank accounts from the expense select", () => {
+    const names = invoiceReviewAccountSelectValues({
+      restaurantId: "rest-kane",
+      connections: [{ id: "conn-kane", restaurant_id: "rest-kane", is_active: true }],
+      accounts: [kaneTax, visa, taxReserve],
+    });
+    expect(names).toEqual(["68200 · SalesTaxExpense"]);
+  });
+
+  it("never scores a card or bank account for tax or A/P", () => {
+    expect(matchQbAccount({ kind: "tax", accounts: [taxReserve], fallback: ACCOUNTS.tax })).toBe(ACCOUNTS.tax);
+    expect(matchQbAccount({ kind: "tax", accounts: [taxReserve, kaneTax], fallback: ACCOUNTS.tax })).toBe(
+      "68200 · SalesTaxExpense",
+    );
+    expect(apAccountsForSelect([onlinePayables, kaneAp]).map(qbAccountLabel)).toEqual(["20000 · Accounts Payable"]);
+  });
+});

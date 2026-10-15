@@ -237,12 +237,10 @@ function qbxmlAmount(amount: number): string {
   return (Math.round(amount * 100) / 100).toFixed(2);
 }
 
-export function buildBillAddRq(input: BillAddFields): string {
-  const txnDate = qbxmlDate(input.txnDate);
-  const dueDate = qbxmlDate(input.dueDate);
-  const terms = exactQbTermsName(input.terms);
-  const refNumber = input.refNumber?.trim() ?? "";
-  const expenses = input.expenses
+type ExpenseLineFields = BillAddFields["expenses"][number];
+
+function expenseLinesXml(lines: ExpenseLineFields[]): string[] {
+  return lines
     .filter((line) => {
       const hasAccount = Boolean(line.account.listId?.trim() || line.account.fullName?.trim());
       return Number.isFinite(line.amount) && line.amount !== 0 && hasAccount;
@@ -262,6 +260,14 @@ export function buildBillAddRq(input: BillAddFields): string {
         .filter((row): row is string => row !== null)
         .join("\n");
     });
+}
+
+export function buildBillAddRq(input: BillAddFields): string {
+  const txnDate = qbxmlDate(input.txnDate);
+  const dueDate = qbxmlDate(input.dueDate);
+  const terms = exactQbTermsName(input.terms);
+  const refNumber = input.refNumber?.trim() ?? "";
+  const expenses = expenseLinesXml(input.expenses);
   const apRef = qbListRefXml(input.apAccount, "          ");
   // Intuit BillAdd XSD sequence: VendorRef, APAccountRef, TxnDate, DueDate,
   // RefNumber, TermsRef, then ExpenseLineAdd. Wrong order is 0x80040400.
@@ -286,6 +292,72 @@ export function buildBillAddRq(input: BillAddFields): string {
     `      </BillAdd>`,
     `    </BillAddRq>`,
   ]);
+}
+
+export type PaidTxnAddFields = {
+  vendorName: string;
+  account: QbListRef;
+  txnDate: string | null;
+  refNumber: string | null;
+  memo: string | null;
+  expenses: ExpenseLineFields[];
+};
+
+/** RefNumber max length for CheckAdd and CreditCardChargeAdd in the qbXML schema. */
+export const QB_PAID_TXN_REF_MAX_LENGTH = 11;
+
+type PaidTxnAddTag = "CreditCardChargeAdd" | "CheckAdd";
+type PaidTxnHeaderField = "TxnDate" | "RefNumber" | "Memo";
+
+// qbXML schema sequence after AccountRef and PayeeEntityRef. CheckAdd puts RefNumber
+// before TxnDate; CreditCardChargeAdd puts TxnDate first. Wrong order is 0x80040400.
+const PAID_TXN_HEADER_ORDER: Record<PaidTxnAddTag, PaidTxnHeaderField[]> = {
+  CreditCardChargeAdd: ["TxnDate", "RefNumber", "Memo"],
+  CheckAdd: ["RefNumber", "TxnDate", "Memo"],
+};
+
+/** A reference over 11 characters moves into Memo so QuickBooks does not reject the add. */
+export function paidTxnRefAndMemo(input: { refNumber: string | null; memo: string | null }): {
+  refNumber: string | null;
+  memo: string | null;
+} {
+  const ref = input.refNumber?.trim() ?? "";
+  const memo = input.memo?.trim() ?? "";
+  if (ref.length <= QB_PAID_TXN_REF_MAX_LENGTH) return { refNumber: ref || null, memo: memo || null };
+  return { refNumber: null, memo: [`Ref ${ref}`, memo].filter(Boolean).join(" · ") };
+}
+
+function buildPaidTxnAddRq(tag: PaidTxnAddTag, input: PaidTxnAddFields): string {
+  const { refNumber, memo } = paidTxnRefAndMemo(input);
+  const txnDate = qbxmlDate(input.txnDate);
+  const accountRef = qbListRefXml(input.account, "          ");
+  const header: Record<PaidTxnHeaderField, string | null> = {
+    TxnDate: txnDate ? `        <TxnDate>${xmlEscape(txnDate)}</TxnDate>` : null,
+    RefNumber: refNumber ? `        <RefNumber>${xmlEscape(refNumber)}</RefNumber>` : null,
+    Memo: memo ? `        <Memo>${xmlEscape(memo)}</Memo>` : null,
+  };
+  return qbxmlDocument([
+    `    <${tag}Rq>`,
+    `      <${tag}>`,
+    `        <AccountRef>`,
+    ...(accountRef ? [accountRef] : []),
+    `        </AccountRef>`,
+    `        <PayeeEntityRef>`,
+    `          <FullName>${xmlEscape(input.vendorName.trim())}</FullName>`,
+    `        </PayeeEntityRef>`,
+    ...PAID_TXN_HEADER_ORDER[tag].flatMap((field) => header[field] ?? []),
+    ...expenseLinesXml(input.expenses),
+    `      </${tag}>`,
+    `    </${tag}Rq>`,
+  ]);
+}
+
+export function buildCreditCardChargeAddRq(input: PaidTxnAddFields): string {
+  return buildPaidTxnAddRq("CreditCardChargeAdd", input);
+}
+
+export function buildCheckAddRq(input: PaidTxnAddFields): string {
+  return buildPaidTxnAddRq("CheckAdd", input);
 }
 
 export type VendorQueryRow = {
@@ -336,6 +408,8 @@ export const KEPT_QB_ACCOUNT_TYPES = [
   "CostOfGoodsSold",
   "OtherCurrentLiability",
   "AccountsPayable",
+  "CreditCard",
+  "Bank",
 ] as const;
 
 export type KeptQbAccountType = (typeof KEPT_QB_ACCOUNT_TYPES)[number];
@@ -384,8 +458,14 @@ export function parseAccountQueryRs(xml: string): AccountQueryResult {
 }
 
 export function parseBillAddRs(xml: string): BillAddResult {
-  const hasRs = /<BillAddRs\b/i.test(xml);
-  const status = parseQbStatus(xml, "BillAddRs");
+  return parseTxnAddRs(xml, "BillAddRs");
+}
+
+export type TxnAddResponseTag = "BillAddRs" | "CreditCardChargeAddRs" | "CheckAddRs";
+
+export function parseTxnAddRs(xml: string, responseTag: TxnAddResponseTag): BillAddResult {
+  const hasRs = new RegExp(`<${responseTag}\\b`, "i").test(xml);
+  const status = parseQbStatus(xml, responseTag);
   return {
     ...status,
     ok: hasRs && status.ok,

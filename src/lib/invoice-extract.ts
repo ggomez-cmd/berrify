@@ -93,6 +93,9 @@ const RECEIPT_QTY_LINE =
 const RECEIPT_NOISE =
   /ending in|credit cards?|authorization hold|pending charge|aren['’]?t charged|funds are available|curbside pickup|pickup\s+free|\bpickup\b/i;
 const RECEIPT_ORDER_NUMBER = /\border\s+(?:number|no\.?|#)?\s*(\d{6,})\b/i;
+const RECEIPT_PAYMENT_OR_SAVINGS = /^\s*ath\b|\bath\s*m[oó]vil\b|usted\s+ahorr[oó]/i;
+const REGISTER_RECEIPT_FOOTER =
+  /^\s*\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}\/\d{1,2}\/\d{4})?\s+\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M\s+\d{1,3}\s+(\d{5,})\s*$/im;
 const COMMENT =
   /martes solo recibe|comments:|debido a nuestro|recibe:\s*miercoles|inventario anual|returned checks|consuming raw|claims must|page:\s*\d|customer copy/i;
 const DROUYN_LINE =
@@ -878,6 +881,8 @@ function extractInvoiceNumber(text: string, hint: ExtractHint = "auto"): string 
   if (labeled?.[1]) return labeled[1];
   const order = withoutCliente.match(RECEIPT_ORDER_NUMBER);
   if (order?.[1]) return order[1];
+  const register = withoutCliente.match(REGISTER_RECEIPT_FOOTER);
+  if (register?.[1]) return register[1];
   return null;
 }
 
@@ -886,7 +891,8 @@ function parseSkuLine(line: string): ExtractedSku | null {
     /subtotal|sub total|balance due|municipal|territory auth|territory tax|amount due|total due|tax estatal|selfcheckout|recibe mas|debit sale|total de articulos|sales tax|taxable amount|weight invoiced|eight invoiced|total qty|total libras|total cajas|invoice total|total orden|back ordered|tax rt|total tax|must pay|payments|credits applied|ajuste|^\s*total\b/i.test(
       line,
     ) ||
-    RECEIPT_NOISE.test(line)
+    RECEIPT_NOISE.test(line) ||
+    RECEIPT_PAYMENT_OR_SAVINGS.test(line)
   ) {
     return null;
   }

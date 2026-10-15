@@ -4,7 +4,13 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
-import { buildAccountQueryRq, buildCompanyQueryRq, buildVendorQueryRq } from "./qbxml";
+import { INVOICE_PAYMENT_TXN_LABELS, type InvoicePaymentKind } from "../src/lib/invoice-payment";
+import {
+  buildAccountQueryRq,
+  buildCompanyQueryRq,
+  buildVendorQueryRq,
+  type TxnAddResponseTag,
+} from "./qbxml";
 
 export const COMPANY_QUERY_OPERATION = "company_query";
 export const COMPANY_QUERY_ENTITY_TYPE = "connection";
@@ -14,6 +20,54 @@ export const ACCOUNT_QUERY_OPERATION = "account_query";
 export const ACCOUNT_QUERY_ENTITY_TYPE = "connection";
 export const BILL_ADD_OPERATION = "bill_add";
 export const BILL_ADD_ENTITY_TYPE = "invoice";
+export const CREDIT_CARD_CHARGE_ADD_OPERATION = "credit_card_charge_add";
+export const CHECK_ADD_OPERATION = "check_add";
+
+/** The one Desktop transaction each invoice payment kind becomes. */
+export const INVOICE_TXN_OPERATIONS = {
+  bill: BILL_ADD_OPERATION,
+  credit_card: CREDIT_CARD_CHARGE_ADD_OPERATION,
+  check: CHECK_ADD_OPERATION,
+} as const satisfies Record<InvoicePaymentKind, string>;
+
+export type InvoiceTxnOperation = (typeof INVOICE_TXN_OPERATIONS)[InvoicePaymentKind];
+
+const INVOICE_TXN_BY_OPERATION: Record<InvoiceTxnOperation, { kind: InvoicePaymentKind; responseTag: TxnAddResponseTag }> = {
+  bill_add: { kind: "bill", responseTag: "BillAddRs" },
+  credit_card_charge_add: { kind: "credit_card", responseTag: "CreditCardChargeAddRs" },
+  check_add: { kind: "check", responseTag: "CheckAddRs" },
+};
+
+export function isInvoiceTxnOperation(operation: string): operation is InvoiceTxnOperation {
+  return Object.prototype.hasOwnProperty.call(INVOICE_TXN_BY_OPERATION, operation);
+}
+
+export function invoiceTxnResponseTag(operation: string): TxnAddResponseTag | null {
+  return isInvoiceTxnOperation(operation) ? INVOICE_TXN_BY_OPERATION[operation].responseTag : null;
+}
+
+/**
+ * Job keys are per operation, so switching an invoice's payment kind after Send would
+ * otherwise queue a second QuickBooks transaction for the same receipt.
+ */
+export function invoiceTxnConflict(input: {
+  operation: InvoiceTxnOperation;
+  jobs: Array<Pick<QbwcJobRow, "operation" | "status">>;
+  hasQuickbooksTxn: boolean;
+}): string | null {
+  const other = input.jobs.find(
+    (job) => isInvoiceTxnOperation(job.operation) && job.operation !== input.operation && job.status !== "failed",
+  );
+  if (other && isInvoiceTxnOperation(other.operation)) {
+    const label = INVOICE_PAYMENT_TXN_LABELS[INVOICE_TXN_BY_OPERATION[other.operation].kind];
+    return `This invoice was already sent to QuickBooks as a ${label}. Fix it in QuickBooks instead of sending it again.`;
+  }
+  const sameCompleted = input.jobs.some((job) => job.operation === input.operation && job.status === "completed");
+  if (input.hasQuickbooksTxn && !sameCompleted) {
+    return "This invoice is already in QuickBooks. Fix it in QuickBooks instead of sending it again.";
+  }
+  return null;
+}
 
 export type JobStatus = "pending" | "sending" | "completed" | "failed";
 
@@ -74,13 +128,16 @@ export function accountQueryJobKey(connectionId: string): {
   };
 }
 
-export function billAddJobKey(invoiceId: string): {
-  operation: typeof BILL_ADD_OPERATION;
+export function invoiceTxnJobKey(
+  invoiceId: string,
+  operation: InvoiceTxnOperation,
+): {
+  operation: InvoiceTxnOperation;
   entity_type: typeof BILL_ADD_ENTITY_TYPE;
   entity_id: string;
 } {
   return {
-    operation: BILL_ADD_OPERATION,
+    operation,
     entity_type: BILL_ADD_ENTITY_TYPE,
     entity_id: invoiceId,
   };
@@ -248,20 +305,52 @@ export async function enqueueAccountQueryJob(
   return "inserted";
 }
 
+type InvoiceTxnJobInput = {
+  orgId: string;
+  connectionId: string;
+  invoiceId: string;
+  qbxmlRequest: string;
+};
+
+type EnqueuedJob = { result: "inserted" | "duplicate" | "retried" | "error"; job: QbwcJobRow | null };
+
 export async function enqueueBillAddJob(
   env: QbwcRestEnv,
-  input: {
-    orgId: string;
-    connectionId: string;
-    invoiceId: string;
-    qbxmlRequest: string;
-  },
+  input: InvoiceTxnJobInput,
   fetchImpl: typeof fetch,
-): Promise<{ result: "inserted" | "duplicate" | "retried" | "error"; job: QbwcJobRow | null }> {
+): Promise<EnqueuedJob> {
+  return enqueueInvoiceTxnJob(env, { ...input, operation: BILL_ADD_OPERATION }, fetchImpl);
+}
+
+export async function loadInvoiceTxnJobs(
+  env: QbwcRestEnv,
+  orgId: string,
+  invoiceId: string,
+  fetchImpl: typeof fetch,
+): Promise<Array<Pick<QbwcJobRow, "operation" | "status">> | null> {
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) return null;
+  const response = await fetchImpl(
+    restUrl(
+      supabaseUrl,
+      `quickbooks_sync_jobs?org_id=eq.${encodeURIComponent(orgId)}&entity_type=eq.${BILL_ADD_ENTITY_TYPE}&entity_id=eq.${encodeURIComponent(invoiceId)}&select=operation,status`,
+    ),
+    { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
+  );
+  if (!response.ok) return null;
+  return (await response.json()) as Array<Pick<QbwcJobRow, "operation" | "status">>;
+}
+
+export async function enqueueInvoiceTxnJob(
+  env: QbwcRestEnv,
+  input: InvoiceTxnJobInput & { operation: InvoiceTxnOperation },
+  fetchImpl: typeof fetch,
+): Promise<EnqueuedJob> {
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRole) return { result: "error", job: null };
-  const key = billAddJobKey(input.invoiceId);
+  const key = invoiceTxnJobKey(input.invoiceId, input.operation);
   const existing = await loadJobByKey(env, input.connectionId, key, fetchImpl);
   if (existing?.status === "completed") {
     return { result: "duplicate", job: existing };

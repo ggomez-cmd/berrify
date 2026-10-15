@@ -23,10 +23,18 @@ import { extractPdfTextFromDataUrl } from "../../lib/invoice-pdf";
 import { composeInvoicePageImages, invoicesToPersistFromPhoto, nextInvoicePageSortOrder } from "../../lib/invoice-pages";
 import { EXTRACT_EXAMPLE_LIMIT, pickClosestExamples } from "../../lib/invoice-review-memory";
 import {
+  DEFAULT_INVOICE_PAYMENT_KIND,
+  draftFromInvoiceColumns,
+  invoicePaymentColumns,
+  suggestInvoicePayment,
+  type InvoicePaymentDraft,
+} from "../../lib/invoice-payment";
+import {
   accountsForConnection,
   apAccountsForSelect,
   applyQbAccountNames,
   connectionIdForInvoiceAccounts,
+  ledgerAccounts,
 } from "../../lib/qb-account-match";
 import {
   connectionIdForInvoiceVendors,
@@ -59,6 +67,7 @@ import {
 } from "../quickbooks/hooks";
 import { InvoiceReviewAccountField } from "./InvoiceReviewAccountField";
 import { InvoiceReviewMedia } from "./InvoiceReviewMedia";
+import { InvoiceReviewPaymentField } from "./InvoiceReviewPaymentField";
 import { InvoiceReviewPhotoColumn } from "./InvoiceReviewPhotoColumn";
 import { fileToDataUrl, useAddInvoicePage, useDeleteInvoice, useInvoiceMedia, useInvoicePages, useUpdateInvoice } from "./hooks";
 
@@ -230,6 +239,9 @@ export function InvoiceReviewDialog({
   const [apAccount, setApAccount] = useState<string>(ACCOUNTS.ap);
   const [qbBusy, setQbBusy] = useState(false);
   const [sentTxnId, setSentTxnId] = useState<string | null>(null);
+  const [payment, setPayment] = useState<InvoicePaymentDraft>(() => draftFromInvoiceColumns({}));
+  const [paymentTouched, setPaymentTouched] = useState(false);
+  const [paymentNote, setPaymentNote] = useState<string | null>(null);
   const addPageInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -280,8 +292,37 @@ export function InvoiceReviewDialog({
     setApAccount(invoice.ap_account || ACCOUNTS.ap);
     setQbBusy(false);
     setSentTxnId(null);
+    setPayment(draftFromInvoiceColumns(invoice));
+    setPaymentTouched(false);
+    setPaymentNote(null);
     ocrStartedFor.current = null;
   }, [open, invoice]);
+
+  const paymentAccounts = useMemo(
+    () =>
+      accountsForConnection(
+        connectionIdForInvoiceAccounts(restaurantId || null, qbConnections, qbOnlineConnections),
+        qbAccounts,
+      ),
+    [restaurantId, qbConnections, qbOnlineConnections, qbAccounts],
+  );
+
+  const detectPayment =
+    open &&
+    invoice !== null &&
+    !paymentTouched &&
+    invoice.payment_kind === DEFAULT_INVOICE_PAYMENT_KIND &&
+    !invoice.quickbooks_txn_id &&
+    Boolean(ocrText) &&
+    (invoice.status === "received" || invoice.status === "extracted");
+  useEffect(() => {
+    // The reset effect above clears ocrStartedFor in this same flush, so a stale
+    // ocrText from the previously opened invoice is never read here.
+    if (!detectPayment || !ocrText || ocrStartedFor.current !== invoice?.id) return;
+    const suggestion = suggestInvoicePayment({ ocrText, total: extractTotal, accounts: paymentAccounts });
+    setPayment(suggestion.payment);
+    setPaymentNote(suggestion.note);
+  }, [detectPayment, ocrText, extractTotal, paymentAccounts, invoice?.id]);
 
   useEffect(() => {
     if (!open || !media.data?.image_data) {
@@ -447,10 +488,7 @@ export function InvoiceReviewDialog({
     qbOnlineConnections,
   );
   const scopedVendors = vendorsForConnection(invoiceConnectionId, qbVendors);
-  const scopedAccounts = accountsForConnection(
-    connectionIdForInvoiceAccounts(restaurantId || null, qbConnections, qbOnlineConnections),
-    qbAccounts,
-  );
+  const scopedAccounts = ledgerAccounts(paymentAccounts);
   const scopedApAccounts = apAccountsForSelect(scopedAccounts);
   const scopedMatchOptions = vendorOptions.filter((name) =>
     scopedVendors.some((row) => row.full_name === name),
@@ -486,6 +524,7 @@ export function InvoiceReviewDialog({
         subtotal: totals.subtotal,
         total: totals.total,
         ap_account: apAccount,
+        payment: invoicePaymentColumns(payment),
         status,
         exported_at: exportedAt ?? null,
         ...(ocrText !== null ? { ocr_text: ocrText } : {}),
@@ -527,9 +566,11 @@ export function InvoiceReviewDialog({
     onOpenChange(false);
   };
 
+  const isBill = payment.kind === "bill";
   const canSendToQb =
     Boolean(restaurantId) &&
     Boolean(vendor.trim()) &&
+    (isBill || Boolean(payment.account.trim())) &&
     expenses.some((line) => Number.isFinite(line.amount) && line.amount !== 0 && line.account.trim());
   const postedTxnId = sentTxnId ?? invoice.quickbooks_txn_id;
   const booksStatus = invoiceBooksStatus(qbJob ?? null, postedTxnId);
@@ -541,7 +582,11 @@ export function InvoiceReviewDialog({
 
   const sendToQuickBooks = async () => {
     if (!canSendToQb) {
-      setError("Select a restaurant, vendor, and at least one expense line with an amount.");
+      setError(
+        isBill
+          ? "Select a restaurant, vendor, and at least one expense line with an amount."
+          : "Select a restaurant, vendor, the account it was paid from, and at least one expense line with an amount.",
+      );
       return;
     }
     setQbBusy(true);
@@ -693,13 +738,27 @@ export function InvoiceReviewDialog({
             <Field label="Date" htmlFor="inv-date">
               <Input id="inv-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
-            <Field label="Due" htmlFor="inv-due">
-              <Input id="inv-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-            </Field>
+            {isBill ? (
+              <Field label="Due" htmlFor="inv-due">
+                <Input id="inv-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+              </Field>
+            ) : null}
           </div>
-          <Field label="Terms" htmlFor="inv-terms">
-            <Input id="inv-terms" value={terms} onChange={(e) => setTerms(e.target.value)} />
-          </Field>
+          {isBill ? (
+            <Field label="Terms" htmlFor="inv-terms">
+              <Input id="inv-terms" value={terms} onChange={(e) => setTerms(e.target.value)} />
+            </Field>
+          ) : null}
+          <InvoiceReviewPaymentField
+            value={payment}
+            accounts={paymentAccounts}
+            note={paymentNote}
+            onChange={(next) => {
+              setPaymentTouched(true);
+              setPaymentNote(null);
+              setPayment(next);
+            }}
+          />
         </div>
       </div>
 
@@ -845,7 +904,11 @@ export function InvoiceReviewDialog({
               </div>
             ))}
           </div>
-          {scopedApAccounts.length > 0 ? (
+          {!isBill ? (
+            <p className="mt-2 text-xs text-muted">
+              Paid receipt · no A/P or due date · Expenses tab only
+            </p>
+          ) : scopedApAccounts.length > 0 ? (
             <div className="mt-2">
               <Field label="A/P account" htmlFor="inv-ap">
                 <InvoiceReviewAccountField

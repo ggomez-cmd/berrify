@@ -1,10 +1,19 @@
+import {
+  INVOICE_PAYMENT_TXN_LABELS,
+  type InvoicePayment,
+  type InvoicePaymentByKind,
+  type InvoicePaymentKind,
+} from "../src/lib/invoice-payment";
 import { resolveQbAccountRef, type QbAccountRow } from "../src/lib/qb-account-match";
 import { restUrl, supabaseHeaders, type QbwcRestEnv } from "./qbwc-auth";
 import { publicAppUrl } from "./qbwc-qwc";
 import {
+  QBO_DOC_NUMBER_MAX_LENGTH,
   accountMissingMessage,
   buildQboBillBody,
+  buildQboPurchaseBody,
   findQboBillByDocNumber,
+  findQboPurchaseByNote,
   findSyncedVendorId,
   intuitNotConfiguredMessage,
   isPersistedQboBillId,
@@ -12,13 +21,23 @@ import {
   newQboSendClaim,
   parseQboSendClaim,
   postQboBill,
+  postQboPurchase,
   qboApiBase,
+  qboPurchaseNoteMarker,
   qboRedirectUri,
   queryQboByName,
   requestIntuitToken,
   vendorMissingMessage,
+  type QboBillLine,
   type QboEnv,
+  type QboPurchasePaymentType,
 } from "./qbo-api";
+
+const ONLINE_JOB_OPERATIONS: Record<InvoicePaymentKind, string> = {
+  bill: "qbo_bill",
+  credit_card: "qbo_purchase",
+  check: "qbo_purchase",
+};
 
 const SEND_CLAIM_TTL_MS = 120_000;
 
@@ -32,6 +51,7 @@ export type QboInvoiceForSend = {
   invoiceDate: string | null;
   dueDate: string | null;
   apAccount: string;
+  payment: InvoicePayment;
   quickbooksTxnId: string | null;
   expenses: Array<{ account: string; amount: number; memo: string | null }>;
 };
@@ -102,15 +122,12 @@ export async function trySendQboInvoice(
   });
   if ("error" in vendorId) return json({ error: vendorId.error }, vendorId.status);
 
-  const lines: Array<{ amount: number; accountId: string; description?: string }> = [];
+  const api = { apiBase, realmId: loaded.realm_id, accessToken: access.accessToken };
+  const resolveAccount = (stored: string) => resolveAccountId(fetchImpl, { ...api, stored, accounts });
+
+  const lines: QboBillLine[] = [];
   for (const expense of invoice.expenses) {
-    const accountId = await resolveAccountId(fetchImpl, {
-      apiBase,
-      realmId: loaded.realm_id,
-      accessToken: access.accessToken,
-      stored: expense.account,
-      accounts,
-    });
+    const accountId = await resolveAccount(expense.account);
     if ("error" in accountId) return json({ error: accountId.error }, accountId.status);
     lines.push({
       amount: Number(expense.amount),
@@ -118,31 +135,24 @@ export async function trySendQboInvoice(
       description: expense.memo ?? "",
     });
   }
-  let apAccountId: string | null = null;
-  if (invoice.apAccount.trim()) {
-    const ap = await resolveAccountId(fetchImpl, {
-      apiBase,
-      realmId: loaded.realm_id,
-      accessToken: access.accessToken,
-      stored: invoice.apAccount,
-      accounts,
-    });
-    if ("error" in ap) return json({ error: ap.error }, ap.status);
-    apAccountId = ap.id;
-  }
 
-  const existing = await findExistingBill(fetchImpl, {
-    apiBase,
-    realmId: loaded.realm_id,
-    accessToken: access.accessToken,
-    docNumber: invoice.invoiceNumber,
+  const txn = await prepareOnlineTxn(invoice.payment.kind, invoice.payment, {
+    invoice,
     vendorId: vendorId.id,
+    lines,
+    api,
+    resolveAccount,
+    fetchImpl,
   });
+  if ("error" in txn) return json({ error: txn.error }, txn.status);
+  const label = INVOICE_PAYMENT_TXN_LABELS[invoice.payment.kind];
+
+  const existing = await txn.find();
   if (existing && "error" in existing) return json({ error: existing.error }, 400);
   if (existing) {
     const saved = await saveBillId(env, orgId, invoice.id, existing.id, existing.syncToken, fetchImpl);
     if (!saved) {
-      return json({ error: "QuickBooks Online already has this bill, but Berrify could not store the Bill id" }, 502);
+      return json({ error: `QuickBooks Online already has this ${label}, but Berrify could not store its id` }, 502);
     }
     return json(completedJob(invoice, loaded.id, existing.id));
   }
@@ -154,40 +164,21 @@ export async function trySendQboInvoice(
     return json({ error: "This invoice is already being sent to QuickBooks Online" }, 409);
   }
 
-  const body = buildQboBillBody({
-    vendorId: vendorId.id,
-    txnDate: invoice.invoiceDate,
-    dueDate: invoice.dueDate ?? invoice.invoiceDate,
-    docNumber: invoice.invoiceNumber,
-    apAccountId,
-    lines,
-  });
-  const posted = await postQboBill(fetchImpl, {
-    apiBase,
-    realmId: loaded.realm_id,
-    accessToken: access.accessToken,
-    body,
-  });
+  const posted = await txn.post();
   if ("error" in posted) {
     await releaseInvoiceSend(env, orgId, invoice.id, claim.token, fetchImpl);
     return json({ error: posted.error }, 400);
   }
   const saved = await saveBillId(env, orgId, invoice.id, posted.id, posted.syncToken, fetchImpl);
   if (!saved) {
-    const recovered = await findExistingBill(fetchImpl, {
-      apiBase,
-      realmId: loaded.realm_id,
-      accessToken: access.accessToken,
-      docNumber: invoice.invoiceNumber,
-      vendorId: vendorId.id,
-    });
+    const recovered = await txn.find();
     if (recovered && !("error" in recovered)) {
       const retried = await saveBillId(env, orgId, invoice.id, recovered.id, recovered.syncToken, fetchImpl);
       if (retried) return json(completedJob(invoice, loaded.id, recovered.id));
     }
     return json(
       {
-        error: `QuickBooks Online created the bill (${posted.id}), but Berrify could not store the Bill id. Do not Send again until that id is saved.`,
+        error: `QuickBooks Online created the ${label} (${posted.id}), but Berrify could not store its id. Do not Send again until that id is saved.`,
       },
       502,
     );
@@ -195,17 +186,119 @@ export async function trySendQboInvoice(
   return json(completedJob(invoice, loaded.id, posted.id));
 }
 
-async function findExistingBill(
-  fetchImpl: typeof fetch,
-  input: { apiBase: string; realmId: string; accessToken: string; docNumber: string | null; vendorId: string },
-) {
-  return findQboBillByDocNumber(fetchImpl, {
-    apiBase: input.apiBase,
-    realmId: input.realmId,
-    accessToken: input.accessToken,
-    docNumber: input.docNumber ?? "",
-    vendorId: input.vendorId,
-  });
+type QboTxnRef = { id: string; syncToken: string | null };
+
+type OnlineTxn = {
+  find: () => Promise<QboTxnRef | { error: string } | null>;
+  post: () => Promise<QboTxnRef | { error: string }>;
+};
+
+type OnlineTxnContext = {
+  invoice: QboInvoiceForSend;
+  vendorId: string;
+  lines: QboBillLine[];
+  api: { apiBase: string; realmId: string; accessToken: string };
+  resolveAccount: (stored: string) => Promise<{ id: string } | { error: string; status: number }>;
+  fetchImpl: typeof fetch;
+};
+
+type OnlineTxnPreparer<K extends InvoicePaymentKind> = (
+  payment: InvoicePaymentByKind[K],
+  ctx: OnlineTxnContext,
+) => Promise<OnlineTxn | { error: string; status: number }>;
+
+const ONLINE_TXN_PREPARERS: { [K in InvoicePaymentKind]: OnlineTxnPreparer<K> } = {
+  bill: async (_payment, ctx) => {
+    let apAccountId: string | null = null;
+    if (ctx.invoice.apAccount.trim()) {
+      const ap = await ctx.resolveAccount(ctx.invoice.apAccount);
+      if ("error" in ap) return ap;
+      apAccountId = ap.id;
+    }
+    return {
+      find: () =>
+        findQboBillByDocNumber(ctx.fetchImpl, {
+          ...ctx.api,
+          docNumber: ctx.invoice.invoiceNumber ?? "",
+          vendorId: ctx.vendorId,
+        }),
+      post: () =>
+        postQboBill(ctx.fetchImpl, {
+          ...ctx.api,
+          body: buildQboBillBody({
+            vendorId: ctx.vendorId,
+            txnDate: ctx.invoice.invoiceDate,
+            dueDate: ctx.invoice.dueDate ?? ctx.invoice.invoiceDate,
+            docNumber: ctx.invoice.invoiceNumber,
+            apAccountId,
+            lines: ctx.lines,
+          }),
+        }),
+    };
+  },
+  credit_card: (payment, ctx) =>
+    preparePurchase(ctx, {
+      paymentType: "CreditCard",
+      account: payment.account,
+      docNumber: ctx.invoice.invoiceNumber,
+      noteRef: null,
+    }),
+  check: (payment, ctx) =>
+    preparePurchase(ctx, {
+      paymentType: "Check",
+      account: payment.account,
+      docNumber: payment.checkNumber,
+      noteRef: ctx.invoice.invoiceNumber,
+    }),
+};
+
+function prepareOnlineTxn<K extends InvoicePaymentKind>(
+  kind: K,
+  payment: InvoicePaymentByKind[K],
+  ctx: OnlineTxnContext,
+): Promise<OnlineTxn | { error: string; status: number }> {
+  return ONLINE_TXN_PREPARERS[kind](payment, ctx);
+}
+
+/** A DocNumber over QuickBooks Online's 21 characters moves into PrivateNote. */
+export function qboPurchaseRefs(input: {
+  invoiceId: string;
+  docNumber: string | null;
+  noteRef: string | null;
+}): { docNumber: string | null; privateNote: string } {
+  const doc = input.docNumber?.trim() ?? "";
+  const fits = doc.length <= QBO_DOC_NUMBER_MAX_LENGTH;
+  const refs = [input.noteRef?.trim() ?? "", fits ? "" : doc].filter(Boolean);
+  return {
+    docNumber: fits && doc ? doc : null,
+    privateNote: [qboPurchaseNoteMarker(input.invoiceId), ...refs.map((ref) => `Ref ${ref}`)].join(" · "),
+  };
+}
+
+async function preparePurchase(
+  ctx: OnlineTxnContext,
+  input: { paymentType: QboPurchasePaymentType; account: string; docNumber: string | null; noteRef: string | null },
+): Promise<OnlineTxn | { error: string; status: number }> {
+  const account = await ctx.resolveAccount(input.account);
+  if ("error" in account) return account;
+  const refs = qboPurchaseRefs({ invoiceId: ctx.invoice.id, docNumber: input.docNumber, noteRef: input.noteRef });
+  return {
+    find: () =>
+      findQboPurchaseByNote(ctx.fetchImpl, { ...ctx.api, txnDate: ctx.invoice.invoiceDate, invoiceId: ctx.invoice.id }),
+    post: () =>
+      postQboPurchase(ctx.fetchImpl, {
+        ...ctx.api,
+        body: buildQboPurchaseBody({
+          paymentType: input.paymentType,
+          accountId: account.id,
+          vendorId: ctx.vendorId,
+          txnDate: ctx.invoice.invoiceDate,
+          docNumber: refs.docNumber,
+          privateNote: refs.privateNote,
+          lines: ctx.lines,
+        }),
+      }),
+  };
 }
 
 async function claimInvoiceSend(
@@ -289,7 +382,7 @@ function completedJob(invoice: QboInvoiceForSend, connectionId: string, billId: 
     job: {
       id: `qbo-${billId}`,
       status: "completed",
-      operation: "qbo_bill",
+      operation: ONLINE_JOB_OPERATIONS[invoice.payment.kind],
       entity_type: "invoice",
       entity_id: invoice.id,
       connection_id: connectionId,
