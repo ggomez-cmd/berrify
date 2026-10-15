@@ -378,6 +378,28 @@ FACTURA NUMERO
 INVOICE TOTAL 446.27
 `;
 
+/** Sam's Club curbside order confirmation that totals $390.13. */
+export const SAMS_CLUB_RECEIPT_OCR = `
+Oct 1, 2026
+Order 800000074412226
+Curbside pickup items(28)
+San Juan Sam's Club
+PR-2 KM 2.2 KENNEDY AVE
+San Juan, PR 00920
+Date
+Don Q Cristal Puerto Rican Rum 1 L Qty 5 $79.85
+Dibon Cava Brut Reserve 750 ml Qty 22 $250.36
+Kahlua Licor De Cafe 1 L Qty 1 $19.68
+Subtotal $349.89
+Puerto Rico Territory tax $36.74
+Puerto Rico Municipal tax $3.50
+Pickup FREE
+Total $390.13
+Ending in 8670 $390.13
+Credit cards aren’t charged until your order ships or you pick it up at the club. If you see a pending charge before this,
+it’s an authorization hold to ensure the funds are available
+`;
+
 /** Vision-shaped Jose Santiago totals crop with spaces inside the money. */
 export const VISION_JOSE_SANTIAGO_BALANCE_OCR = `
 CAN ENTERPRISE LLC

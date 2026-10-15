@@ -21,6 +21,7 @@ import {
   JOSE_SANTIAGO_BACON_OCR,
   JOSE_SANTIAGO_OCR,
   NORTHWESTERN_OCR,
+  SAMS_CLUB_RECEIPT_OCR,
   SANTURCE_OCR,
   SUPERMAX_OCR,
   VISION_BALLESTER_OCR,
@@ -108,6 +109,7 @@ describe("compactOcrMoney", () => {
     expect(compactOcrMoney("$1, 155. 59")).toBe("$1,155.59");
     expect(compactOcrMoney("$1 , 155 . 59")).toBe("$1,155.59");
     expect(compactOcrMoney("233. 24")).toBe("233.24");
+    expect(compactOcrMoney("Oct 1, 2026")).toBe("Oct 1, 2026");
   });
 });
 
@@ -157,6 +159,44 @@ describe("Ballester Hermanos", () => {
     expect(extracted.lines.find((l) => l.code === "03194")?.pounds).toBeCloseTo(79.1);
     expect(extracted.expenses[0]?.account).toBe(ACCOUNTS.food);
     expect(extracted.expenses[0]?.amount).toBeCloseTo(757.56);
+  });
+});
+
+describe("Sam's Club order confirmation", () => {
+  const extracted = extractInvoiceFromText(SAMS_CLUB_RECEIPT_OCR);
+
+  it("reads vendor, order number, same-day due, and receipt terms", () => {
+    expect(extracted.qbo_vendor_name).toBe("San Juan Sam's Club");
+    expect(extracted.vendor_name).toBe("San Juan Sam's Club");
+    expect(extracted.invoice_number).toBe("800000074412226");
+    expect(extracted.invoice_date).toBe("2026-10-01");
+    expect(extracted.due_date).toBe("2026-10-01");
+    expect(extracted.terms).toBe("Due on receipt");
+  });
+
+  it("parses three merchandise lines and skips payment text", () => {
+    expect(extracted.lines).toHaveLength(3);
+    expect(extracted.lines.map((l) => l.description)).toEqual([
+      "Don Q Cristal Puerto Rican Rum 1 L",
+      "Dibon Cava Brut Reserve 750 ml",
+      "Kahlua Licor De Cafe 1 L",
+    ]);
+    expect(extracted.lines.map((l) => l.qty_ordered)).toEqual([5, 22, 1]);
+    expect(extracted.lines.map((l) => l.qty_shipped)).toEqual([5, 22, 1]);
+    expect(extracted.lines.map((l) => l.amount)).toEqual([79.85, 250.36, 19.68]);
+    expect(extracted.lines.every((l) => l.category === "beverage")).toBe(true);
+    expect(extracted.lines.some((l) => /ending in|credit cards|authorization/i.test(l.description))).toBe(
+      false,
+    );
+  });
+
+  it("combines PR tax and rolls beverage expenses separately", () => {
+    expect(extracted.subtotal).toBeCloseTo(349.89);
+    expect(extracted.tax).toBeCloseTo(40.24);
+    expect(extracted.total).toBeCloseTo(390.13);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.tax)?.amount).toBeCloseTo(40.24);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.beverage)?.amount).toBeCloseTo(349.89);
+    expect(extracted.expenses.find((e) => e.account === ACCOUNTS.food)).toBeUndefined();
   });
 });
 
