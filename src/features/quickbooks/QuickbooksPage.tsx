@@ -72,6 +72,11 @@ type CardTarget = {
   restaurantId: string | null;
 };
 
+type QuickbooksNotice = {
+  text: string;
+  details: string[];
+};
+
 export function QuickbooksPage() {
   const { role } = useAuth();
   const [searchParams] = useSearchParams();
@@ -86,7 +91,10 @@ export function QuickbooksPage() {
   const [oneTime, setOneTime] = useState<{ connectionId: string; username: string; password: string } | null>(
     null,
   );
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<QuickbooksNotice | null>(null);
+  const showNotice = (text: string, details: string[] = []) => {
+    setNotice({ text, details });
+  };
 
   const targets: CardTarget[] = useMemo(() => {
     const shared: CardTarget = {
@@ -122,7 +130,7 @@ export function QuickbooksPage() {
 
   const connect = async (target: CardTarget) => {
     setBusyKey(target.key);
-    setMessage(null);
+    setNotice(null);
     try {
       const result = await createQbwcConnection({
         restaurant_id: target.restaurantId,
@@ -134,9 +142,9 @@ export function QuickbooksPage() {
         password: result.password,
       });
       await refresh();
-      setMessage("Connection created. Copy the password now — Berrify will not show it again.");
+      showNotice("Connection created. Copy the password now — Berrify will not show it again.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not create connection");
+      showNotice(err instanceof Error ? err.message : "Could not create connection");
     } finally {
       setBusyKey(null);
     }
@@ -144,14 +152,14 @@ export function QuickbooksPage() {
 
   const rotate = async (connection: QuickbooksDesktopConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       const password = await rotateQbwcPassword(connection.id);
       setOneTime({ connectionId: connection.id, username: connection.qb_username, password });
       await refresh();
-      setMessage("Password regenerated. Update it in QuickBooks Web Connector.");
+      showNotice("Password regenerated. Update it in QuickBooks Web Connector.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not regenerate password");
+      showNotice(err instanceof Error ? err.message : "Could not regenerate password");
     } finally {
       setBusyKey(null);
     }
@@ -159,14 +167,14 @@ export function QuickbooksPage() {
 
   const revoke = async (connection: QuickbooksDesktopConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await revokeQbwcConnection(connection.id);
       if (oneTime?.connectionId === connection.id) setOneTime(null);
       await refresh();
-      setMessage("Web Connector access revoked.");
+      showNotice("Web Connector access revoked.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not revoke connection");
+      showNotice(err instanceof Error ? err.message : "Could not revoke connection");
     } finally {
       setBusyKey(null);
     }
@@ -174,13 +182,13 @@ export function QuickbooksPage() {
 
   const refreshVendors = async (connection: QuickbooksDesktopConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await refreshQbwcVendors(connection.id);
       await refresh();
-      setMessage("Vendor query queued. In Web Connector, click Update Selected. Vendors are not synced until that VendorQuery completes.");
+      showNotice("Vendor query queued. In Web Connector, click Update Selected. Vendors are not synced until that VendorQuery completes.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not refresh vendors");
+      showNotice(err instanceof Error ? err.message : "Could not refresh vendors");
     } finally {
       setBusyKey(null);
     }
@@ -188,15 +196,15 @@ export function QuickbooksPage() {
 
   const refreshAccounts = async (connection: QuickbooksDesktopConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await refreshQbwcAccounts(connection.id);
       await refresh();
-      setMessage(
+      showNotice(
         "Account query queued. In Web Connector, click Update Selected. Accounts are not synced until that AccountQuery completes.",
       );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not refresh accounts");
+      showNotice(err instanceof Error ? err.message : "Could not refresh accounts");
     } finally {
       setBusyKey(null);
     }
@@ -204,25 +212,25 @@ export function QuickbooksPage() {
 
   const connectOnline = async (restaurantId: string) => {
     setBusyKey(`qbo:${restaurantId}`);
-    setMessage(null);
+    setNotice(null);
     try {
       const result = await startQboConnect(restaurantId);
       window.location.assign(result.url);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not connect QuickBooks Online");
+      showNotice(err instanceof Error ? err.message : "Could not connect QuickBooks Online");
       setBusyKey(null);
     }
   };
 
   const refreshOnlineVendors = async (connection: QuickbooksOnlineConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await refreshQboVendors(connection.id);
       await refresh();
-      setMessage("Vendors synced from QuickBooks Online for this company.");
+      showNotice("Vendors synced from QuickBooks Online for this company.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not refresh QuickBooks Online vendors");
+      showNotice(err instanceof Error ? err.message : "Could not refresh QuickBooks Online vendors");
     } finally {
       setBusyKey(null);
     }
@@ -230,13 +238,13 @@ export function QuickbooksPage() {
 
   const refreshOnlineAccounts = async (connection: QuickbooksOnlineConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await refreshQboAccounts(connection.id);
       await refresh();
-      setMessage("Accounts synced from QuickBooks Online for this company.");
+      showNotice("Accounts synced from QuickBooks Online for this company.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not refresh QuickBooks Online accounts");
+      showNotice(err instanceof Error ? err.message : "Could not refresh QuickBooks Online accounts");
     } finally {
       setBusyKey(null);
     }
@@ -244,7 +252,7 @@ export function QuickbooksPage() {
 
   const exportOnlineLists = async (connection: QuickbooksOnlineConnection, restaurantName: string) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       const listExport = await exportQboLists(connection.id);
       const blob = new Blob([JSON.stringify(listExport, null, 2)], { type: "application/json" });
@@ -254,11 +262,11 @@ export function QuickbooksPage() {
       link.download = `qbo-lists-${restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "company"}.json`;
       link.click();
       URL.revokeObjectURL(href);
-      setMessage(
+      showNotice(
         `Exported ${listExport.vendors.length} vendors and ${listExport.accounts.length} accounts. Disconnect, connect the sandbox company, then import this file.`,
       );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not export QuickBooks lists");
+      showNotice(err instanceof Error ? err.message : "Could not export QuickBooks lists");
     } finally {
       setBusyKey(null);
     }
@@ -270,17 +278,18 @@ export function QuickbooksPage() {
     );
     if (!confirmed) return;
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       const parsed = JSON.parse(await file.text()) as QboListExportPayload;
       const result = await importQboLists(connection.id, parsed);
       await refresh();
       const errorNote = result.errors.length > 0 ? ` ${result.errors.length} could not be created.` : "";
-      setMessage(
+      showNotice(
         `Imported lists: created ${result.vendorsCreated} vendors and ${result.accountsCreated} accounts, skipped ${result.vendorsSkipped + result.accountsSkipped} existing names.${errorNote}`,
+        result.errors,
       );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not import QuickBooks lists");
+      showNotice(err instanceof Error ? err.message : "Could not import QuickBooks lists");
     } finally {
       setBusyKey(null);
     }
@@ -289,13 +298,13 @@ export function QuickbooksPage() {
   const disconnectOnline = async (connection: QuickbooksOnlineConnection) => {
     if (!window.confirm(`Disconnect QuickBooks Online for ${connection.company_name || "this restaurant"}?`)) return;
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await disconnectQbo(connection.id);
       await refresh();
-      setMessage("QuickBooks Online disconnected for this restaurant.");
+      showNotice("QuickBooks Online disconnected for this restaurant.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not disconnect QuickBooks Online");
+      showNotice(err instanceof Error ? err.message : "Could not disconnect QuickBooks Online");
     } finally {
       setBusyKey(null);
     }
@@ -303,11 +312,11 @@ export function QuickbooksPage() {
 
   const download = async (connection: QuickbooksDesktopConnection) => {
     setBusyKey(connection.id);
-    setMessage(null);
+    setNotice(null);
     try {
       await downloadBerrifyQwc(connection.id);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not download Berrify.qwc");
+      showNotice(err instanceof Error ? err.message : "Could not download Berrify.qwc");
     } finally {
       setBusyKey(null);
     }
@@ -348,7 +357,21 @@ export function QuickbooksPage() {
         </Card>
       ) : null}
 
-      {message ? <p className="text-sm text-ink">{message}</p> : null}
+      {notice ? (
+        <div className="space-y-1">
+          <p className="text-sm text-ink">{notice.text}</p>
+          {notice.details.length > 0 ? (
+            <details className="text-sm text-ink">
+              <summary>Details</summary>
+              <ul className="mt-1 list-disc pl-5">
+                {notice.details.map((detail, index) => (
+                  <li key={`${index}:${detail}`}>{detail}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
       {error ? <p className="text-sm text-danger">Could not load QuickBooks connections.</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading connections…</p> : null}
 

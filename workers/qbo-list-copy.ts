@@ -49,8 +49,20 @@ export type QboListCopyTarget = {
   accessToken: string;
 };
 
-function foldName(value: string): string {
-  return foldVendorName(value);
+function accountPathKey(fullyQualifiedName: string): string {
+  return fullyQualifiedName
+    .split(":")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+    .map((segment) =>
+      segment
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .join(":");
 }
 
 function text(value: unknown): string {
@@ -126,33 +138,65 @@ export function buildQboListExport(input: {
   };
 }
 
-function parseVendor(value: unknown): QboListVendor | null {
-  if (!value || typeof value !== "object") return null;
+const MAX_INVALID_ENTRY_REASONS = 20;
+
+type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
+
+function parseVendor(value: unknown): Parsed<QboListVendor> {
+  if (!value || typeof value !== "object") return { ok: false, reason: "is not an object" };
   const row = value as Record<string, unknown>;
   const displayName = text(row.displayName);
-  if (!displayName) return null;
+  if (!displayName) return { ok: false, reason: "is missing displayName" };
   return {
-    displayName,
-    companyName: text(row.companyName) || null,
-    isActive: row.isActive !== false,
+    ok: true,
+    value: {
+      displayName,
+      companyName: text(row.companyName) || null,
+      isActive: row.isActive !== false,
+    },
   };
 }
 
-function parseAccount(value: unknown): QboListAccount | null {
-  if (!value || typeof value !== "object") return null;
+function parseAccount(value: unknown): Parsed<QboListAccount> {
+  if (!value || typeof value !== "object") return { ok: false, reason: "is not an object" };
   const row = value as Record<string, unknown>;
   const fullyQualifiedName = text(row.fullyQualifiedName) || text(row.name);
   const name = text(row.name) || accountLeafName(fullyQualifiedName);
   const accountType = text(row.accountType);
-  if (!fullyQualifiedName || !name || !accountType) return null;
+  if (!fullyQualifiedName || !name) return { ok: false, reason: "is missing name" };
+  if (!accountType) return { ok: false, reason: "is missing accountType" };
   return {
-    name,
-    fullyQualifiedName,
-    accountType,
-    accountSubType: text(row.accountSubType) || null,
-    accountNumber: text(row.accountNumber) || null,
-    isActive: row.isActive !== false,
+    ok: true,
+    value: {
+      name,
+      fullyQualifiedName,
+      accountType,
+      accountSubType: text(row.accountSubType) || null,
+      accountNumber: text(row.accountNumber) || null,
+      isActive: row.isActive !== false,
+    },
   };
+}
+
+function collectParsed<T>(entries: unknown[], label: string, parse: (value: unknown) => Parsed<T>): {
+  values: T[];
+  reasons: string[];
+  invalidCount: number;
+} {
+  const values: T[] = [];
+  const reasons: string[] = [];
+  let invalidCount = 0;
+  for (let index = 0; index < entries.length; index += 1) {
+    const parsed = parse(entries[index]);
+    if (parsed.ok) values.push(parsed.value);
+    else {
+      invalidCount += 1;
+      if (reasons.length < MAX_INVALID_ENTRY_REASONS) {
+        reasons.push(`${label} ${index + 1} ${parsed.reason}`);
+      }
+    }
+  }
+  return { values, reasons, invalidCount };
 }
 
 export function parseQboListExport(value: unknown): QboListExport | { error: string } {
@@ -167,15 +211,22 @@ export function parseQboListExport(value: unknown): QboListExport | { error: str
   if (!Array.isArray(row.vendors) || !Array.isArray(row.accounts)) {
     return { error: "That QuickBooks list export is missing vendors or accounts" };
   }
-  const vendors = row.vendors.map(parseVendor).filter((item): item is QboListVendor => Boolean(item));
-  const accounts = row.accounts.map(parseAccount).filter((item): item is QboListAccount => Boolean(item));
+  const vendors = collectParsed(row.vendors, "vendor", parseVendor);
+  const accounts = collectParsed(row.accounts, "account", parseAccount);
+  const invalidCount = vendors.invalidCount + accounts.invalidCount;
+  const reasons = [...vendors.reasons, ...accounts.reasons].slice(0, MAX_INVALID_ENTRY_REASONS);
+  const omitted = invalidCount - reasons.length;
+  if (reasons.length > 0) {
+    const suffix = omitted > 0 ? `; and ${omitted} more invalid entries` : "";
+    return { error: `That QuickBooks list export has invalid entries: ${reasons.join("; ")}${suffix}` };
+  }
   return {
     kind: QBO_LIST_EXPORT_KIND,
     version: QBO_LIST_EXPORT_VERSION,
     exportedAt: text(row.exportedAt) || new Date().toISOString(),
     sourceCompanyName: text(row.sourceCompanyName) || null,
-    vendors,
-    accounts,
+    vendors: vendors.values,
+    accounts: accounts.values,
   };
 }
 
@@ -196,15 +247,15 @@ export function parseQboListImportBody(value: unknown):
 }
 
 export function vendorAlreadyExists(name: string, target: QboListVendor[]): boolean {
-  const folded = foldName(name);
+  const folded = foldVendorName(name);
   if (!folded) return false;
-  return target.some((row) => foldName(row.displayName) === folded);
+  return target.some((row) => foldVendorName(row.displayName) === folded);
 }
 
 export function accountAlreadyExists(fullyQualifiedName: string, target: QboListAccount[]): boolean {
-  const folded = foldName(fullyQualifiedName);
+  const folded = accountPathKey(fullyQualifiedName);
   if (!folded) return false;
-  return target.some((row) => foldName(row.fullyQualifiedName) === folded);
+  return target.some((row) => accountPathKey(row.fullyQualifiedName) === folded);
 }
 
 export function planQboListCopy(
@@ -221,7 +272,7 @@ export function planQboListCopy(
   const vendorsToSkip: QboListVendor[] = [];
   const seenVendors = new Set<string>();
   for (const vendor of source.vendors) {
-    const key = foldName(vendor.displayName);
+    const key = foldVendorName(vendor.displayName);
     if (!key || seenVendors.has(key) || vendorAlreadyExists(vendor.displayName, targetVendors)) {
       vendorsToSkip.push(vendor);
       continue;
@@ -237,7 +288,7 @@ export function planQboListCopy(
     (left, right) => accountDepth(left.fullyQualifiedName) - accountDepth(right.fullyQualifiedName),
   );
   for (const account of sorted) {
-    const key = foldName(account.fullyQualifiedName);
+    const key = accountPathKey(account.fullyQualifiedName);
     if (!key || seenAccounts.has(key) || accountAlreadyExists(account.fullyQualifiedName, targetAccounts)) {
       accountsToSkip.push(account);
       continue;
@@ -314,7 +365,7 @@ export async function applyQboListCopy(
   const plan = planQboListCopy(input.source, targetVendors, targetAccounts);
   const accountIds = new Map<string, string>();
   for (const row of targetAccounts) {
-    if (row.listId) accountIds.set(foldName(row.fullyQualifiedName), row.listId);
+    if (row.listId) accountIds.set(accountPathKey(row.fullyQualifiedName), row.listId);
   }
 
   const counts: QboListCopyCounts = {
@@ -344,7 +395,7 @@ export async function applyQboListCopy(
 
   for (const account of plan.accountsToCreate) {
     const parentName = accountParentName(account.fullyQualifiedName);
-    const parentId = parentName ? accountIds.get(foldName(parentName)) ?? null : null;
+    const parentId = parentName ? accountIds.get(accountPathKey(parentName)) ?? null : null;
     if (parentName && !parentId) {
       counts.errors.push(`${account.fullyQualifiedName}: parent account "${parentName}" is missing`);
       continue;
@@ -362,7 +413,7 @@ export async function applyQboListCopy(
       counts.errors.push(`${account.fullyQualifiedName}: ${created.error}`);
       continue;
     }
-    accountIds.set(foldName(account.fullyQualifiedName), created.id);
+    accountIds.set(accountPathKey(account.fullyQualifiedName), created.id);
     counts.accountsCreated += 1;
   }
 
