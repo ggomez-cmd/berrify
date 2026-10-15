@@ -13,7 +13,6 @@ import {
 } from "./qbwc-auth";
 import {
   ACCOUNT_QUERY_OPERATION,
-  BILL_ADD_OPERATION,
   COMPANY_QUERY_OPERATION,
   VENDOR_QUERY_OPERATION,
   claimNextPendingJob,
@@ -22,6 +21,7 @@ import {
   enqueueVendorQueryJob,
   completeJob,
   failJob,
+  invoiceTxnResponseTag,
   markInvoiceQuickbooksBill,
   shouldEnqueueCompanyQuery,
 } from "./qbwc-jobs";
@@ -29,8 +29,8 @@ import { upsertAccountsFromQuery } from "./qbwc-accounts";
 import { upsertVendorsFromQuery } from "./qbwc-vendors";
 import {
   parseAccountQueryRs,
-  parseBillAddRs,
   parseCompanyQueryRs,
+  parseTxnAddRs,
   parseHcpHostInfo,
   parseVendorQueryRs,
   xmlEscape,
@@ -438,37 +438,38 @@ async function handleReceiveResponseXml(
     });
     return soapIntResult("receiveResponseXML", 100);
   }
-  if (job.operation === BILL_ADD_OPERATION) {
-    const bill = parseBillAddRs(responseXml);
-    if (!bill.ok || (bill.statusCode && bill.statusCode !== "0")) {
+  const txnResponseTag = invoiceTxnResponseTag(job.operation);
+  if (txnResponseTag) {
+    const txn = parseTxnAddRs(responseXml, txnResponseTag);
+    if (!txn.ok || (txn.statusCode && txn.statusCode !== "0")) {
       await failJob(
         env,
         job.id,
         {
           qbxml_response: responseXml,
-          error_code: bill.statusCode,
-          error_message: bill.statusMessage,
+          error_code: txn.statusCode,
+          error_message: txn.statusMessage,
         },
         fetchImpl,
       );
       await patchConnection(
         env,
         loaded.connection.id,
-        { last_error: bill.statusMessage || bill.statusCode },
+        { last_error: txn.statusMessage || txn.statusCode },
         fetchImpl,
       );
       await setSessionError(
         env,
         ticket,
-        bill.statusMessage || bill.statusCode || "QuickBooks error",
+        txn.statusMessage || txn.statusCode || "QuickBooks error",
         fetchImpl,
       );
       logSafe("job_fail", {
         ticket_id: ticket,
         job_id: job.id,
         opcode: job.operation,
-        qb_status_code: bill.statusCode,
-        qb_status_message: bill.statusMessage,
+        qb_status_code: txn.statusCode,
+        qb_status_message: txn.statusMessage,
       });
       return soapIntResult("receiveResponseXML", -1);
     }
@@ -477,8 +478,8 @@ async function handleReceiveResponseXml(
       job.id,
       {
         qbxml_response: responseXml,
-        quickbooks_txn_id: bill.txnId,
-        edit_sequence: bill.editSequence,
+        quickbooks_txn_id: txn.txnId,
+        edit_sequence: txn.editSequence,
       },
       fetchImpl,
     );
@@ -486,7 +487,7 @@ async function handleReceiveResponseXml(
       await markInvoiceQuickbooksBill(
         env,
         job.entity_id,
-        { quickbooks_txn_id: bill.txnId, quickbooks_edit_sequence: bill.editSequence },
+        { quickbooks_txn_id: txn.txnId, quickbooks_edit_sequence: txn.editSequence },
         fetchImpl,
       );
     }
@@ -503,8 +504,8 @@ async function handleReceiveResponseXml(
       ticket_id: ticket,
       job_id: job.id,
       opcode: job.operation,
-      qb_status_code: bill.statusCode ?? "0",
-      qb_status_message: bill.statusMessage,
+      qb_status_code: txn.statusCode ?? "0",
+      qb_status_message: txn.statusMessage,
     });
     return soapIntResult("receiveResponseXML", 100);
   }

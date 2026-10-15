@@ -32,6 +32,13 @@ export const INVOICE_PAYMENT_KIND_LABELS: Record<InvoicePaymentKind, string> = {
   check: "Bank or check",
 };
 
+/** The QuickBooks transaction each kind becomes, as the bookkeeper calls it. */
+export const INVOICE_PAYMENT_TXN_LABELS: Record<InvoicePaymentKind, string> = {
+  bill: "bill",
+  credit_card: "credit card charge",
+  check: "check",
+};
+
 export function isInvoicePaymentKind(value: unknown): value is InvoicePaymentKind {
   return value === "bill" || value === "credit_card" || value === "check";
 }

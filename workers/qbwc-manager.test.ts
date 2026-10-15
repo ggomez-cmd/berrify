@@ -211,6 +211,69 @@ function sendFetch(options: {
   };
 }
 
+function paidInvoice(overrides: Record<string, unknown>) {
+  return invoiceRow({
+    id: "inv-ath",
+    vendor_name: "SuperMax",
+    invoice_number: "2244291",
+    invoice_date: "2026-09-23",
+    due_date: "2026-09-23",
+    total: 27.66,
+    quickbooks_txn_id: null,
+    invoice_expense_lines: [
+      { account: "50000 · Food Purchases", amount: 26.54, memo: "Food" },
+      { account: "60025 · Sales tax expense", amount: 1.12, memo: "Tax" },
+    ],
+    ...overrides,
+  });
+}
+
+/** A Supabase stub whose job table honors the operation and entity filters. */
+function paidFetch(options: {
+  invoice: Record<string, unknown>;
+  jobs?: Array<Record<string, unknown>>;
+}): { fetchImpl: typeof fetch; posted: Array<Record<string, unknown>> } {
+  const jobs = [...(options.jobs ?? [])];
+  const posted: Array<Record<string, unknown>> = [];
+  const semillaAccounts = [
+    ["80000001-1", "BPPR - 016374290", "10000", "Bank"],
+    ["8000002A-1", "VISA x4007", "23300", "CreditCard"],
+    ["80000010-1", "Food Purchases", "50000", "CostOfGoodsSold"],
+    ["80000011-2", "Sales tax expense", "60025", "Expense"],
+    ["80000012-3", "Accounts Payable", "20000", "AccountsPayable"],
+  ].map(([list_id, full_name, account_number, account_type]) => ({
+    connection_id: "conn-kane",
+    list_id,
+    full_name,
+    account_number,
+    account_type,
+    is_active: true,
+  }));
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = decodeURIComponent(String(input));
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url.includes("/rest/v1/invoices") && method === "GET") return Response.json([options.invoice]);
+    if (url.includes("quickbooks_online_connections") && method === "GET") return Response.json([]);
+    if (url.includes("quickbooks_desktop_connections") && method === "GET") {
+      return Response.json(url.includes("restaurant_id=eq.rest-kane") ? [kaneConn] : []);
+    }
+    if (url.includes("quickbooks_accounts") && method === "GET") return Response.json(semillaAccounts);
+    if (url.includes("quickbooks_sync_jobs") && method === "GET") {
+      const operation = /operation=eq\.([^&]+)/.exec(url)?.[1];
+      return Response.json(jobs.filter((job) => !operation || job.operation === operation));
+    }
+    if (url.includes("quickbooks_sync_jobs") && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      const created = { id: `job-${posted.length + 1}`, error_message: null, quickbooks_txn_id: null, ...body };
+      posted.push(created);
+      jobs.push(created);
+      return Response.json([created], { status: 201 });
+    }
+    throw new Error(`unexpected ${method} ${url}`);
+  };
+  return { fetchImpl, posted };
+}
+
 describe("invoice Send to QuickBooks", () => {
   const manager = { userId: "user-1", orgId: "org-1", role: "manager" };
 
@@ -344,6 +407,130 @@ describe("invoice Send to QuickBooks", () => {
     expect(jobs[0]?.qbxml_request).toEqual(expect.stringContaining("AccountQueryRq"));
     expect(jobs[0]?.qbxml_request).toEqual(expect.not.stringContaining("BillAddRq"));
     expect(jobs.some((job) => job.operation === "bill_add")).toBe(false);
+  });
+
+  it("sends a reviewed SuperMax ATH receipt as a CheckAdd from the bank", async () => {
+    const harness = paidFetch({
+      invoice: paidInvoice({
+        payment_kind: "check",
+        payment_account: "10000 · BPPR - 016374290",
+        payment_ref: "ATH",
+      }),
+    });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ job: { operation: "check_add", connection_id: "conn-kane" } });
+    expect(harness.posted.map((job) => job.operation)).toEqual(["check_add"]);
+    expect(harness.posted[0]?.qbxml_request).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <CheckAddRq>
+      <CheckAdd>
+        <AccountRef>
+          <ListID>80000001-1</ListID>
+        </AccountRef>
+        <PayeeEntityRef>
+          <FullName>SuperMax</FullName>
+        </PayeeEntityRef>
+        <RefNumber>ATH</RefNumber>
+        <TxnDate>2026-09-23</TxnDate>
+        <Memo>Ref 2244291</Memo>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <ListID>80000010-1</ListID>
+          </AccountRef>
+          <Amount>26.54</Amount>
+          <Memo>Food</Memo>
+        </ExpenseLineAdd>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <ListID>80000011-2</ListID>
+          </AccountRef>
+          <Amount>1.12</Amount>
+          <Memo>Tax</Memo>
+        </ExpenseLineAdd>
+      </CheckAdd>
+    </CheckAddRq>
+  </QBXMLMsgsRq>
+</QBXML>`);
+  });
+
+  it("sends a card receipt as a CreditCardChargeAdd against the card account", async () => {
+    const harness = paidFetch({
+      invoice: paidInvoice({
+        vendor_name: "Costco",
+        invoice_number: "2109",
+        payment_kind: "credit_card",
+        payment_account: "23300 · VISA x4007",
+      }),
+    });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ job: { operation: "credit_card_charge_add" } });
+    const xml = String(harness.posted[0]?.qbxml_request);
+    expect(xml).toContain(
+      [
+        "      <CreditCardChargeAdd>",
+        "        <AccountRef>",
+        "          <ListID>8000002A-1</ListID>",
+        "        </AccountRef>",
+        "        <PayeeEntityRef>",
+        "          <FullName>Costco</FullName>",
+        "        </PayeeEntityRef>",
+        "        <TxnDate>2026-09-23</TxnDate>",
+        "        <RefNumber>2109</RefNumber>",
+        "        <ExpenseLineAdd>",
+      ].join("\n"),
+    );
+  });
+
+  it("refuses to send a card charge after the same invoice was queued as a bill", async () => {
+    const harness = paidFetch({
+      invoice: paidInvoice({ payment_kind: "credit_card", payment_account: "23300 · VISA x4007" }),
+      jobs: [{ id: "job-old", operation: "bill_add", status: "completed", entity_id: "inv-ath" }],
+    });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This invoice was already sent to QuickBooks as a bill. Fix it in QuickBooks instead of sending it again.",
+    });
+    expect(harness.posted).toEqual([]);
+  });
+
+  it("allows the new kind when the earlier bill job failed", async () => {
+    const harness = paidFetch({
+      invoice: paidInvoice({ payment_kind: "credit_card", payment_account: "23300 · VISA x4007" }),
+      jobs: [{ id: "job-old", operation: "bill_add", status: "failed", entity_id: "inv-ath" }],
+    });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(200);
+    expect(harness.posted.map((job) => job.operation)).toEqual(["credit_card_charge_add"]);
+  });
+
+  it("refuses a Desktop send when the invoice already has a QuickBooks transaction id", async () => {
+    const harness = paidFetch({
+      invoice: paidInvoice({
+        payment_kind: "check",
+        payment_account: "10000 · BPPR - 016374290",
+        payment_ref: "ATH",
+        quickbooks_txn_id: "991",
+      }),
+    });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This invoice is already in QuickBooks. Fix it in QuickBooks instead of sending it again.",
+    });
+    expect(harness.posted).toEqual([]);
+  });
+
+  it("asks for the paying account before sending a card receipt", async () => {
+    const harness = paidFetch({ invoice: paidInvoice({ payment_kind: "credit_card", payment_account: null }) });
+    const response = await handleSendInvoice(env, manager, "inv-ath", harness.fetchImpl);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Pick the credit card account this receipt was paid with" });
+    expect(harness.posted).toEqual([]);
   });
 
   it("does not treat a waiting restaurant connector as Connected", async () => {

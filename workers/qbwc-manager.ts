@@ -10,10 +10,24 @@ import {
   type QbwcConnectionRow,
   type QbwcRestEnv,
 } from "./qbwc-auth";
-import { enqueueAccountQueryJob, enqueueBillAddJob, enqueueVendorQueryJob } from "./qbwc-jobs";
+import {
+  INVOICE_TXN_OPERATIONS,
+  enqueueAccountQueryJob,
+  enqueueInvoiceTxnJob,
+  enqueueVendorQueryJob,
+  invoiceTxnConflict,
+  loadInvoiceTxnJobs,
+} from "./qbwc-jobs";
 import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
-import { buildBillAddRq } from "./qbxml";
+import { buildBillAddRq, buildCheckAddRq, buildCreditCardChargeAddRq } from "./qbxml";
 import { resolveQbAccountRef, type QbAccountRow } from "../src/lib/qb-account-match";
+import {
+  INVOICE_PAYMENT_TXN_LABELS,
+  parseInvoicePayment,
+  type InvoicePaymentByKind,
+  type InvoicePaymentKind,
+} from "../src/lib/invoice-payment";
+import { isPersistedQboBillId } from "../src/lib/qbo-bill-id";
 import { trySendQboInvoice } from "./qbo-send";
 
 export type QbwcManagerEnv = QbwcRestEnv & {
@@ -347,9 +361,70 @@ type InvoiceSendRow = {
   status: string;
   total: number;
   quickbooks_txn_id?: string | null;
+  payment_kind?: string | null;
+  payment_account?: string | null;
+  payment_ref?: string | null;
   suppliers: { name: string } | { name: string }[] | null;
   invoice_expense_lines: Array<{ account: string; amount: number; memo: string | null }>;
 };
+
+type DesktopTxnInput = {
+  invoice: InvoiceSendRow;
+  vendor: string;
+  expenses: InvoiceSendRow["invoice_expense_lines"];
+  accounts: QbAccountRow[];
+};
+
+function desktopExpenseLines(input: DesktopTxnInput) {
+  return input.expenses.map((line) => ({
+    account: resolveQbAccountRef(line.account, input.accounts),
+    amount: Number(line.amount),
+    memo: line.memo ?? "",
+  }));
+}
+
+const DESKTOP_TXN_BUILDERS: {
+  [K in InvoicePaymentKind]: (payment: InvoicePaymentByKind[K], input: DesktopTxnInput) => string;
+} = {
+  bill: (_payment, input) =>
+    buildBillAddRq({
+      vendorName: input.vendor,
+      refNumber: input.invoice.invoice_number,
+      txnDate: input.invoice.invoice_date,
+      dueDate: input.invoice.due_date ?? input.invoice.invoice_date,
+      terms: input.invoice.terms,
+      apAccount: resolveQbAccountRef(input.invoice.ap_account, input.accounts),
+      expenses: desktopExpenseLines(input),
+      total:
+        Number(input.invoice.total) || input.expenses.reduce((sum, line) => sum + Number(line.amount), 0),
+    }),
+  credit_card: (payment, input) =>
+    buildCreditCardChargeAddRq({
+      vendorName: input.vendor,
+      account: resolveQbAccountRef(payment.account, input.accounts),
+      txnDate: input.invoice.invoice_date,
+      refNumber: input.invoice.invoice_number,
+      memo: null,
+      expenses: desktopExpenseLines(input),
+    }),
+  check: (payment, input) =>
+    buildCheckAddRq({
+      vendorName: input.vendor,
+      account: resolveQbAccountRef(payment.account, input.accounts),
+      txnDate: input.invoice.invoice_date,
+      refNumber: payment.checkNumber,
+      memo: input.invoice.invoice_number?.trim() ? `Ref ${input.invoice.invoice_number.trim()}` : null,
+      expenses: desktopExpenseLines(input),
+    }),
+};
+
+function buildDesktopTxn<K extends InvoicePaymentKind>(
+  kind: K,
+  payment: InvoicePaymentByKind[K],
+  input: DesktopTxnInput,
+): string {
+  return DESKTOP_TXN_BUILDERS[kind](payment, input);
+}
 
 async function loadConnectionAccounts(
   env: QbwcManagerEnv,
@@ -428,7 +503,7 @@ export async function handleSendInvoice(
   const invoiceRes = await fetchImpl(
     restUrl(
       supabaseUrl,
-      `invoices?id=eq.${encodeURIComponent(invoiceId)}&org_id=eq.${encodeURIComponent(manager.orgId)}&select=id,org_id,restaurant_id,supplier_id,vendor_name,invoice_number,invoice_date,due_date,terms,ap_account,status,total,quickbooks_txn_id,suppliers(name),invoice_expense_lines(account,amount,memo)&limit=1`,
+      `invoices?id=eq.${encodeURIComponent(invoiceId)}&org_id=eq.${encodeURIComponent(manager.orgId)}&select=id,org_id,restaurant_id,supplier_id,vendor_name,invoice_number,invoice_date,due_date,terms,ap_account,status,total,quickbooks_txn_id,payment_kind,payment_account,payment_ref,suppliers(name),invoice_expense_lines(account,amount,memo)&limit=1`,
     ),
     { headers: { ...supabaseHeaders(serviceRole), Accept: "application/json" } },
   );
@@ -452,6 +527,13 @@ export async function handleSendInvoice(
   if (expenses.length === 0) {
     return json({ error: "Add at least one expense line with an amount" }, 400);
   }
+  const payment = parseInvoicePayment(invoice);
+  if ("error" in payment) return json({ error: payment.error }, 400);
+  const operation = INVOICE_TXN_OPERATIONS[payment.kind];
+  const priorJobs = await loadInvoiceTxnJobs(env, manager.orgId, invoice.id, fetchImpl);
+  if (!priorJobs) return json({ error: "Could not check this invoice's QuickBooks history" }, 503);
+  const crossKind = invoiceTxnConflict({ operation, jobs: priorJobs, hasQuickbooksTxn: false });
+  if (crossKind) return json({ error: crossKind }, 409);
   const online = await trySendQboInvoice(
     env,
     manager.orgId,
@@ -463,6 +545,7 @@ export async function handleSendInvoice(
       invoiceDate: invoice.invoice_date,
       dueDate: invoice.due_date,
       apAccount: invoice.ap_account,
+      payment,
       quickbooksTxnId: invoice.quickbooks_txn_id ?? null,
       expenses: expenses.map((line) => ({
         account: line.account,
@@ -483,33 +566,27 @@ export async function handleSendInvoice(
       409,
     );
   }
-  const accounts = await loadConnectionAccounts(env, connection.id, fetchImpl);
-  const qbxmlRequest = buildBillAddRq({
-    vendorName: vendor,
-    refNumber: invoice.invoice_number,
-    txnDate: invoice.invoice_date,
-    dueDate: invoice.due_date ?? invoice.invoice_date,
-    terms: invoice.terms,
-    apAccount: resolveQbAccountRef(invoice.ap_account, accounts),
-    expenses: expenses.map((line) => ({
-      account: resolveQbAccountRef(line.account, accounts),
-      amount: Number(line.amount),
-      memo: line.memo ?? "",
-    })),
-    total: Number(invoice.total) || expenses.reduce((sum, line) => sum + Number(line.amount), 0),
+  const alreadyPosted = invoiceTxnConflict({
+    operation,
+    jobs: priorJobs,
+    hasQuickbooksTxn: isPersistedQboBillId(invoice.quickbooks_txn_id),
   });
-  const queued = await enqueueBillAddJob(
+  if (alreadyPosted) return json({ error: alreadyPosted }, 409);
+  const accounts = await loadConnectionAccounts(env, connection.id, fetchImpl);
+  const qbxmlRequest = buildDesktopTxn(payment.kind, payment, { invoice, vendor, expenses, accounts });
+  const queued = await enqueueInvoiceTxnJob(
     env,
     {
       orgId: manager.orgId,
       connectionId: connection.id,
       invoiceId: invoice.id,
+      operation,
       qbxmlRequest,
     },
     fetchImpl,
   );
   if (queued.result === "error" || !queued.job) {
-    return json({ error: "Could not queue QuickBooks bill" }, 400);
+    return json({ error: `Could not queue QuickBooks ${INVOICE_PAYMENT_TXN_LABELS[payment.kind]}` }, 400);
   }
   return json({
     job: {

@@ -1,3 +1,4 @@
+import type { InvoicePayment } from "../src/lib/invoice-payment";
 import { resolveQbAccountRef, type QbAccountRow } from "../src/lib/qb-account-match";
 import { restUrl, supabaseHeaders, type QbwcRestEnv } from "./qbwc-auth";
 import { publicAppUrl } from "./qbwc-qwc";
@@ -32,6 +33,7 @@ export type QboInvoiceForSend = {
   invoiceDate: string | null;
   dueDate: string | null;
   apAccount: string;
+  payment: InvoicePayment;
   quickbooksTxnId: string | null;
   expenses: Array<{ account: string; amount: number; memo: string | null }>;
 };
@@ -87,6 +89,9 @@ export async function trySendQboInvoice(
   }
   if (isPersistedQboBillId(invoice.quickbooksTxnId)) {
     return json(completedJob(invoice, loaded.id, invoice.quickbooksTxnId as string));
+  }
+  if (invoice.payment.kind !== "bill") {
+    return json({ error: "QuickBooks Online only accepts bills from Berrify for now" }, 400);
   }
   const access = await ensureOnlineAccessToken(env, loaded, fetchImpl);
   if ("error" in access) return json({ error: access.error }, access.status);
