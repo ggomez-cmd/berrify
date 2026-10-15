@@ -23,13 +23,17 @@ export function requirePdfText(text: string): string {
   return trimmed;
 }
 
-function textFromContentItems(items: Array<{ str?: unknown }>): string {
+type PdfTextItem = { str?: unknown; hasEOL?: unknown };
+
+/** Line-anchored receipt parsers need pdf.js's visual line breaks (`hasEOL`). */
+function textFromContentItems(items: PdfTextItem[]): string {
   return items
-    .map((item) => (typeof item.str === "string" ? item.str : ""))
-    .join(" ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+    .map((item) => `${typeof item.str === "string" ? item.str : ""}${item.hasEOL === true ? "\n" : " "}`)
+    .join("")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function textFromPdfDocument(pdf: PDFDocumentProxy): Promise<string> {
@@ -37,7 +41,7 @@ async function textFromPdfDocument(pdf: PDFDocumentProxy): Promise<string> {
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    const pageText = textFromContentItems(content.items as Array<{ str?: unknown }>);
+    const pageText = textFromContentItems(content.items as PdfTextItem[]);
     if (pageText) pages.push(pageText);
   }
   return pages.join("\n\n");
