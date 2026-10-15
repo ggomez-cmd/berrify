@@ -478,6 +478,50 @@ async function handleListExport(
   return json({ export: exported });
 }
 
+function contentLengthExceeds(request: Request, maxBytes: number): boolean {
+  const header = request.headers.get("content-length");
+  if (header === null || !/^\d+$/.test(header)) return false;
+  return Number(header) > maxBytes;
+}
+
+function decodeUtf8(chunks: Uint8Array[], total: number): string {
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
+export async function readRequestTextWithLimit(
+  request: Request,
+  maxBytes: number,
+): Promise<{ ok: true; text: string } | { ok: false; reason: "too_large" }> {
+  if (contentLengthExceeds(request, maxBytes)) return { ok: false, reason: "too_large" };
+  const body = request.body;
+  if (!body) return { ok: true, text: "" };
+
+  const reader = body.getReader();
+  const accepted: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      if (total + next.value.byteLength > maxBytes) {
+        await reader.cancel();
+        return { ok: false, reason: "too_large" };
+      }
+      accepted.push(next.value);
+      total += next.value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { ok: true, text: decodeUtf8(accepted, total) };
+}
+
 async function handleListImport(
   request: Request,
   env: QboSendEnv,
@@ -486,8 +530,9 @@ async function handleListImport(
 ): Promise<Response> {
   const manager = await requireManager(request, env, fetchImpl);
   if (manager instanceof Response) return manager;
-  const raw = await request.text();
-  if (raw.length > QBO_LIST_IMPORT_MAX_BYTES) return json({ error: "That QuickBooks list export is too large" }, 400);
+  const read = await readRequestTextWithLimit(request, QBO_LIST_IMPORT_MAX_BYTES);
+  if (!read.ok) return json({ error: "That QuickBooks list export is too large" }, 400);
+  const raw = read.text;
   let body: unknown = null;
   try {
     body = raw ? JSON.parse(raw) : null;

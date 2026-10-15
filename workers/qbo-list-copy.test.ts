@@ -327,4 +327,20 @@ describe("QuickBooks list-copy helpers", () => {
       error: "That QuickBooks list export has invalid entries: account 2 is missing accountType",
     });
   });
+
+  it("bounds invalid-entry details while reporting how many were omitted", () => {
+    const parsed = parseQboListExport({
+      kind: QBO_LIST_EXPORT_KIND,
+      version: 1,
+      vendors: Array.from({ length: 25 }, () => null),
+      accounts: [],
+    });
+    expect(parsed).toEqual({
+      error: `That QuickBooks list export has invalid entries: ${Array.from(
+        { length: 20 },
+        (_, index) => `vendor ${index + 1} is not an object`,
+      ).join("; ")}; and 5 more invalid entries`,
+    });
+    expect("error" in parsed ? parsed.error.length : Number.POSITIVE_INFINITY).toBeLessThan(1_000);
+  });
 });

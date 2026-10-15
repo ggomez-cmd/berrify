@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthState } from "../../auth/auth-context";
@@ -177,9 +177,9 @@ describe("QuickbooksPage", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await screen.findByText(/Imported lists:/);
-    const pageText = document.body.textContent ?? "";
-    expect(pageText).toContain('Utilities:Gas: parent account "Utilities" is missing');
-    expect(pageText).toContain("SuperMax: Duplicate Name Exists Error");
+    const details = screen.getByText("Details").closest("details");
+    if (!details) throw new Error("Import error details were not rendered");
+    expect(within(details).getAllByRole("listitem", { hidden: true }).map((item) => item.textContent)).toEqual(errors);
   });
 });
 

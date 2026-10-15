@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QBO_LIST_IMPORT_MAX_BYTES } from "./qbo-list-copy";
 import { handleSendInvoice } from "./qbwc-manager";
-import { handleQbo, parseQboPath } from "./qbo-manager";
+import { handleQbo, parseQboPath, readRequestTextWithLimit } from "./qbo-manager";
 
 const supabaseEnv = {
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -717,6 +717,18 @@ describe("QuickBooks Online list copy", () => {
       cancelled: true,
       stoppedEarly: true,
       crossedCap: true,
+    });
+  });
+
+  it("rejects a declared list-import over the byte cap before decoding it", async () => {
+    const request = new Request("https://berrify.example/api/qbo/connections/qbo-semilla/list-import", {
+      method: "POST",
+      headers: { "Content-Length": String(QBO_LIST_IMPORT_MAX_BYTES + 1) },
+      body: "{}",
+    });
+    expect(await readRequestTextWithLimit(request, QBO_LIST_IMPORT_MAX_BYTES)).toEqual({
+      ok: false,
+      reason: "too_large",
     });
   });
 
