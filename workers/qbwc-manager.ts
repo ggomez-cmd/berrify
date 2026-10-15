@@ -18,7 +18,7 @@ import {
   invoiceTxnConflict,
   loadInvoiceTxnJobs,
 } from "./qbwc-jobs";
-import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl } from "./qbwc-qwc";
+import { buildQwcXml, publicAppUrl, qbwcAppSupportUrl, qbwcAppUrl, qwcAppName, qwcDownloadFilename } from "./qbwc-qwc";
 import { buildBillAddRq, buildCheckAddRq, buildCreditCardChargeAddRq } from "./qbxml";
 import { resolveQbAccountRef, type QbAccountRow } from "../src/lib/qb-account-match";
 import {
@@ -151,6 +151,7 @@ function qwcForConnection(env: QbwcManagerEnv, connection: QbwcConnectionRow): s
     ownerId: connection.owner_id,
     fileId: connection.file_id,
     includeScheduler: Boolean(connection.last_successful_sync_at),
+    appName: qwcAppName(connection.name),
   });
 }
 
@@ -256,7 +257,7 @@ export async function handleDownloadQwc(
     status: 200,
     headers: {
       "Content-Type": "application/xml; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="Berrify.qwc"',
+      "Content-Disposition": `attachment; filename="${qwcDownloadFilename(connection.name)}"`,
       "Cache-Control": "no-store",
     },
   });

@@ -26,6 +26,12 @@ import {
   shouldEnqueueCompanyQuery,
 } from "./qbwc-jobs";
 import { upsertAccountsFromQuery } from "./qbwc-accounts";
+import {
+  assessCompanySession,
+  companyMismatchMessage,
+  isCompanyMismatchError,
+  lockedCompanyName,
+} from "./qbwc-company-guard";
 import { upsertVendorsFromQuery } from "./qbwc-vendors";
 import {
   parseAccountQueryRs,
@@ -187,11 +193,15 @@ function companyFileForAuth(connection: QbwcConnectionRow): string {
   return connection.company_file?.trim() ?? "";
 }
 
+function openCompanyName(xml: string): string | null {
+  return parseCompanyQueryRs(xml).companyName ?? parseHcpHostInfo(xml).companyName;
+}
+
 function connectionMetaPatch(connection: QbwcConnectionRow, xml: string, versions?: { major?: string; minor?: string }) {
   const parsed = parseCompanyQueryRs(xml);
   const host = parseHcpHostInfo(xml);
   return {
-    qb_company_name: parsed.companyName ?? host.companyName ?? connection.qb_company_name,
+    qb_company_name: lockedCompanyName(connection.qb_company_name, openCompanyName(xml)),
     qb_product_name: parsed.productName ?? host.productName ?? connection.qb_product_name,
     qb_major_version:
       parsed.majorVersion ?? host.majorVersion ?? versions?.major ?? connection.qb_major_version,
@@ -279,6 +289,31 @@ async function handleSendRequestXml(
   const hcp = params.strhcpresponse ?? "";
   const major = params.qbxmlmajorvers ?? "";
   const minor = params.qbxmlminorvers ?? "";
+  const companySession = assessCompanySession(loaded.connection.qb_company_name, hcp ? openCompanyName(hcp) : null);
+  if (companySession.status === "mismatch") {
+    const message = companyMismatchMessage(companySession);
+    await patchConnection(
+      env,
+      loaded.connection.id,
+      {
+        last_connected_at: new Date().toISOString(),
+        last_error: message,
+      },
+      fetchImpl,
+    );
+    await setSessionError(env, ticket, message, fetchImpl);
+    logSafe("company_mismatch", {
+      ticket_id: ticket,
+      connection_id: loaded.connection.id,
+      expected: companySession.expected,
+      open: companySession.open,
+    });
+    return soapStringResult("sendRequestXML", "");
+  }
+  if (companySession.status === "unknown" && isCompanyMismatchError(loaded.session.last_error)) {
+    logSafe("company_mismatch", { ticket_id: ticket, connection_id: loaded.connection.id, deferred: true });
+    return soapStringResult("sendRequestXML", "");
+  }
   if (hcp) {
     const meta = connectionMetaPatch(loaded.connection, hcp, { major, minor });
     await patchConnection(
@@ -522,6 +557,26 @@ async function handleReceiveResponseXml(
   const parsed = parseCompanyQueryRs(responseXml);
   const statusCode = parsed.statusCode;
   const statusMessage = parsed.statusMessage;
+  const companySession = assessCompanySession(loaded.connection.qb_company_name, parsed.companyName);
+  if (companySession.status === "mismatch") {
+    const message = companyMismatchMessage(companySession);
+    await failJob(
+      env,
+      job.id,
+      { qbxml_response: responseXml, error_code: "company_mismatch", error_message: message },
+      fetchImpl,
+    );
+    await patchConnection(env, loaded.connection.id, { last_error: message }, fetchImpl);
+    await setSessionError(env, ticket, message, fetchImpl);
+    logSafe("company_mismatch", {
+      ticket_id: ticket,
+      job_id: job.id,
+      connection_id: loaded.connection.id,
+      expected: companySession.expected,
+      open: companySession.open,
+    });
+    return soapIntResult("receiveResponseXML", -1);
+  }
   if (statusCode && statusCode !== "0") {
     await failJob(
       env,

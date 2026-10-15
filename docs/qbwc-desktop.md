@@ -110,6 +110,12 @@ own connector (or the org shared file) is Connected.
 - Leave **company file** empty in Berrify to use the `.QBW` that is already
   open.
 - If you set a path, it must be reachable on the Windows machine.
+- Berrify locks each connection to the QuickBooks company name from the first
+  successful session. A later session with a different file open gets no work,
+  and the card shows `Wrong company file open`.
+- Download a new `.qwc` after this change so Web Connector rows read
+  `Berrify · Kane Rum Bar` and `Berrify · Semilla`. OwnerID and FileID stay
+  the same.
 
 ### Status stays Waiting or Error
 
