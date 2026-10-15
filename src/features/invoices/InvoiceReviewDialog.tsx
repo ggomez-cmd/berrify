@@ -27,7 +27,12 @@ import {
   applyQbAccountNames,
   connectionIdForInvoiceAccounts,
 } from "../../lib/qb-account-match";
-import { connectionIdForInvoiceVendors, matchQbVendor, vendorsForConnection } from "../../lib/qb-vendor-match";
+import {
+  connectionIdForInvoiceVendors,
+  invoiceReviewVendorSelectValues,
+  matchQbVendor,
+  vendorsForConnection,
+} from "../../lib/qb-vendor-match";
 import { toThrownError } from "../../lib/thrown-error";
 import { getOcrEngine, ocrEngineNote, ocrImage } from "../../lib/ocr";
 import { matchRestaurant, restaurantFileSlug } from "../../lib/restaurant-route";
@@ -421,11 +426,28 @@ export function InvoiceReviewDialog({
 
   if (!invoice) return null;
 
+  const invoiceConnectionId = connectionIdForInvoiceVendors(
+    restaurantId || null,
+    qbConnections,
+    qbOnlineConnections,
+  );
+  const scopedVendors = vendorsForConnection(invoiceConnectionId, qbVendors);
   const scopedAccounts = accountsForConnection(
     connectionIdForInvoiceAccounts(restaurantId || null, qbConnections, qbOnlineConnections),
     qbAccounts,
   );
   const scopedApAccounts = apAccountsForSelect(scopedAccounts);
+  const scopedMatchOptions = vendorOptions.filter((name) =>
+    scopedVendors.some((row) => row.full_name === name),
+  );
+  const scopedVendorNames = invoiceReviewVendorSelectValues({
+    restaurantId: restaurantId || null,
+    connections: qbConnections,
+    onlineConnections: qbOnlineConnections,
+    vendors: qbVendors,
+    currentValue: qbVendorName,
+    matchOptions: vendorOptions,
+  });
   const pageImages = composeInvoicePageImages(media.data, pagesQuery.data ?? []);
   const currentPage = pageImages[pageIndex] ?? pageImages[0];
   const displaySrc = currentPage?.image_data ?? photoSrc ?? media.data?.image_data;
@@ -652,17 +674,7 @@ export function InvoiceReviewDialog({
               }}
             >
               <option value="">Select vendor</option>
-              {Array.from(
-                new Set([
-                  ...vendorOptions,
-                  ...vendorsForConnection(
-                    connectionIdForInvoiceVendors(restaurantId || null, qbConnections, qbOnlineConnections),
-                    qbVendors,
-                  ).map((row) => row.full_name),
-                  ...suppliers.map((row) => row.name),
-                  ...(qbVendorName ? [qbVendorName] : []),
-                ]),
-              ).map((name) => (
+              {scopedVendorNames.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
@@ -878,9 +890,9 @@ export function InvoiceReviewDialog({
       ) : (
         <>
           {ocrNote ? <p className="mt-3 text-sm text-muted">{ocrNote}</p> : null}
-          {vendorOptions.length > 1 && !qbVendorName ? (
+          {scopedMatchOptions.length > 1 && !qbVendorName ? (
             <p className="mt-3 text-sm text-muted">
-              Mixed food and liquor — pick the QuickBooks vendor ({vendorOptions.join(" or ")}).
+              Mixed food and liquor — pick the QuickBooks vendor ({scopedMatchOptions.join(" or ")}).
             </p>
           ) : null}
         </>

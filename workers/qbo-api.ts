@@ -384,6 +384,47 @@ export async function fetchCompanyName(
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
+export function isQboDuplicateNameError(message: string): boolean {
+  const folded = message.toLowerCase();
+  return folded.includes("duplicate name") || folded.includes("already exists");
+}
+
+export async function postQboEntity(
+  fetchImpl: typeof fetch,
+  input: {
+    apiBase: string;
+    realmId: string;
+    accessToken: string;
+    entity: "vendor" | "account";
+    body: Record<string, unknown>;
+  },
+): Promise<{ id: string } | { error: string }> {
+  const url = new URL(`${input.apiBase}/v3/company/${encodeURIComponent(input.realmId)}/${input.entity}`);
+  url.searchParams.set("minorversion", QBO_MINOR_VERSION);
+  const response = await fetchImpl(url.toString(), {
+    method: "POST",
+    headers: {
+      ...intuitHeaders(input.accessToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input.body),
+  });
+  const payload = await readPayload(response);
+  const parsed = parseCreatedEntity(payload, input.entity === "vendor" ? "Vendor" : "Account");
+  if (!response.ok || !parsed) {
+    return { error: intuitFaultMessage(payload) ?? `QuickBooks Online rejected the ${input.entity}` };
+  }
+  return parsed;
+}
+
+function parseCreatedEntity(payload: unknown, key: "Vendor" | "Account"): { id: string } | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = (payload as Record<string, unknown>)[key];
+  if (!row || typeof row !== "object") return null;
+  const id = entityId((row as { Id?: unknown }).Id);
+  return id ? { id } : null;
+}
+
 export async function postQboBill(
   fetchImpl: typeof fetch,
   input: { apiBase: string; realmId: string; accessToken: string; body: Record<string, unknown> },

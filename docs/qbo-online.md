@@ -45,3 +45,27 @@ Berrify does not create vendors or accounts.
 A second Send for the same invoice number and vendor reuses the existing Bill
 instead of posting another. Disconnect revokes the Intuit refresh token, then
 clears the local tokens.
+
+## Copy vendors and accounts into a sandbox
+
+Berrify stores one QuickBooks Online connection per restaurant. It cannot keep
+production and sandbox OAuth tokens at the same time, and ordinary Refresh only
+reads the currently connected company. It never creates vendors or accounts.
+
+For Lelas (or any restaurant) development against a sandbox company:
+
+1. Point the Worker at the source environment (`INTUIT_ENVIRONMENT` unset or
+   `production` for a live company). Connect that restaurant and wait for the
+   vendor/account sync.
+2. On the restaurant card, click **Export lists**. Save the JSON. The file has
+   names, account types, and active flags only — no tokens or realm ids.
+3. Disconnect QuickBooks Online for that restaurant.
+4. Point the Worker at sandbox (`INTUIT_ENVIRONMENT=sandbox` and the sandbox
+   Intuit app secrets). Connect the sandbox company.
+5. Click **Import lists**, choose the saved JSON, and confirm. Import creates
+   vendors and accounts whose names are missing in the sandbox. Existing names
+   are left unchanged.
+
+The Worker must use the matching Intuit API for the company you are connected
+to. Do not invent production realm ids or put secrets in the repo. After import,
+Refresh again if the dropdowns look stale.

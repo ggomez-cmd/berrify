@@ -101,6 +101,8 @@ describe("QuickBooks Online routes", () => {
     expect(parseQboPath("/api/qbo/callback")).toEqual({ kind: "callback" });
     expect(parseQboPath("/api/qbo/connections/abc/vendors")).toEqual({ kind: "refresh-vendors", id: "abc" });
     expect(parseQboPath("/api/qbo/connections/abc/accounts")).toEqual({ kind: "refresh-accounts", id: "abc" });
+    expect(parseQboPath("/api/qbo/connections/abc/list-export")).toEqual({ kind: "list-export", id: "abc" });
+    expect(parseQboPath("/api/qbo/connections/abc/list-import")).toEqual({ kind: "list-import", id: "abc" });
     expect(parseQboPath("/api/qbo/connections/abc/disconnect")).toEqual({ kind: "disconnect", id: "abc" });
     expect(parseQboPath("/api/qbwc")).toBeNull();
   });
@@ -531,6 +533,160 @@ describe("Send routes Desktop and Online apart", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { job: { quickbooks_txn_id: string } };
     expect(body.job.quickbooks_txn_id).toBe("991");
+  });
+});
+
+describe("QuickBooks Online list copy", () => {
+  const listExport = {
+    kind: "berrify.qbo.list-export",
+    version: 1,
+    exportedAt: "2026-10-06T15:00:00.000Z",
+    sourceCompanyName: "Lelas",
+    vendors: [{ displayName: "SuperMax", companyName: null, isActive: true }],
+    accounts: [
+      {
+        name: "Food Purchases",
+        fullyQualifiedName: "Food Purchases",
+        accountType: "Expense",
+        accountSubType: "SuppliesMaterialsCogs",
+        accountNumber: "50000",
+        isActive: true,
+      },
+    ],
+  };
+
+  it("exports names without tokens and does not create records", async () => {
+    const writes: string[] = [];
+    const response = await handleQbo(
+      managerRequest("/api/qbo/connections/qbo-semilla/list-export"),
+      intuitEnv,
+      "/api/qbo/connections/qbo-semilla/list-export",
+      withManager(async (input, init) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        writes.push(`${method} ${url}`);
+        if (url.includes("quickbooks_online_connections") && method === "GET") {
+          return Response.json([semillaOnline]);
+        }
+        if (url.includes("/query") && url.includes("Vendor")) {
+          return Response.json({
+            QueryResponse: { Vendor: [{ Id: "56", DisplayName: "Local Farm", CompanyName: "Local Farm LLC", Active: true }] },
+          });
+        }
+        if (url.includes("/query") && url.includes("Account")) {
+          return Response.json({
+            QueryResponse: {
+              Account: [{ Id: "7", Name: "Food", FullyQualifiedName: "Food Purchases", AccountType: "Expense", Active: true }],
+            },
+          });
+        }
+        throw new Error(`${method} ${url}`);
+      }),
+    );
+    expect(response?.status).toBe(200);
+    const body = (await response?.json()) as { export: { vendors: unknown[]; accounts: unknown[] } };
+    expect(body.export.vendors).toEqual([
+      { displayName: "Local Farm", companyName: "Local Farm LLC", isActive: true },
+    ]);
+    expect(JSON.stringify(body)).not.toContain("refresh-semilla");
+    expect(JSON.stringify(body)).not.toContain("access-semilla");
+    expect(writes.some((line) => isIntuitVendorCreate(line.slice(line.indexOf(" ") + 1), line.slice(0, line.indexOf(" "))))).toBe(
+      false,
+    );
+  });
+
+  it("imports missing lists into the connected company only after confirm", async () => {
+    const created: string[] = [];
+    const denied = await handleQbo(
+      managerRequest("/api/qbo/connections/qbo-semilla/list-import", { export: listExport }),
+      intuitEnv,
+      "/api/qbo/connections/qbo-semilla/list-import",
+      withManager(async () => {
+        throw new Error("should not touch Intuit without confirm");
+      }),
+    );
+    expect(denied?.status).toBe(400);
+
+    const response = await handleQbo(
+      managerRequest("/api/qbo/connections/qbo-semilla/list-import", {
+        confirm: "create-missing-lists",
+        export: listExport,
+      }),
+      { ...intuitEnv, INTUIT_ENVIRONMENT: "sandbox" },
+      "/api/qbo/connections/qbo-semilla/list-import",
+      withManager(async (input, init) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url.includes("quickbooks_online_connections") && method === "GET") {
+          return Response.json([{ ...semillaOnline, company_name: "Lelas Sandbox" }]);
+        }
+        if (url.includes("quickbooks_online_connections") && method === "PATCH") {
+          return new Response(null, { status: 204 });
+        }
+        if (url.includes("/query") && url.includes("Vendor")) {
+          expect(url).toContain("sandbox-quickbooks.api.intuit.com");
+          expect(url).toContain("/v3/company/12345/query");
+          return Response.json({ QueryResponse: { Vendor: [] } });
+        }
+        if (url.includes("/query") && url.includes("Account")) {
+          return Response.json({ QueryResponse: { Account: [] } });
+        }
+        if (method === "POST" && /\/v3\/company\/12345\/vendor/.test(url)) {
+          created.push("vendor");
+          return Response.json({ Vendor: { Id: "80" } });
+        }
+        if (method === "POST" && /\/v3\/company\/12345\/account/.test(url)) {
+          created.push("account");
+          return Response.json({ Account: { Id: "81" } });
+        }
+        if (url.includes("quickbooks_online_vendors") && method === "GET") return Response.json([]);
+        if (url.includes("quickbooks_online_accounts") && method === "GET") return Response.json([]);
+        if (url.includes("quickbooks_online_vendors") && method === "POST") return new Response(null, { status: 201 });
+        if (url.includes("quickbooks_online_accounts") && method === "POST") return new Response(null, { status: 201 });
+        throw new Error(`${method} ${url}`);
+      }),
+    );
+    expect(response?.status).toBe(200);
+    const body = (await response?.json()) as { copy: { vendorsCreated: number; accountsCreated: number } };
+    expect(body.copy).toEqual({
+      vendorsCreated: 1,
+      vendorsSkipped: 0,
+      accountsCreated: 1,
+      accountsSkipped: 0,
+      errors: [],
+    });
+    expect(created).toEqual(["vendor", "account"]);
+    expect(JSON.stringify(body)).not.toContain("refresh-semilla");
+  });
+
+  it("refresh reads lists and does not create vendors or accounts", async () => {
+    const writes: string[] = [];
+    const response = await handleQbo(
+      managerRequest("/api/qbo/connections/qbo-semilla/vendors", {}),
+      intuitEnv,
+      "/api/qbo/connections/qbo-semilla/vendors",
+      withManager(async (input, init) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        writes.push(`${method} ${url}`);
+        if (url.includes("quickbooks_online_connections") && method === "GET") {
+          return Response.json([semillaOnline]);
+        }
+        if (url.includes("quickbooks_online_connections") && method === "PATCH") {
+          return new Response(null, { status: 204 });
+        }
+        if (url.includes("/query") && url.includes("Vendor")) {
+          return Response.json({
+            QueryResponse: { Vendor: [{ Id: "56", DisplayName: "Local Farm", Active: true }] },
+          });
+        }
+        if (url.includes("quickbooks_online_vendors") && method === "GET") return Response.json([]);
+        if (url.includes("quickbooks_online_vendors") && method === "POST") return new Response(null, { status: 201 });
+        throw new Error(`${method} ${url}`);
+      }),
+    );
+    expect(response?.status).toBe(200);
+    expect(writes.some((line) => /POST https:\/\/.*\/v3\/company\/.*\/vendor/.test(line))).toBe(false);
   });
 });
 

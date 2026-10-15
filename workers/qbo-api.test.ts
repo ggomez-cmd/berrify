@@ -3,6 +3,7 @@ import {
   buildAuthorizeUrl,
   buildQboBillBody,
   findSyncedVendorId,
+  isQboDuplicateNameError,
   intuitFaultMessage,
   intuitNotConfiguredMessage,
   intuitQueryLiteral,
@@ -73,6 +74,7 @@ describe("QuickBooks Online API helpers", () => {
     ).toBe("Invalid Reference Id — Vendor assigned to this transaction has been deleted.");
     expect(parseQboBill({ Bill: { Id: "991", SyncToken: "0" } })).toEqual({ id: "991", syncToken: "0" });
     expect(intuitQueryLiteral("O'Brien")).toBe("'O\\'Brien'");
+    expect(isQboDuplicateNameError("Duplicate Name Exists Error")).toBe(true);
   });
 
   it("maps vendors and accounts from a query page", () => {

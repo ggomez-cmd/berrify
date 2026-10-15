@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyInvoiceSide,
   connectionIdForInvoiceVendors,
+  invoiceReviewVendorSelectValues,
   matchQbVendor,
   vendorsForConnection,
 } from "./qb-vendor-match";
@@ -120,6 +121,67 @@ describe("QB vendor match", () => {
         [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
       ),
     ).toBe("conn-kane");
+  });
+
+  it("keeps shared Desktop vendors when no restaurant is selected", () => {
+    expect(
+      connectionIdForInvoiceVendors(
+        null,
+        [
+          { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+          { id: "conn-shared", restaurant_id: null, is_active: true },
+        ],
+        [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
+      ),
+    ).toBe("conn-shared");
+  });
+
+  it("keeps shared Desktop vendors when the restaurant has no Online connection", () => {
+    expect(
+      connectionIdForInvoiceVendors(
+        "rest-semilla",
+        [
+          { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+          { id: "conn-shared", restaurant_id: null, is_active: true },
+        ],
+        [{ id: "qbo-kane", restaurant_id: "rest-kane", is_active: true }],
+      ),
+    ).toBe("conn-shared");
+  });
+
+  it("isolates review vendor options to the restaurant Online connection", () => {
+    const names = invoiceReviewVendorSelectValues({
+      restaurantId: "rest-semilla",
+      connections: [
+        { id: "conn-kane", restaurant_id: "rest-kane", is_active: true },
+        { id: "conn-shared", restaurant_id: null, is_active: true },
+      ],
+      onlineConnections: [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
+      vendors: [
+        kaneFood,
+        kaneLiquor,
+        { ...semillaSingle, connection_id: "conn-shared" },
+        { ...semillaSingle, connection_id: "qbo-semilla", list_id: "56" },
+      ],
+      matchOptions: [kaneFood.full_name, kaneLiquor.full_name],
+    });
+    expect(names).toEqual(["Local Farm"]);
+    expect(names).not.toContain("Jose Santiago Inc (food)");
+  });
+
+  it("keeps a stale current vendor selectable after restaurant scope changes", () => {
+    const names = invoiceReviewVendorSelectValues({
+      restaurantId: "rest-semilla",
+      connections: [{ id: "conn-shared", restaurant_id: null, is_active: true }],
+      onlineConnections: [{ id: "qbo-semilla", restaurant_id: "rest-semilla", is_active: true }],
+      vendors: [
+        kaneFood,
+        { ...semillaSingle, connection_id: "qbo-semilla" },
+      ],
+      currentValue: kaneFood.full_name,
+      matchOptions: [kaneFood.full_name, kaneLiquor.full_name],
+    });
+    expect(names).toEqual(["Local Farm", "Jose Santiago Inc (food)"]);
   });
 
   it("never uses Kane vendors for a Semilla connection", () => {
