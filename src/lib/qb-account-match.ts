@@ -25,6 +25,21 @@ export function accountsForConnection(connectionId: string | null, accounts: QbA
   return accounts.filter((row) => row.connection_id === connectionId && row.is_active);
 }
 
+export type QbPaymentAccountType = "credit_card" | "bank";
+
+/** Desktop reports `CreditCard`; QuickBooks Online reports `Credit Card`. */
+export function qbPaymentAccountType(row: Pick<QbAccountRow, "account_type">): QbPaymentAccountType | null {
+  const type = (row.account_type ?? "").replace(/\s+/g, "").toLowerCase();
+  if (type === "creditcard") return "credit_card";
+  if (type === "bank") return "bank";
+  return null;
+}
+
+/** Accounts an expense line, A/P, or tax line may post to: everything but cards and banks. */
+export function ledgerAccounts(accounts: QbAccountRow[]): QbAccountRow[] {
+  return accounts.filter((row) => qbPaymentAccountType(row) === null);
+}
+
 export function accountSelectValues(accounts: QbAccountRow[], currentValue?: string): string[] {
   const labels = accounts.map(qbAccountLabel);
   const extra = currentValue?.trim() ?? "";
@@ -43,7 +58,10 @@ export function invoiceReviewAccountSelectValues(input: {
     input.connections,
     input.onlineConnections ?? [],
   );
-  return accountSelectValues(accountsForConnection(connectionId, input.accounts), input.currentValue);
+  return accountSelectValues(
+    ledgerAccounts(accountsForConnection(connectionId, input.accounts)),
+    input.currentValue,
+  );
 }
 
 export function apAccountsForSelect(accounts: QbAccountRow[]): QbAccountRow[] {
@@ -118,6 +136,7 @@ function haystack(row: QbAccountRow): string {
 }
 
 function scoreAccount(row: QbAccountRow, kind: QbAccountKind, description?: string): number {
+  if (qbPaymentAccountType(row)) return 0;
   const hay = haystack(row);
   const extra = foldAccount(description ?? "");
   const type = row.account_type ?? "";

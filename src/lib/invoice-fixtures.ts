@@ -414,6 +414,13 @@ BALANCE DUE
 $1, 155. 59
 `;
 
+/**
+ * SYNTHETIC: shaped like pdf.js text from a Costco warehouse receipt PDF paid by Visa
+ * x4007 ($562.14). Replace with a real Costco PDF's extracted text when one is available.
+ */
+export const COSTCO_SYNTHETIC_PDF_TEXT = `COSTCO WHOLESALE San Juan #364 Ave. 65 de Infanteria San Juan, PR 00924 E 1234567 KS WATER 40PK 4.99 E 7654321 CHICKEN THIGHS 23.49 E 33445 OLIVE OIL 2L 18.99 SUBTOTAL 503.81 TAX 58.33 **** TOTAL 562.14
+XXXXXXXXXXXX4007 CHIP Read AID: A0000000031010 Seq# 18273 App#: 04127B VISA Resp: APPROVED Tran ID#: 027400018273 Merchant ID: 993364 APPROVED - Purchase AMOUNT: $562.14 09/30/2026 10:14 364 12 140 307 VISA 562.14 CHANGE 0.00 TOTAL NUMBER OF ITEMS SOLD = 38`;
+
 /** SuperMax Condado register receipt paid in full by ATH Móvil ($27.66). */
 export const SUPERMAX_ATH_RECEIPT_OCR = `
 SuperMax
