@@ -3,11 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "overrides": {
-    "wrangler": {
-      "miniflare": {
-        "sharp": "0.35.5"
-      }
-    }
+    "sharp": "$sharp"
   },
   "type": "module",
   "engines": {
