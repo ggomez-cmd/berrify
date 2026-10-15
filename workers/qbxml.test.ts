@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   buildAccountQueryRq,
   buildBillAddRq,
+  buildCheckAddRq,
   buildCompanyQueryRq,
+  buildCreditCardChargeAddRq,
   buildVendorQueryRq,
   exactQbTermsName,
   parseAccountQueryRs,
   parseBillAddRs,
   parseCompanyQueryRs,
   parseQbStatus,
+  parseTxnAddRs,
   parseVendorQueryRs,
   xmlEscape,
   xmlUnescape,
@@ -199,7 +202,7 @@ describe("AccountQuery qbXML", () => {
     expect(xml).not.toContain("VendorQueryRq");
   });
 
-  it("parses kept account types and drops bank/income", () => {
+  it("parses kept account types, keeps bank for paid receipts, and drops income", () => {
     const parsed = parseAccountQueryRs(`<AccountQueryRs statusCode="0" statusMessage="Status OK">
       <AccountRet>
         <ListID>80000010-1</ListID>
@@ -259,6 +262,28 @@ describe("AccountQuery qbXML", () => {
         accountType: "AccountsPayable",
         isActive: true,
       },
+      {
+        listId: "80000013-4",
+        fullName: "Checking",
+        accountNumber: null,
+        accountType: "Bank",
+        isActive: true,
+      },
+    ]);
+  });
+
+  it("keeps CreditCard accounts", () => {
+    const parsed = parseAccountQueryRs(`<AccountQueryRs statusCode="0">
+      <AccountRet>
+        <ListID>8000002A-1</ListID>
+        <FullName>VISA x4007</FullName>
+        <AccountNumber>23300</AccountNumber>
+        <AccountType>CreditCard</AccountType>
+        <IsActive>true</IsActive>
+      </AccountRet>
+    </AccountQueryRs>`);
+    expect(parsed.accounts).toEqual([
+      { listId: "8000002A-1", fullName: "VISA x4007", accountNumber: "23300", accountType: "CreditCard", isActive: true },
     ]);
   });
 });
@@ -384,5 +409,142 @@ describe("BillAdd qbXML", () => {
     expect(parsed.statusCode).toBe("3120");
     expect(parsed.statusMessage).toBe("Vendor not found");
     expect(parsed.txnId).toBeNull();
+  });
+});
+
+describe("paid receipt transactions", () => {
+  const costcoCharge = {
+    vendorName: "Costco",
+    account: { listId: "8000002A-1", fullName: "VISA x4007" },
+    txnDate: "2026-09-30",
+    refNumber: "2109",
+    memo: null,
+    expenses: [
+      { account: { listId: "80000010-1" }, amount: 503.81, memo: "Food" },
+      { account: { fullName: "Sales tax expense" }, amount: 58.33, memo: "Tax" },
+    ],
+  };
+
+  it("builds CreditCardChargeAdd with TxnDate before RefNumber", () => {
+    expect(buildCreditCardChargeAddRq(costcoCharge)).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <CreditCardChargeAddRq>
+      <CreditCardChargeAdd>
+        <AccountRef>
+          <ListID>8000002A-1</ListID>
+        </AccountRef>
+        <PayeeEntityRef>
+          <FullName>Costco</FullName>
+        </PayeeEntityRef>
+        <TxnDate>2026-09-30</TxnDate>
+        <RefNumber>2109</RefNumber>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <ListID>80000010-1</ListID>
+          </AccountRef>
+          <Amount>503.81</Amount>
+          <Memo>Food</Memo>
+        </ExpenseLineAdd>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <FullName>Sales tax expense</FullName>
+          </AccountRef>
+          <Amount>58.33</Amount>
+          <Memo>Tax</Memo>
+        </ExpenseLineAdd>
+      </CreditCardChargeAdd>
+    </CreditCardChargeAddRq>
+  </QBXMLMsgsRq>
+</QBXML>`);
+  });
+
+  it("builds CheckAdd with RefNumber before TxnDate and the receipt number in Memo", () => {
+    expect(
+      buildCheckAddRq({
+        vendorName: "SuperMax",
+        account: { listId: "80000001-1" },
+        txnDate: "2026-09-23",
+        refNumber: "ATH",
+        memo: "Ref 2244291",
+        expenses: [
+          { account: { listId: "80000010-1" }, amount: 26.54, memo: "" },
+          { account: { listId: "80000011-2" }, amount: 1.12, memo: "Tax" },
+        ],
+      }),
+    ).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <CheckAddRq>
+      <CheckAdd>
+        <AccountRef>
+          <ListID>80000001-1</ListID>
+        </AccountRef>
+        <PayeeEntityRef>
+          <FullName>SuperMax</FullName>
+        </PayeeEntityRef>
+        <RefNumber>ATH</RefNumber>
+        <TxnDate>2026-09-23</TxnDate>
+        <Memo>Ref 2244291</Memo>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <ListID>80000010-1</ListID>
+          </AccountRef>
+          <Amount>26.54</Amount>
+        </ExpenseLineAdd>
+        <ExpenseLineAdd>
+          <AccountRef>
+            <ListID>80000011-2</ListID>
+          </AccountRef>
+          <Amount>1.12</Amount>
+          <Memo>Tax</Memo>
+        </ExpenseLineAdd>
+      </CheckAdd>
+    </CheckAddRq>
+  </QBXMLMsgsRq>
+</QBXML>`);
+  });
+
+  it("moves a reference over 11 characters into Memo instead of RefNumber", () => {
+    const xml = buildCreditCardChargeAddRq({ ...costcoCharge, refNumber: "800000074412226" });
+    expect(xml).not.toContain("<RefNumber>");
+    expect(xml).toContain(
+      "        <TxnDate>2026-09-30</TxnDate>\n        <Memo>Ref 800000074412226</Memo>\n        <ExpenseLineAdd>",
+    );
+    expect(buildCheckAddRq({ ...costcoCharge, refNumber: "12345678901", memo: "Ref 1" })).toContain(
+      "<RefNumber>12345678901</RefNumber>",
+    );
+  });
+
+  it("reads the TxnID from CreditCardChargeAddRs and CheckAddRs", () => {
+    expect(
+      parseTxnAddRs(
+        `<CreditCardChargeAddRs statusCode="0" statusSeverity="Info" statusMessage="Status OK"><CreditCardChargeRet><TxnID>1A2-CC</TxnID><EditSequence>7</EditSequence></CreditCardChargeRet></CreditCardChargeAddRs>`,
+        "CreditCardChargeAddRs",
+      ),
+    ).toEqual({
+      statusCode: "0",
+      statusSeverity: "Info",
+      statusMessage: "Status OK",
+      ok: true,
+      txnId: "1A2-CC",
+      editSequence: "7",
+    });
+    expect(
+      parseTxnAddRs(
+        `<CheckAddRs statusCode="3140" statusSeverity="Error" statusMessage="Invalid reference to Account"></CheckAddRs>`,
+        "CheckAddRs",
+      ),
+    ).toEqual({
+      statusCode: "3140",
+      statusSeverity: "Error",
+      statusMessage: "Invalid reference to Account",
+      ok: false,
+      txnId: null,
+      editSequence: null,
+    });
+    expect(parseTxnAddRs(`<BillAddRs statusCode="0"></BillAddRs>`, "CheckAddRs").ok).toBe(false);
   });
 });
