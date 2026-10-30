@@ -160,6 +160,13 @@ export function computePayrollLiabilities(payrollChecks: PayrollCheck[]): Payrol
 
 export function computePayrollRun(input: PayrollRunInput): PayrollRunResult {
   const schedule = selectTaxSchedule(input.checkDate);
+  const seen = new Set<string>();
+  for (const employee of input.employees) {
+    if (seen.has(employee.employeeId)) {
+      throw new Error(`Employee ${employee.employeeId} appears more than once in the run; combine their earnings into one entry`);
+    }
+    seen.add(employee.employeeId);
+  }
   const checks = input.employees.map((employee) => computeCheck(employee, input.settings, input.checkDate, schedule));
   const payrollChecks = checks.filter((check) => check.payType === "payroll");
   const cashChecks = checks.filter((check) => check.payType === "cash");
@@ -170,6 +177,8 @@ export function computePayrollRun(input: PayrollRunInput): PayrollRunResult {
   const employerTaxCents = sumCents(payrollChecks.map((check) => check.employerTaxCents));
 
   return {
+    checkDate: input.checkDate,
+    scheduleId: schedule.id,
     checks,
     earningsByKind: earningsSummary(checks),
     employeeWithholdingsByCode: summarizeCodes(payrollChecks, "employee", EMPLOYEE_SUMMARY_CODES),

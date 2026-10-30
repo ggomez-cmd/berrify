@@ -10,7 +10,7 @@ export {
 } from "./withholding";
 export { computeCheck, computeCheckTaxes } from "./check";
 export { allocateLargestRemainder, computePayrollLiabilities, computePayrollRun } from "./run";
-export { computeEarnings, overtimeHourlyRateCents } from "./earnings";
+export { computeEarnings, overtimeAmountCents, overtimeHourlyRateCents } from "./earnings";
 export { computeExemption, deductionAllowanceCount } from "./exemption";
 export {
   amountFromHoursAndRate,
@@ -19,7 +19,7 @@ export {
   roundHalfUpDiv,
   roundHalfUpRatio,
 } from "./money";
-export { PR_2026, selectTaxSchedule } from "./data";
+export { assertCheckDate, PR_2026, selectTaxSchedule } from "./data";
 export type { PrTaxSchedule } from "./data";
 export type {
   ClassCost,

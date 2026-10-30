@@ -145,12 +145,36 @@ export function computeCheck(
   const taxSchedule = schedule ?? selectTaxSchedule(checkDate);
   const earnings = computeEarnings(employee, taxSchedule);
   const grossCents = earningsGrossCents(earnings.lines);
+  const identity = {
+    employeeId: employee.employeeId,
+    checkDate,
+    taxYear: Number(checkDate.slice(0, 4)),
+    scheduleId: taxSchedule.id,
+  };
+
+  if (grossCents < 0) {
+    return {
+      ...identity,
+      payType: employee.payType,
+      earnings: earnings.lines,
+      employeeWithholdings: [],
+      employerTaxes: [],
+      grossCents,
+      employeeDeductionCents: 0,
+      netCents: grossCents,
+      employerTaxCents: 0,
+      employerCostCents: grossCents,
+      closingYtd: emptyClosing(employee.openingYtd),
+      warnings: earnings.warnings,
+      errors: [...earnings.errors, "Negative gross is not supported; reverse the original check instead"],
+    };
+  }
 
   if (employee.payType === "cash") {
     const closingYtd = emptyClosing(employee.openingYtd);
     closingYtd.grossCents += grossCents;
     return {
-      employeeId: employee.employeeId,
+      ...identity,
       payType: "cash",
       earnings: earnings.lines,
       employeeWithholdings: [],
@@ -170,7 +194,7 @@ export function computeCheck(
   const employeeDeductionCents = sumCents(taxes.employeeWithholdings.map((line) => line.amountCents));
   const employerTaxCents = sumCents(taxes.employerTaxes.map((line) => line.amountCents));
   return {
-    employeeId: employee.employeeId,
+    ...identity,
     payType: "payroll",
     earnings: earnings.lines,
     employeeWithholdings: taxes.employeeWithholdings,

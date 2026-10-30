@@ -139,6 +139,9 @@ export type TaxLine = {
 
 export type PayrollCheck = {
   employeeId: string;
+  checkDate: string;
+  taxYear: number;
+  scheduleId: string;
   payType: EmployeePayType;
   earnings: EarningsLine[];
   employeeWithholdings: TaxLine[];
@@ -181,6 +184,8 @@ export type ClassCost = {
 };
 
 export type PayrollRunResult = {
+  checkDate: string;
+  scheduleId: string;
   checks: PayrollCheck[];
   earningsByKind: KindHoursAmount[];
   employeeWithholdingsByCode: CodeAmount[];
