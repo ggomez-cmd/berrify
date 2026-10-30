@@ -78,3 +78,13 @@ describe("additional Medicare", () => {
     expect(additionalMedicareTaxable(132_667, 19_900_000, 20_000_000)).toBe(32_667);
   });
 });
+
+describe("additional Medicare cap", () => {
+  it("YTD already over 200,000 taxes only this check: 1,000.00 × 0.9% = 9.00", () => {
+    expect(additionalMedicareTaxable(100_000, 25_000_000, 20_000_000)).toBe(100_000);
+  });
+
+  it("crossing check taxes only the excess: YTD 199,500 + 1,000 → 500.00", () => {
+    expect(additionalMedicareTaxable(100_000, 19_950_000, 20_000_000)).toBe(50_000);
+  });
+});

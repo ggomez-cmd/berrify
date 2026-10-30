@@ -97,7 +97,6 @@ export type EmployeePayInput = {
   employeeId: string;
   payType: EmployeePayType;
   isTipped?: boolean;
-  cashRateCents?: Cents;
   dailyOtMultiplierPpm?: PartsPerMillion;
   weeklyOtMultiplierPpm?: PartsPerMillion;
   youngWorkerExempt?: boolean;

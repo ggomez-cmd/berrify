@@ -140,7 +140,8 @@ export function additionalMedicareTaxable(
   ytdMedicareWagesCents: Cents,
   thresholdCents: Cents,
 ): Cents {
-  return Math.max(0, ytdMedicareWagesCents + periodMedicareWagesCents - thresholdCents);
+  const overThreshold = Math.max(0, ytdMedicareWagesCents + periodMedicareWagesCents - thresholdCents);
+  return Math.min(Math.max(0, periodMedicareWagesCents), overThreshold);
 }
 
 export function taxOnTaxable(taxableCents: Cents, rateBp: number): Cents {

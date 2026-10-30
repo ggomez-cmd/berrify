@@ -22,7 +22,6 @@ describe("tipped overtime rates", () => {
       {
         ...payrollBase,
         isTipped: true,
-        cashRateCents: 500,
         hourlyWeeks: [
           {
             workweekId: "w1",
@@ -102,7 +101,6 @@ describe("minimum-wage make-up", () => {
       {
         ...payrollBase,
         isTipped: true,
-        cashRateCents: 300,
         hourlyWeeks: [
           {
             workweekId: "w1",
@@ -124,7 +122,6 @@ describe("minimum-wage make-up", () => {
       {
         ...payrollBase,
         isTipped: true,
-        cashRateCents: 300,
         hourlyWeeks: [
           {
             workweekId: "short",
@@ -194,5 +191,50 @@ describe("non-tipped under minimum", () => {
     );
     expect(earnings.warnings).toHaveLength(1);
     expect(earnings.lines.some((line) => line.kind === "min_wage_makeup")).toBe(false);
+  });
+});
+
+describe("review fixes", () => {
+  it("tipped cash $15.00 at 1.5× pays 22.50, not 15.75 − 0", () => {
+    expect(
+      overtimeHourlyRateCents({
+        isTipped: true,
+        regularRateCents: 1_500,
+        cashRateCents: 1_500,
+        multiplierPpm: 1_500_000,
+        schedule: PR_2026,
+      }),
+    ).toBe(2_250);
+  });
+
+  it("two-rate tipped employee uses each position's cash rate: 30h × $3.00 + 10h × $8.50 + $200 tips = 375.00 vs 420.00 → 45.00", () => {
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        isTipped: true,
+        hourlyWeeks: [
+          { workweekId: "w1", positionId: "server", rateCents: 300, regularHoursHundredths: 3_000, tipsCents: 20_000 },
+          { workweekId: "w1", positionId: "bar", rateCents: 850, regularHoursHundredths: 1_000 },
+        ],
+      },
+      PR_2026,
+    );
+    const makeup = earnings.lines.filter((line) => line.kind === "min_wage_makeup");
+    expect(makeup.map((line) => line.amountCents)).toEqual([4_500]);
+  });
+
+  it("tipped OT hours count at straight-time cash in the weekly test: 42h × $3.00 = 126.00 + $300 tips = 426.00 vs 441.00 → 15.00", () => {
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        isTipped: true,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 300, regularHoursHundredths: 4_000, weeklyOtHoursHundredths: 200, tipsCents: 30_000 },
+        ],
+      },
+      PR_2026,
+    );
+    const makeup = earnings.lines.filter((line) => line.kind === "min_wage_makeup");
+    expect(makeup.map((line) => line.amountCents)).toEqual([1_500]);
   });
 });

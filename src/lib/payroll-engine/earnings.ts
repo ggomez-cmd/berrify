@@ -32,7 +32,10 @@ export function overtimeHourlyRateCents(input: {
 }): number {
   if (input.isTipped) {
     const minWageOt = applyMultiplierPpm(input.schedule.wage.minimumHourlyCents, input.multiplierPpm);
-    return minWageOt - tipCreditTaken(input.cashRateCents, input.schedule);
+    return Math.max(
+      applyMultiplierPpm(input.cashRateCents, input.multiplierPpm),
+      minWageOt - tipCreditTaken(input.cashRateCents, input.schedule),
+    );
   }
   return applyMultiplierPpm(input.regularRateCents, input.multiplierPpm);
 }
@@ -68,7 +71,7 @@ function lineFromInput(input: EarningsLineInput, errors: string[]): EarningsLine
 
 function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsLine[] {
   const isTipped = employee.isTipped === true;
-  const cashRateCents = employee.cashRateCents ?? week.rateCents;
+  const cashRateCents = week.rateCents;
   const dailyMult = employee.dailyOtMultiplierPpm ?? schedule.defaults.dailyOtMultiplierPpm;
   const weeklyMult = employee.weeklyOtMultiplierPpm ?? schedule.defaults.weeklyOtMultiplierPpm;
   const lines: EarningsLine[] = [];
@@ -176,21 +179,25 @@ function addMakeupLines(lines: EarningsLine[], employee: EmployeePayInput, sched
     return created;
   };
 
-  for (const line of lines) {
-    if (line.kind === "tips") {
-      const weekId = line.workweekId ?? "period";
-      ensure(weekId, line.classId, line.positionId).tipsCents += line.amountCents;
+  for (const week of employee.hourlyWeeks ?? []) {
+    const bucket = ensure(week.workweekId, week.classId ?? null, week.positionId ?? null);
+    const hours =
+      week.regularHoursHundredths + (week.dailyOtHoursHundredths ?? 0) + (week.weeklyOtHoursHundredths ?? 0);
+    bucket.hoursHundredths += hours;
+    bucket.straightTimeCashCents += amountFromHoursAndRate(hours, week.rateCents);
+    bucket.tipsCents += week.tipsCents ?? 0;
+  }
+
+  for (const input of employee.earnings ?? []) {
+    const weekId = input.workweekId ?? "period";
+    if (input.kind === "tips") {
+      ensure(weekId, input.classId ?? null, input.positionId ?? null).tipsCents += input.amountCents ?? 0;
       continue;
     }
-    if (line.kind === "min_wage_makeup" || line.kind === "adjustment" || line.kind === "salary") {
-      continue;
-    }
-    if (line.hoursHundredths <= 0) continue;
-    const weekId = line.workweekId ?? "period";
-    const bucket = ensure(weekId, line.classId, line.positionId);
-    bucket.hoursHundredths += line.hoursHundredths;
-    const cashRate = employee.cashRateCents ?? line.rateCents ?? 0;
-    bucket.straightTimeCashCents += amountFromHoursAndRate(line.hoursHundredths, cashRate);
+    if (input.kind !== "regular" || input.rateCents === undefined || (input.hoursHundredths ?? 0) <= 0) continue;
+    const bucket = ensure(weekId, input.classId ?? null, input.positionId ?? null);
+    bucket.hoursHundredths += input.hoursHundredths ?? 0;
+    bucket.straightTimeCashCents += amountFromHoursAndRate(input.hoursHundredths ?? 0, input.rateCents);
   }
 
   const extra: EarningsLine[] = [];

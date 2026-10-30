@@ -26,7 +26,6 @@ export function fixtureCashEmployees(): EmployeePayInput[] {
       employeeId: "C03",
       payType: "cash",
       isTipped: true,
-      cashRateCents: 850,
       earnings: [
         { kind: "regular", hoursHundredths: 607, rateCents: 850, workweekId: "w1" },
         { kind: "tips", amountCents: 4146, workweekId: "w1" },
@@ -36,7 +35,6 @@ export function fixtureCashEmployees(): EmployeePayInput[] {
       employeeId: "C04",
       payType: "cash",
       isTipped: true,
-      cashRateCents: 850,
       earnings: [
         { kind: "regular", hoursHundredths: 2939, rateCents: 850, workweekId: "w1" },
         { kind: "tips", amountCents: 16970, workweekId: "w1" },
@@ -46,7 +44,6 @@ export function fixtureCashEmployees(): EmployeePayInput[] {
       employeeId: "C05",
       payType: "cash",
       isTipped: true,
-      cashRateCents: 500,
       earnings: [
         { kind: "regular", hoursHundredths: 408, rateCents: 500, workweekId: "w1" },
         { kind: "tips", amountCents: 2936, workweekId: "w1" },

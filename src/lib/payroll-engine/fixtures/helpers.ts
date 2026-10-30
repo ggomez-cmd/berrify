@@ -27,7 +27,6 @@ export function explicitEmployee(input: {
   exemptionCents?: number;
   openingYtd?: OpeningYtd;
   isTipped?: boolean;
-  cashRateCents?: number;
   classId?: string;
 }): EmployeePayInput {
   const earnings: EarningsLineInput[] = [
@@ -58,7 +57,6 @@ export function explicitEmployee(input: {
     employeeId: input.employeeId,
     payType: input.payType ?? "payroll",
     isTipped: input.isTipped,
-    cashRateCents: input.cashRateCents,
     exemption: overrideExemption(input.exemptionCents ?? 0),
     openingYtd: input.openingYtd ?? emptyYtd(),
     earnings,
