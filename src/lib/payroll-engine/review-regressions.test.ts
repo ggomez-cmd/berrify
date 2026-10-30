@@ -188,3 +188,101 @@ describe("runs and YTD carry-forward", () => {
     expect(opening.taxableCents.SUT).toBe(700_000);
   });
 });
+
+describe("review round 2", () => {
+  it("tips given as hours × rate count toward the weekly test: 40h × $3 + $300 derived tips → no make-up, 420.00 gross", () => {
+    const result = computeEarnings(
+      {
+        employeeId: "T01",
+        payType: "payroll",
+        isTipped: true,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 300, regularHoursHundredths: 4_000 }],
+        earnings: [{ kind: "tips", hoursHundredths: 100, rateCents: 30_000, workweekId: "w1" }],
+      },
+      PR_2026,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(42_000);
+  });
+
+  it("per-class allocation reconciles with negative adjustments: 500.20 − 100.04 − 100.04", () => {
+    const run = computePayrollRun({
+      checkDate,
+      settings,
+      employees: [
+        hourly("P01", 0, {
+          earnings: [
+            { kind: "regular", amountCents: 50_020, classId: "A" },
+            { kind: "adjustment", amountCents: -10_004, classId: "B", reason: "Correction" },
+            { kind: "adjustment", amountCents: -10_004, classId: "C", reason: "Correction" },
+          ],
+        }),
+      ],
+    });
+    const allocated = run.classCosts.reduce((sum, row) => sum + row.employerTaxCents, 0);
+    const cost = run.classCosts.reduce((sum, row) => sum + row.employerCostCents, 0);
+    expect(allocated).toBe(run.employerTaxCents);
+    expect(cost).toBe(run.employerCostCents);
+  });
+
+  it("rejects negative salary and invalid proration", () => {
+    const negative = computeEarnings(
+      { employeeId: "E01", payType: "payroll", salary: { amountCents: -10_000, hoursHundredths: -100 } },
+      PR_2026,
+    );
+    expect(negative.errors).toHaveLength(1);
+    expect(negative.lines).toHaveLength(0);
+    const badDays = computeEarnings(
+      { employeeId: "E01", payType: "payroll", salary: { amountCents: 255_000, days: 15, periodDays: 14 } },
+      PR_2026,
+    );
+    expect(badDays.errors).toHaveLength(1);
+  });
+
+  it("rejects overtime multipliers below 1.0×", () => {
+    const result = computeEarnings(
+      {
+        employeeId: "E01",
+        payType: "payroll",
+        weeklyOtMultiplierPpm: -1_500_000,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 4_000, weeklyOtHoursHundredths: 1_000 }],
+      },
+      PR_2026,
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(result.lines).toHaveLength(0);
+  });
+
+  it("rejects a tipped cash rate below $2.13", () => {
+    const result = computeEarnings(
+      {
+        employeeId: "T01",
+        payType: "payroll",
+        isTipped: true,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 100, regularHoursHundredths: 4_000, tipsCents: 100_000 }],
+      },
+      PR_2026,
+    );
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it("rejects weekly input with a blank workweek id", () => {
+    const result = computeEarnings(
+      {
+        employeeId: "T01",
+        payType: "payroll",
+        isTipped: true,
+        hourlyWeeks: [
+          { workweekId: "", rateCents: 300, regularHoursHundredths: 4_000, tipsCents: 60_000 },
+          { workweekId: "", rateCents: 300, regularHoursHundredths: 4_000 },
+        ],
+      },
+      PR_2026,
+    );
+    expect(result.errors).toHaveLength(2);
+  });
+
+  it("validates the check date even when a schedule is supplied", () => {
+    expect(() => computeCheck(hourly("E01", 100_000), settings, "2026-02-30", PR_2026)).toThrow();
+  });
+});

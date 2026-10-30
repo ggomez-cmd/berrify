@@ -126,14 +126,32 @@ function lineFromInput(input: EarningsLineInput, employee: EmployeePayInput, err
   };
 }
 
-function invalidWeek(week: HourlyWeekInput): boolean {
-  return (
+function invalidWeek(week: HourlyWeekInput, employee: EmployeePayInput, schedule: PrTaxSchedule): string | null {
+  if (!week.workweekId || week.workweekId.trim().length === 0) {
+    return "missing workweekId";
+  }
+  if (
     week.rateCents < 0 ||
     week.regularHoursHundredths < 0 ||
     (week.dailyOtHoursHundredths ?? 0) < 0 ||
     (week.weeklyOtHoursHundredths ?? 0) < 0 ||
     (week.tipsCents ?? 0) < 0
-  );
+  ) {
+    return "negative hours, rate, or tips";
+  }
+  if (employee.isTipped === true && week.rateCents < schedule.wage.minCashWageCents) {
+    return "tipped cash rate is below the minimum cash wage";
+  }
+  return null;
+}
+
+function invalidMultipliers(employee: EmployeePayInput): string | null {
+  for (const multiplier of [employee.dailyOtMultiplierPpm, employee.weeklyOtMultiplierPpm]) {
+    if (multiplier !== undefined && multiplier < 1_000_000) {
+      return "Overtime multipliers must be at least 1.0×";
+    }
+  }
+  return null;
 }
 
 function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsLine[] {
@@ -194,9 +212,23 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
   return lines;
 }
 
-function salaryLine(employee: EmployeePayInput): EarningsLine | null {
+function salaryLine(employee: EmployeePayInput, errors: string[]): EarningsLine | null {
   const salary = employee.salary;
   if (!salary) return null;
+  const prorated = salary.days !== undefined || salary.periodDays !== undefined;
+  if (
+    salary.amountCents < 0 ||
+    (salary.hoursHundredths ?? 0) < 0 ||
+    (prorated &&
+      (salary.days === undefined ||
+        salary.periodDays === undefined ||
+        salary.days < 0 ||
+        salary.periodDays <= 0 ||
+        salary.days > salary.periodDays))
+  ) {
+    errors.push("Salary has a negative amount or hours, or invalid proration days");
+    return null;
+  }
   let amountCents = salary.amountCents;
   if (salary.days !== undefined && salary.periodDays !== undefined) {
     amountCents = Number(roundHalfUpDiv(BigInt(salary.amountCents) * BigInt(salary.days), BigInt(salary.periodDays)));
@@ -225,7 +257,7 @@ function addMakeupLines(
   lines: EarningsLine[],
   employee: EmployeePayInput,
   weeks: readonly HourlyWeekInput[],
-  explicitTips: readonly EarningsLineInput[],
+  explicitTips: readonly EarningsLine[],
   schedule: PrTaxSchedule,
 ): EarningsLine[] {
   if (employee.isTipped !== true) {
@@ -256,9 +288,9 @@ function addMakeupLines(
     bucket.tipsCents += week.tipsCents ?? 0;
   }
 
-  for (const input of explicitTips) {
-    if (!input.workweekId) continue;
-    ensure(input.workweekId, input.classId ?? null, input.positionId ?? null).tipsCents += input.amountCents ?? 0;
+  for (const line of explicitTips) {
+    if (!line.workweekId) continue;
+    ensure(line.workweekId, line.classId, line.positionId).tipsCents += line.amountCents;
   }
 
   const extra: EarningsLine[] = [];
@@ -312,25 +344,29 @@ export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSched
   const errors: string[] = [];
   const lines: EarningsLine[] = [];
 
-  const explicitTips: EarningsLineInput[] = [];
+  const explicitTips: EarningsLine[] = [];
   for (const input of employee.earnings ?? []) {
     const line = lineFromInput(input, employee, errors);
     if (!line) continue;
     lines.push(line);
-    if (input.kind === "tips") explicitTips.push(input);
+    if (line.kind === "tips") explicitTips.push(line);
   }
 
+  const multiplierError = invalidMultipliers(employee);
+  if (multiplierError) errors.push(multiplierError);
+
   const weeks: HourlyWeekInput[] = [];
-  for (const week of employee.hourlyWeeks ?? []) {
-    if (invalidWeek(week)) {
-      errors.push(`Hourly week ${week.workweekId} has negative hours, rate, or tips`);
+  for (const week of multiplierError ? [] : employee.hourlyWeeks ?? []) {
+    const weekError = invalidWeek(week, employee, schedule);
+    if (weekError) {
+      errors.push(`Hourly week ${week.workweekId || "(no id)"}: ${weekError}`);
       continue;
     }
     weeks.push(week);
     lines.push(...hourlyWeekLines(week, employee, schedule));
   }
 
-  const salary = salaryLine(employee);
+  const salary = salaryLine(employee, errors);
   if (salary) lines.push(salary);
 
   const withMakeup = addMakeupLines(lines, employee, weeks, explicitTips, schedule);

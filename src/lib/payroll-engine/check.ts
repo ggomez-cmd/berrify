@@ -1,4 +1,4 @@
-import { selectTaxSchedule, type PrTaxSchedule } from "./data";
+import { assertCheckDate, selectTaxSchedule, type PrTaxSchedule } from "./data";
 import { computeEarnings, earningsGrossCents } from "./earnings";
 import { computeExemption } from "./exemption";
 import { sumCents } from "./money";
@@ -142,6 +142,7 @@ export function computeCheck(
   checkDate: string,
   schedule?: PrTaxSchedule,
 ): PayrollCheck {
+  assertCheckDate(checkDate);
   const taxSchedule = schedule ?? selectTaxSchedule(checkDate);
   const earnings = computeEarnings(employee, taxSchedule);
   const grossCents = earningsGrossCents(earnings.lines);

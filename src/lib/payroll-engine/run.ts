@@ -47,8 +47,9 @@ export function allocateLargestRemainder(totalCents: number, weights: ReadonlyAr
   for (const id of ids) {
     const weight = combined.get(id) ?? 0;
     const raw = BigInt(totalCents) * BigInt(weight);
-    const floor = raw / BigInt(weightSum);
-    const remainder = raw % BigInt(weightSum);
+    let floor = raw / BigInt(weightSum);
+    if (raw < 0n && raw % BigInt(weightSum) !== 0n) floor -= 1n;
+    const remainder = raw - floor * BigInt(weightSum);
     const amount = Number(floor);
     allocated.set(id, amount);
     used += amount;
@@ -158,6 +159,8 @@ export function computePayrollLiabilities(payrollChecks: PayrollCheck[]): Payrol
   };
 }
 
+// Invalid inputs are dropped and reported in `errors`; totals are then a draft preview.
+// Callers must not approve, pay, export, or persist YTD for a run with any errors.
 export function computePayrollRun(input: PayrollRunInput): PayrollRunResult {
   const schedule = selectTaxSchedule(input.checkDate);
   const seen = new Set<string>();
