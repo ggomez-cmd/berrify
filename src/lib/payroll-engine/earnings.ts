@@ -97,7 +97,7 @@ function lineFromInput(input: EarningsLineInput, employee: EmployeePayInput, err
       errors.push("Minimum-wage make-up is computed automatically for tipped employees");
       return null;
     }
-    if (input.kind === "tips" && !input.workweekId) {
+    if (input.kind === "tips" && (!input.workweekId || input.workweekId.trim().length === 0)) {
       errors.push("Tips for tipped employees need a workweekId for the weekly minimum-wage test");
       return null;
     }

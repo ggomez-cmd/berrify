@@ -8,7 +8,7 @@ export {
   taxOnTaxable,
   wageBaseTaxable,
 } from "./withholding";
-export { computeCheck, computeCheckTaxes } from "./check";
+export { assertEmployerSettings, computeCheck, computeCheckTaxes, taxInputErrors } from "./check";
 export { allocateLargestRemainder, computePayrollLiabilities, computePayrollRun } from "./run";
 export { computeEarnings, overtimeAmountCents, overtimeHourlyRateCents } from "./earnings";
 export { computeExemption, deductionAllowanceCount } from "./exemption";

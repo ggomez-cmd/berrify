@@ -286,3 +286,50 @@ describe("review round 2", () => {
     expect(() => computeCheck(hourly("E01", 100_000), settings, "2026-02-30", PR_2026)).toThrow();
   });
 });
+
+describe("review round 3", () => {
+  it.each([
+    ["negative additional withholding", { additionalWithholdingCents: -1_000 }],
+    ["negative dependents", { exemption: { personal: "none" as const, dependents: -1 } }],
+    ["negative opening YTD", { openingYtd: emptyYtd({ DIE: -100_000 }) }],
+  ])("reports %s as an error with no tax lines", (_label, extra) => {
+    const check = computeCheck(hourly("E01", 100_000, extra), settings, checkDate);
+    expect(check.errors).toHaveLength(1);
+    expect(check.employeeWithholdings).toEqual([]);
+    expect(check.employerTaxes).toEqual([]);
+  });
+
+  it("rejects a negative SUT rate", () => {
+    expect(() => computeCheck(hourly("E01", 100_000), { ...settings, sutRateBp: -540 }, checkDate)).toThrow();
+    expect(() =>
+      computePayrollRun({ checkDate, settings: { ...settings, sutRateBp: -540 }, employees: [hourly("E01", 100_000)] }),
+    ).toThrow();
+  });
+
+  it("rejects whitespace-only workweek ids on tipped tips", () => {
+    const result = computeEarnings(
+      {
+        employeeId: "T01",
+        payType: "payroll",
+        isTipped: true,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 300, regularHoursHundredths: 4_000 }],
+        earnings: [{ kind: "tips", amountCents: 30_000, workweekId: " " }],
+      },
+      PR_2026,
+    );
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it("payroll class costs reconcile to run employer cost; cash classes are separate", () => {
+    const run = computePayrollRun({
+      checkDate,
+      settings,
+      employees: [
+        hourly("P01", 100_000),
+        { employeeId: "C01", payType: "cash", earnings: [{ kind: "regular", amountCents: 50_000 }] },
+      ],
+    });
+    expect(run.classCosts.reduce((sum, row) => sum + row.employerCostCents, 0)).toBe(run.employerCostCents);
+    expect(run.cashClassCosts.reduce((sum, row) => sum + row.grossCents, 0)).toBe(run.cashTotalCents);
+  });
+});

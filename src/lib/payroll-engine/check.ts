@@ -57,6 +57,49 @@ function addYtd(
   }
 }
 
+export function assertEmployerSettings(settings: EmployerSettings): void {
+  if (!Number.isSafeInteger(settings.sutRateBp) || settings.sutRateBp < 0 || settings.sutRateBp > 10_000) {
+    throw new Error(`SUT rate must be between 0 and 10000 basis points, got ${settings.sutRateBp}`);
+  }
+}
+
+function isNonNegativeInteger(value: number | undefined): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && value >= 0);
+}
+
+export function taxInputErrors(employee: EmployeePayInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeInteger(employee.additionalWithholdingCents)) {
+    errors.push("Additional withholding must be a non-negative amount");
+  }
+  const exemption = employee.exemption;
+  if (
+    exemption &&
+    ![
+      exemption.dependents,
+      exemption.reducedDependents,
+      exemption.deductionCents,
+      exemption.annualExemptionOverrideCents,
+      exemption.biweeklyExemptionOverrideCents,
+    ].every(isNonNegativeInteger)
+  ) {
+    errors.push("Exemption counts and amounts must be non-negative");
+  }
+  const opening = employee.openingYtd;
+  if (opening) {
+    const values = [
+      opening.grossCents,
+      ...Object.values(opening.taxableCents),
+      ...Object.values(opening.withheldCents),
+      ...Object.values(opening.employerWithheldCents ?? {}),
+    ];
+    if (!values.every(isNonNegativeInteger)) {
+      errors.push("Opening year-to-date amounts must be non-negative");
+    }
+  }
+  return errors;
+}
+
 export function computeCheckTaxes(
   grossCents: number,
   opening: OpeningYtd | undefined,
@@ -143,6 +186,7 @@ export function computeCheck(
   schedule?: PrTaxSchedule,
 ): PayrollCheck {
   assertCheckDate(checkDate);
+  assertEmployerSettings(settings);
   const taxSchedule = schedule ?? selectTaxSchedule(checkDate);
   const earnings = computeEarnings(employee, taxSchedule);
   const grossCents = earningsGrossCents(earnings.lines);
@@ -153,7 +197,8 @@ export function computeCheck(
     scheduleId: taxSchedule.id,
   };
 
-  if (grossCents < 0) {
+  const inputErrors = employee.payType === "payroll" ? taxInputErrors(employee) : [];
+  if (grossCents < 0 || inputErrors.length > 0) {
     return {
       ...identity,
       payType: employee.payType,
@@ -167,7 +212,11 @@ export function computeCheck(
       employerCostCents: grossCents,
       closingYtd: emptyClosing(employee.openingYtd),
       warnings: earnings.warnings,
-      errors: [...earnings.errors, "Negative gross is not supported; reverse the original check instead"],
+      errors: [
+        ...earnings.errors,
+        ...inputErrors,
+        ...(grossCents < 0 ? ["Negative gross is not supported; reverse the original check instead"] : []),
+      ],
     };
   }
 

@@ -198,6 +198,7 @@ export type PayrollRunResult = {
   employerCostCents: Cents;
   cashTotalCents: Cents;
   classCosts: ClassCost[];
+  cashClassCosts: ClassCost[];
   warnings: string[];
   errors: string[];
 };

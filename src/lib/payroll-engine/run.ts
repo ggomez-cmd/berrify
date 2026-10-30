@@ -1,4 +1,4 @@
-import { computeCheck } from "./check";
+import { assertEmployerSettings, computeCheck } from "./check";
 import { selectTaxSchedule } from "./data";
 import { sumCents } from "./money";
 import type {
@@ -163,6 +163,7 @@ export function computePayrollLiabilities(payrollChecks: PayrollCheck[]): Payrol
 // Callers must not approve, pay, export, or persist YTD for a run with any errors.
 export function computePayrollRun(input: PayrollRunInput): PayrollRunResult {
   const schedule = selectTaxSchedule(input.checkDate);
+  assertEmployerSettings(input.settings);
   const seen = new Set<string>();
   for (const employee of input.employees) {
     if (seen.has(employee.employeeId)) {
@@ -193,7 +194,8 @@ export function computePayrollRun(input: PayrollRunInput): PayrollRunResult {
     employerTaxCents,
     employerCostCents: payrollGrossCents + employerTaxCents,
     cashTotalCents: sumCents(cashChecks.map((check) => check.grossCents)),
-    classCosts: classCosts(checks),
+    classCosts: classCosts(payrollChecks),
+    cashClassCosts: classCosts(cashChecks),
     warnings: checks.flatMap((check) => check.warnings.map((warning) => `${check.employeeId}: ${warning}`)),
     errors: checks.flatMap((check) => check.errors.map((error) => `${check.employeeId}: ${error}`)),
   };
