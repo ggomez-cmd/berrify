@@ -20,8 +20,10 @@ import { summarizeRun } from "./reports";
 import {
   buildRunInput,
   canApprove,
+  openingBalancesForYtd,
   payrollCalculationIsStale,
   payrollOpeningBalancesFingerprint,
+  payrollYtdBasisFromRpc,
   payrollYtdHistoryFingerprint,
   previewPayrollRun,
   resultFromStoredRun,
@@ -345,9 +347,11 @@ describe("canApprove and toDraftPayload", () => {
         tips: [],
         adjustments: [],
       },
+      ytdBasisRevision: "rev-1",
     });
     expect(payload.run.errors).toEqual(result.errors);
     expect(payload.run.warnings).toEqual(result.warnings);
+    expect(payload.run.ytd_basis_revision).toBe("rev-1");
     expect(Object.keys(payload.run).sort()).toEqual(
       [
         "cash_gross_cents",
@@ -366,6 +370,7 @@ describe("canApprove and toDraftPayload", () => {
         "schedule_id",
         "settings",
         "warnings",
+        "ytd_basis_revision",
       ].sort(),
     );
     expect(payload.checks[0]).toMatchObject({
@@ -411,6 +416,7 @@ describe("canApprove and toDraftPayload", () => {
         tips: [],
         adjustments: [],
       },
+      ytdBasisRevision: "rev-1",
     });
     expect(payload.run.errors).toContain("Missing rate for employee E1 (Cook) on 2026-10-13");
   });
@@ -426,6 +432,7 @@ const source = (partial: Partial<PayrollCalculationSource> = {}): PayrollCalcula
   adjustments: [],
   historyFingerprint: "history-0",
   openingBalancesFingerprint: "opening-0",
+  ytdBasisRevision: "rev-0",
   ...partial,
 });
 
@@ -461,6 +468,7 @@ describe("payrollCalculationIsStale", () => {
     expect(
       payrollCalculationIsStale(original, source({ ...original, openingBalancesFingerprint: "opening-1" })),
     ).toBe(true);
+    expect(payrollCalculationIsStale(original, source({ ...original, ytdBasisRevision: "rev-1" }))).toBe(true);
     expect(
       payrollYtdHistoryFingerprint([
         {
@@ -548,6 +556,52 @@ describe("payrollCalculationIsStale", () => {
   });
 });
 
+describe("payrollYtdBasisFromRpc", () => {
+  it("maps snake_case snapshot rows for ytdFromHistory", () => {
+    const snapshot = payrollYtdBasisFromRpc({
+      revision: "abc",
+      opening_balances: [
+        {
+          employee_id: "E1",
+          tax_year: 2026,
+          gross_cents: 1000,
+          taxes: [{ tax_code: "FED-OASDI", taxable_cents: 1000, withheld_cents: 62, employer_cents: 62 }],
+        },
+      ],
+      prior_check_taxes: [
+        {
+          employee_id: "E1",
+          tax_year: 2026,
+          check_date: "2026-10-09",
+          status: "approved",
+          side: "employee",
+          tax_code: "FED-OASDI",
+          taxable_cents: 500,
+          amount_cents: 31,
+        },
+      ],
+      prior_gross: [
+        {
+          employee_id: "E1",
+          tax_year: 2026,
+          check_date: "2026-10-09",
+          status: "approved",
+          gross_cents: 500,
+        },
+      ],
+    });
+    expect(snapshot.revision).toBe("abc");
+    const ytd = ytdFromHistory(
+      openingBalancesForYtd(snapshot.opening_balances),
+      snapshot.prior_check_taxes,
+      snapshot.prior_gross,
+      2026,
+    );
+    expect(ytd.get("E1")?.grossCents).toBe(1500);
+    expect(ytd.get("E1")?.withheldCents["FED-OASDI"]).toBe(93);
+  });
+});
+
 function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithChecks {
   const fixture = computePayrollRun({
     checkDate: FIXTURE_A_CHECK_DATE,
@@ -591,7 +645,7 @@ function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithC
     void_reason: null,
     notes: null,
     saved_at: timestamps.updated_at,
-    opening_balance_row_count: 0,
+    ytd_basis_revision: "rev-0",
     created_at: timestamps.created_at,
     updated_at: timestamps.updated_at,
     payroll_checks: [

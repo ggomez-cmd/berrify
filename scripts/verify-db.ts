@@ -200,6 +200,9 @@ try {
       "approve_payroll_run",
       "void_payroll_run",
       "discard_payroll_run_draft",
+      "payroll_ytd_basis_revision",
+      "load_payroll_ytd_basis",
+      "delete_payroll_opening_balance",
     ]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
@@ -233,6 +236,9 @@ try {
     "approve_payroll_run",
     "void_payroll_run",
     "discard_payroll_run_draft",
+    "payroll_ytd_basis_revision",
+    "load_payroll_ytd_basis",
+    "delete_payroll_opening_balance",
   ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);

@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addCalendarDays } from "../../lib/payroll-engine/hours/time";
 import type { TimeBreakRow, TimeEntryRow } from "../../lib/payroll-engine/hours/types";
-import type { PayrollCheckDraftPayload, PayrollRunDraftPayload } from "../../lib/payroll/runs";
+import {
+  payrollYtdBasisFromRpc,
+  type PayrollCheckDraftPayload,
+  type PayrollRunDraftPayload,
+  type PayrollYtdBasisSnapshot,
+} from "../../lib/payroll/runs";
 import { isAdmin } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import { toThrownError } from "../../lib/thrown-error";
@@ -56,6 +61,23 @@ export function usePayrollRunHistory() {
         .in("status", ["approved", "void"]);
       if (error) throw toThrownError(error, "Could not load payroll history");
       return (data ?? []) as PayrollRunWithChecks[];
+    },
+  });
+}
+
+export function usePayrollYtdBasis(taxYear: number | null, beforeCheckDate: string) {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_ytd_basis", org?.id, taxYear, beforeCheckDate],
+    enabled: Boolean(org?.id && taxYear && beforeCheckDate) && isAdmin(role),
+    queryFn: async (): Promise<PayrollYtdBasisSnapshot> => {
+      const { data, error } = await supabase.rpc("load_payroll_ytd_basis", {
+        target_org_id: org!.id,
+        tax_year: taxYear,
+        before_check_date: beforeCheckDate,
+      });
+      if (error || data == null) throw toThrownError(error, "Could not load year-to-date basis");
+      return payrollYtdBasisFromRpc(data);
     },
   });
 }
@@ -134,6 +156,7 @@ export function useSavePayrollRunDraft() {
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }
@@ -149,6 +172,7 @@ export function useApprovePayrollRun() {
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }
@@ -164,6 +188,7 @@ export function useDiscardPayrollRunDraft() {
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }
@@ -182,6 +207,7 @@ export function useVoidPayrollRun() {
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }

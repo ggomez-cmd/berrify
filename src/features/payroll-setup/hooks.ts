@@ -166,6 +166,7 @@ export function useImportPayrollOpeningBalances() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["payroll_opening_balances"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }
@@ -174,11 +175,12 @@ export function useDeletePayrollOpeningBalance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("payroll_opening_balances").delete().eq("id", id);
+      const { error } = await supabase.rpc("delete_payroll_opening_balance", { target_id: id });
       if (error) throw toThrownError(error, "Could not delete opening balance");
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["payroll_opening_balances"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
     },
   });
 }

@@ -107,8 +107,14 @@ export type YtdPriorGross = {
 
 export function openingBalancesForYtd(
   rows: readonly (Pick<PayrollOpeningBalanceWithTaxes, "employee_id" | "tax_year" | "gross_cents"> & {
-    payroll_opening_balance_taxes?: readonly PayrollOpeningBalanceTaxRow[];
-    taxes?: readonly PayrollOpeningBalanceTaxRow[];
+    payroll_opening_balance_taxes?: readonly Pick<
+      PayrollOpeningBalanceTaxRow,
+      "tax_code" | "taxable_cents" | "withheld_cents" | "employer_cents"
+    >[];
+    taxes?: readonly Pick<
+      PayrollOpeningBalanceTaxRow,
+      "tax_code" | "taxable_cents" | "withheld_cents" | "employer_cents"
+    >[];
   })[],
 ): YtdOpeningBalance[] {
   return rows.map((row) => ({
@@ -218,7 +224,97 @@ export type PayrollRunDraftPayload = {
   errors: string[];
   warnings: string[];
   notes: string | null;
+  ytd_basis_revision: string;
 };
+
+export type PayrollYtdBasisTax = {
+  id?: string;
+  tax_code: TaxCode;
+  taxable_cents: number;
+  withheld_cents: number;
+  employer_cents: number;
+};
+
+export type PayrollYtdBasisOpeningBalance = {
+  id?: string;
+  employee_id: string;
+  tax_year: number;
+  gross_cents: number;
+  taxes?: readonly PayrollYtdBasisTax[];
+  payroll_opening_balance_taxes?: readonly PayrollYtdBasisTax[];
+};
+
+export type PayrollYtdBasisSnapshot = {
+  revision: string;
+  opening_balances: PayrollYtdBasisOpeningBalance[];
+  prior_check_taxes: YtdPriorCheckTax[];
+  prior_gross: YtdPriorGross[];
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function payrollYtdBasisFromRpc(value: unknown): PayrollYtdBasisSnapshot {
+  const row = asRecord(value);
+  const opening = Array.isArray(row.opening_balances) ? row.opening_balances : [];
+  const taxes = Array.isArray(row.prior_check_taxes) ? row.prior_check_taxes : [];
+  const gross = Array.isArray(row.prior_gross) ? row.prior_gross : [];
+  return {
+    revision: asString(row.revision),
+    opening_balances: opening.map((item) => {
+      const balance = asRecord(item);
+      const taxRows = Array.isArray(balance.taxes) ? balance.taxes : [];
+      return {
+        id: asString(balance.id) || undefined,
+        employee_id: asString(balance.employee_id),
+        tax_year: asNumber(balance.tax_year),
+        gross_cents: asNumber(balance.gross_cents),
+        taxes: taxRows.map((taxItem) => {
+          const tax = asRecord(taxItem);
+          return {
+            id: asString(tax.id) || undefined,
+            tax_code: tax.tax_code as TaxCode,
+            taxable_cents: asNumber(tax.taxable_cents),
+            withheld_cents: asNumber(tax.withheld_cents),
+            employer_cents: asNumber(tax.employer_cents),
+          };
+        }),
+      };
+    }),
+    prior_check_taxes: taxes.map((item) => {
+      const tax = asRecord(item);
+      return {
+        employeeId: asString(tax.employee_id),
+        taxYear: asNumber(tax.tax_year),
+        checkDate: asString(tax.check_date).slice(0, 10),
+        status: tax.status as PayrollRunStatus,
+        side: tax.side as "employee" | "employer",
+        taxCode: tax.tax_code as TaxCode,
+        taxableCents: asNumber(tax.taxable_cents),
+        amountCents: asNumber(tax.amount_cents),
+      };
+    }),
+    prior_gross: gross.map((item) => {
+      const line = asRecord(item);
+      return {
+        employeeId: asString(line.employee_id),
+        taxYear: asNumber(line.tax_year),
+        checkDate: asString(line.check_date).slice(0, 10),
+        status: line.status as PayrollRunStatus,
+        grossCents: asNumber(line.gross_cents),
+      };
+    }),
+  };
+}
 
 /** jsonb earnings element for `save_payroll_run_draft` `checks`. Keys must match the SQL. */
 export type PayrollCheckEarningDraftPayload = {
@@ -325,6 +421,7 @@ export type PayrollCalculationSource = {
   }>;
   historyFingerprint: string;
   openingBalancesFingerprint: string;
+  ytdBasisRevision: string;
 };
 
 export function payrollYtdHistoryFingerprint(
@@ -414,6 +511,7 @@ export function payrollCalculationSourceKey(source: PayrollCalculationSource): s
     })),
     historyFingerprint: source.historyFingerprint,
     openingBalancesFingerprint: source.openingBalancesFingerprint,
+    ytdBasisRevision: source.ytdBasisRevision,
   });
 }
 
@@ -707,6 +805,7 @@ export function toDraftPayload(
     settings: PayrollRunSettingsSnapshot;
     inputs: PayrollRunInputsSnapshot;
     notes?: string | null;
+    ytdBasisRevision: string;
   },
 ): { run: PayrollRunDraftPayload; checks: PayrollCheckDraftPayload[] } {
   return {
@@ -727,6 +826,7 @@ export function toDraftPayload(
       errors: result.errors,
       warnings: result.warnings,
       notes: meta.notes ?? null,
+      ytd_basis_revision: meta.ytdBasisRevision,
     },
     checks: result.checks.map((check) => ({
       employee_id: check.employeeId,

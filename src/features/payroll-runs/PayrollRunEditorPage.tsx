@@ -11,12 +11,9 @@ import { dollarsToCents } from "../../lib/payroll/setup";
 import {
   buildRunInput,
   canApprove,
-  historyFromStoredRuns,
   isRunInputsSnapshot,
   openingBalancesForYtd,
   payrollCalculationIsStale,
-  payrollOpeningBalancesFingerprint,
-  payrollYtdHistoryFingerprint,
   previewPayrollRun,
   taxYearFromCheckDate,
   toDraftPayload,
@@ -36,7 +33,6 @@ import {
   usePayrollCloverNames,
   usePayrollEmployeeProfiles,
   usePayrollEmployerSettings,
-  usePayrollOpeningBalances,
   usePayrollPayRates,
 } from "../payroll-setup/hooks";
 import { CheckDetail, ChecksTable, IssuesPanel, RunSummaryPanel } from "./RunPanels";
@@ -45,10 +41,15 @@ import {
   useApprovePayrollRun,
   useDiscardPayrollRunDraft,
   usePayrollRun,
-  usePayrollRunHistory,
   usePayrollRunTimeEntries,
+  usePayrollYtdBasis,
   useSavePayrollRunDraft,
 } from "./hooks";
+
+function isYtdStaleError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /stale|recalculate/i.test(message);
+}
 
 type AdjustmentDraft = {
   key: string;
@@ -69,9 +70,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const settingsQuery = usePayrollEmployerSettings();
   const profilesQuery = usePayrollEmployeeProfiles();
   const ratesQuery = usePayrollPayRates();
-  const balancesQuery = usePayrollOpeningBalances();
   const cloverQuery = usePayrollCloverNames();
-  const historyQuery = usePayrollRunHistory();
   const employeesQuery = useEmployees();
   const restaurantsQuery = useRestaurants();
   const saveDraft = useSavePayrollRunDraft();
@@ -113,6 +112,8 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const [hydratedId, setHydratedId] = useState<string | null>(null);
 
   const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd);
+  const taxYear = checkDate ? taxYearFromCheckDate(checkDate) : null;
+  const ytdBasisQuery = usePayrollYtdBasis(taxYear, checkDate);
 
   useEffect(() => {
     if (!runId || !stored.data || hydratedId === stored.data.id) return;
@@ -191,21 +192,19 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         reason: row.reason,
         restaurantId: row.restaurantId,
       })),
-      historyFingerprint: `${historyQuery.dataUpdatedAt}:${payrollYtdHistoryFingerprint(historyQuery.data ?? [])}`,
-      openingBalancesFingerprint: `${balancesQuery.dataUpdatedAt}:${payrollOpeningBalancesFingerprint(balancesQuery.data ?? [])}`,
+      historyFingerprint: "",
+      openingBalancesFingerprint: "",
+      ytdBasisRevision: ytdBasisQuery.data?.revision ?? "",
     }),
     [
       adjustments,
-      balancesQuery.data,
-      balancesQuery.dataUpdatedAt,
       checkDate,
       cloverCsv,
-      historyQuery.data,
-      historyQuery.dataUpdatedAt,
       hoursSource,
       periodEnd,
       periodStart,
       tips,
+      ytdBasisQuery.data?.revision,
     ],
   );
 
@@ -221,10 +220,9 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
     settingsQuery,
     profilesQuery,
     ratesQuery,
-    balancesQuery,
-    historyQuery,
     restaurantsQuery,
     employeesQuery,
+    ...(checkDate ? [ytdBasisQuery] : []),
   ];
   const hoursPrerequisites = (() => {
     switch (hoursSource) {
@@ -289,8 +287,8 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       setFormError("Period start, period end, and check date are required");
       return;
     }
-    if (!settingsQuery.data || !profilesQuery.data || !ratesQuery.data || !balancesQuery.data || !historyQuery.data) {
-      setFormError("Payroll setup and history must finish loading before calculate");
+    if (!settingsQuery.data || !profilesQuery.data || !ratesQuery.data || !ytdBasisQuery.data) {
+      setFormError("Payroll setup and year-to-date history must finish loading before calculate");
       return;
     }
     const clockHours = hoursSource === "time_clock" ? timeQuery.data : undefined;
@@ -327,8 +325,12 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       });
     }
     const year = taxYearFromCheckDate(checkDate);
-    const history = historyFromStoredRuns(historyQuery.data, checkDate, year);
-    const ytd = ytdFromHistory(openingBalancesForYtd(balancesQuery.data), history.taxes, history.gross, year);
+    const ytd = ytdFromHistory(
+      openingBalancesForYtd(ytdBasisQuery.data.opening_balances),
+      ytdBasisQuery.data.prior_check_taxes,
+      ytdBasisQuery.data.prior_gross,
+      year,
+    );
     const built = buildRunInput({
       checkDate,
       periodStart,
@@ -381,12 +383,25 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       settings: settingsSnapshot,
       inputs: builtInputs,
       notes,
+      ytdBasisRevision: computedFrom.ytdBasisRevision,
     });
-    return saveDraft.mutateAsync({
-      runId: runId ?? null,
-      run: payload.run,
-      checks: payload.checks,
-    });
+    try {
+      return await saveDraft.mutateAsync({
+        runId: runId ?? null,
+        run: payload.run,
+        checks: payload.checks,
+      });
+    } catch (error) {
+      if (isYtdStaleError(error)) {
+        setResult(null);
+        setBuiltInputs(null);
+        setSettingsSnapshot(null);
+        setComputedFrom(null);
+        setFormError("Recalculate: year-to-date changed");
+        return null;
+      }
+      throw error;
+    }
   };
 
   const approval = result ? canApprove(result) : { ok: false as const, reasons: ["Calculate the run first"] };
@@ -630,6 +645,14 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                     navigate(`/payroll/runs/${id}`);
                   } catch (error) {
                     setConfirmApprove(false);
+                    if (isYtdStaleError(error)) {
+                      setResult(null);
+                      setBuiltInputs(null);
+                      setSettingsSnapshot(null);
+                      setComputedFrom(null);
+                      setFormError("Recalculate: year-to-date changed");
+                      return;
+                    }
                     setFormError(error instanceof Error ? error.message : "Could not approve payroll run");
                   }
                 })();

@@ -32,12 +32,10 @@ create table if not exists public.payroll_runs (
   voided_at timestamptz,
   void_reason text,
   notes text,
-  -- Last draft save. approve_payroll_run compares later history and opening-balance
-  -- timestamps against this. Opening-balance deletes are not visible via updated_at;
-  -- save stores opening_balance_row_count (balances + tax rows for the org tax year)
-  -- and approve rejects if that count changed.
+  -- Last draft save (audit). Staleness uses ytd_basis_revision, not this timestamp.
   saved_at timestamptz not null default now(),
-  opening_balance_row_count integer not null default 0,
+  -- Server-owned md5 of prior non-draft runs and opening balances at calculate/save.
+  ytd_basis_revision text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint payroll_runs_period_check check (period_end >= period_start),
@@ -356,34 +354,190 @@ grant select on table public.payroll_checks to authenticated;
 grant select on table public.payroll_check_earnings to authenticated;
 grant select on table public.payroll_check_taxes to authenticated;
 
--- Balances + tax lines for the org tax year. Deletes leave no leftover updated_at,
--- so approve_payroll_run rejects when this count differs from the value stored at save.
-create or replace function public.payroll_opening_balance_row_count(
+-- Stable YTD basis fingerprint: prior non-draft runs before the check date, plus
+-- every opening-balance and tax row for the org tax year. Format is fixed so the
+-- same rows always hash the same way across sessions.
+create or replace function public.payroll_ytd_basis_revision(
   target_org_id uuid,
-  target_tax_year integer
+  tax_year integer,
+  before_check_date date
 )
-returns integer
+returns text
 language sql
 stable
 set search_path = public, pg_temp
 as $$
-  select
-    (
-      select count(*)::integer
-      from public.payroll_opening_balances
-      where org_id = target_org_id
-        and tax_year = target_tax_year
+  select md5(
+    coalesce(
+      (
+        select string_agg(
+          r.id::text
+            || E'\t' || r.status
+            || E'\t' || coalesce(to_char(r.approved_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), '')
+            || E'\t' || coalesce(to_char(r.voided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), ''),
+          E'\n'
+          order by r.check_date, r.id
+        )
+        from public.payroll_runs r
+        where r.org_id = target_org_id
+          and extract(year from r.check_date)::integer = tax_year
+          and r.check_date < before_check_date
+          and r.status is distinct from 'draft'
+      ),
+      ''
     )
-    + (
-      select count(*)::integer
-      from public.payroll_opening_balance_taxes t
-      join public.payroll_opening_balances b
-        on b.id = t.opening_balance_id
-       and b.org_id = t.org_id
-      where b.org_id = target_org_id
-        and b.tax_year = target_tax_year
-    );
+    || E'\n--balances--\n'
+    || coalesce(
+      (
+        select string_agg(
+          b.id::text
+            || E'\t' || b.gross_cents::text
+            || E'\t' || coalesce(to_char(b.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), ''),
+          E'\n'
+          order by b.id
+        )
+        from public.payroll_opening_balances b
+        where b.org_id = target_org_id
+          and b.tax_year = tax_year
+      ),
+      ''
+    )
+    || E'\n--taxes--\n'
+    || coalesce(
+      (
+        select string_agg(
+          t.id::text
+            || E'\t' || t.taxable_cents::text
+            || E'\t' || t.withheld_cents::text
+            || E'\t' || t.employer_cents::text
+            || E'\t' || coalesce(to_char(t.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), ''),
+          E'\n'
+          order by t.id
+        )
+        from public.payroll_opening_balance_taxes t
+        join public.payroll_opening_balances b
+          on b.id = t.opening_balance_id
+         and b.org_id = t.org_id
+        where b.org_id = target_org_id
+          and b.tax_year = tax_year
+      ),
+      ''
+    )
+  );
 $$;
+
+revoke all on function public.payroll_ytd_basis_revision(uuid, integer, date) from public, anon;
+grant execute on function public.payroll_ytd_basis_revision(uuid, integer, date) to authenticated;
+
+-- One snapshot of the YTD history the editor needs. Callers must use this RPC
+-- instead of separate table queries so calculate/save share the same revision.
+create or replace function public.load_payroll_ytd_basis(
+  target_org_id uuid,
+  tax_year integer,
+  before_check_date date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  snapshot jsonb;
+begin
+  if not public.has_org_role(target_org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(target_org_id::text || ':' || tax_year::text, 0)
+  );
+
+  select jsonb_build_object(
+    'revision', public.payroll_ytd_basis_revision(target_org_id, tax_year, before_check_date),
+    'opening_balances', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', b.id,
+          'employee_id', b.employee_id,
+          'tax_year', b.tax_year,
+          'gross_cents', b.gross_cents,
+          'taxes', coalesce((
+            select jsonb_agg(
+              jsonb_build_object(
+                'id', t.id,
+                'tax_code', t.tax_code,
+                'taxable_cents', t.taxable_cents,
+                'withheld_cents', t.withheld_cents,
+                'employer_cents', t.employer_cents
+              )
+              order by t.tax_code, t.id
+            )
+            from public.payroll_opening_balance_taxes t
+            where t.opening_balance_id = b.id
+              and t.org_id = b.org_id
+          ), '[]'::jsonb)
+        )
+        order by b.employee_id, b.id
+      )
+      from public.payroll_opening_balances b
+      where b.org_id = target_org_id
+        and b.tax_year = tax_year
+    ), '[]'::jsonb),
+    'prior_check_taxes', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'employee_id', c.employee_id,
+          'tax_year', tax_year,
+          'check_date', r.check_date,
+          'status', r.status,
+          'side', t.side,
+          'tax_code', t.tax_code,
+          'taxable_cents', t.taxable_cents,
+          'amount_cents', t.amount_cents
+        )
+        order by r.check_date, c.employee_id, t.side, t.tax_code, t.id
+      )
+      from public.payroll_runs r
+      join public.payroll_checks c
+        on c.run_id = r.id
+       and c.org_id = r.org_id
+      join public.payroll_check_taxes t
+        on t.check_id = c.id
+       and t.org_id = c.org_id
+      where r.org_id = target_org_id
+        and extract(year from r.check_date)::integer = tax_year
+        and r.check_date < before_check_date
+        and r.status = 'approved'
+    ), '[]'::jsonb),
+    'prior_gross', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'employee_id', c.employee_id,
+          'tax_year', tax_year,
+          'check_date', r.check_date,
+          'status', r.status,
+          'gross_cents', c.gross_cents
+        )
+        order by r.check_date, c.employee_id, c.id
+      )
+      from public.payroll_runs r
+      join public.payroll_checks c
+        on c.run_id = r.id
+       and c.org_id = r.org_id
+      where r.org_id = target_org_id
+        and extract(year from r.check_date)::integer = tax_year
+        and r.check_date < before_check_date
+        and r.status = 'approved'
+    ), '[]'::jsonb)
+  )
+  into snapshot;
+
+  return snapshot;
+end;
+$$;
+
+revoke all on function public.load_payroll_ytd_basis(uuid, integer, date) from public, anon;
+grant execute on function public.load_payroll_ytd_basis(uuid, integer, date) to authenticated;
 
 create or replace function public.save_payroll_run_draft(
   target_run_id uuid,
@@ -409,7 +563,8 @@ declare
   run_errors text[];
   run_warnings text[];
   run_tax_year integer;
-  opening_count integer;
+  expected_revision text;
+  current_revision text;
 begin
   if jsonb_typeof(run) is distinct from 'object' then
     raise exception 'run must be a json object';
@@ -474,7 +629,23 @@ begin
   end if;
 
   run_tax_year := extract(year from (run->>'check_date')::date)::integer;
-  opening_count := public.payroll_opening_balance_row_count(resolved_org, run_tax_year);
+  perform pg_advisory_xact_lock(
+    hashtextextended(resolved_org::text || ':' || run_tax_year::text, 0)
+  );
+
+  expected_revision := nullif(btrim(coalesce(run->>'ytd_basis_revision', '')), '');
+  if expected_revision is null then
+    raise exception 'payroll run is stale: recalculate';
+  end if;
+
+  current_revision := public.payroll_ytd_basis_revision(
+    resolved_org,
+    run_tax_year,
+    (run->>'check_date')::date
+  );
+  if current_revision is distinct from expected_revision then
+    raise exception 'payroll run is stale: recalculate';
+  end if;
 
   for check_row in select value from jsonb_array_elements(checks)
   loop
@@ -512,7 +683,7 @@ begin
       warnings,
       notes,
       saved_at,
-      opening_balance_row_count
+      ytd_basis_revision
     ) values (
       resolved_org,
       (run->>'period_start')::date,
@@ -533,7 +704,7 @@ begin
       run_warnings,
       nullif(run->>'notes', ''),
       now(),
-      opening_count
+      current_revision
     )
     returning id into resolved_id;
   else
@@ -556,7 +727,7 @@ begin
       warnings = run_warnings,
       notes = nullif(run->>'notes', ''),
       saved_at = now(),
-      opening_balance_row_count = opening_count
+      ytd_basis_revision = current_revision
     where id = resolved_id
       and org_id = resolved_org
       and status = 'draft';
@@ -693,7 +864,7 @@ declare
   net_sum bigint := 0;
   employer_tax_total bigint := 0;
   run_tax_year integer;
-  current_opening_count integer;
+  current_revision text;
 begin
   select * into run_row
   from public.payroll_runs
@@ -741,46 +912,12 @@ begin
     raise exception 'approve or discard earlier draft runs first';
   end if;
 
-  if exists (
-    select 1
-    from public.payroll_runs other
-    where other.org_id = run_row.org_id
-      and other.id is distinct from run_row.id
-      and extract(year from other.check_date) = run_tax_year
-      and other.check_date < run_row.check_date
-      and (
-        (other.approved_at is not null and other.approved_at > run_row.saved_at)
-        or (other.voided_at is not null and other.voided_at > run_row.saved_at)
-      )
-  ) then
-    raise exception 'payroll run is stale: recalculate';
-  end if;
-
-  if exists (
-    select 1
-    from public.payroll_opening_balances b
-    where b.org_id = run_row.org_id
-      and b.tax_year = run_tax_year
-      and (b.updated_at > run_row.saved_at or b.created_at > run_row.saved_at)
-  ) then
-    raise exception 'payroll run is stale: recalculate';
-  end if;
-
-  if exists (
-    select 1
-    from public.payroll_opening_balance_taxes t
-    join public.payroll_opening_balances b
-      on b.id = t.opening_balance_id
-     and b.org_id = t.org_id
-    where b.org_id = run_row.org_id
-      and b.tax_year = run_tax_year
-      and (t.updated_at > run_row.saved_at or t.created_at > run_row.saved_at)
-  ) then
-    raise exception 'payroll run is stale: recalculate';
-  end if;
-
-  current_opening_count := public.payroll_opening_balance_row_count(run_row.org_id, run_tax_year);
-  if current_opening_count is distinct from run_row.opening_balance_row_count then
+  current_revision := public.payroll_ytd_basis_revision(
+    run_row.org_id,
+    run_tax_year,
+    run_row.check_date
+  );
+  if current_revision is distinct from run_row.ytd_basis_revision then
     raise exception 'payroll run is stale: recalculate';
   end if;
 
@@ -953,6 +1090,21 @@ begin
     raise exception 'only a draft payroll run can be discarded';
   end if;
 
+  -- Delete children while the draft parent is still present so immutability
+  -- guards can confirm draft status. Cascade-after-parent-delete treats a
+  -- missing run as locked.
+  delete from public.payroll_check_taxes
+  where org_id = run_row.org_id
+    and check_id in (select id from public.payroll_checks where run_id = target_run_id);
+
+  delete from public.payroll_check_earnings
+  where org_id = run_row.org_id
+    and check_id in (select id from public.payroll_checks where run_id = target_run_id);
+
+  delete from public.payroll_checks
+  where org_id = run_row.org_id
+    and run_id = target_run_id;
+
   delete from public.payroll_runs
   where id = target_run_id
     and org_id = run_row.org_id
@@ -962,3 +1114,148 @@ $$;
 
 revoke all on function public.discard_payroll_run_draft(uuid) from public, anon;
 grant execute on function public.discard_payroll_run_draft(uuid) to authenticated;
+
+-- 0029 is already applied. Recreate the importer here so it takes the org/year
+-- advisory lock before writing. Security definer so it can still replace tax
+-- rows after authenticated DELETE is revoked on the opening-balance tables.
+-- Direct table DELETE is not serialized; delete_payroll_opening_balance is.
+-- A missed lock still fails save/approve because the revision includes deletes.
+create or replace function public.import_payroll_opening_balances(
+  target_org_id uuid,
+  balances jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  balance_row jsonb;
+  tax_row jsonb;
+  emp_org uuid;
+  balance_id uuid;
+  lock_year integer;
+begin
+  if not public.has_org_role(target_org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  if jsonb_typeof(balances) is distinct from 'array' then
+    raise exception 'balances must be a json array';
+  end if;
+
+  for lock_year in
+    select distinct (value->>'tax_year')::integer
+    from jsonb_array_elements(balances)
+    order by 1
+  loop
+    perform pg_advisory_xact_lock(
+      hashtextextended(target_org_id::text || ':' || lock_year::text, 0)
+    );
+  end loop;
+
+  for balance_row in select value from jsonb_array_elements(balances)
+  loop
+    select org_id into emp_org
+    from public.employees
+    where id = (balance_row->>'employee_id')::uuid;
+
+    if not found then
+      raise exception 'employee not found';
+    end if;
+
+    if emp_org is distinct from target_org_id then
+      raise exception 'employee does not belong to organization';
+    end if;
+
+    if jsonb_typeof(balance_row->'taxes') is distinct from 'array' then
+      raise exception 'taxes must be a json array';
+    end if;
+
+    insert into public.payroll_opening_balances (
+      org_id,
+      employee_id,
+      tax_year,
+      source,
+      gross_cents
+    ) values (
+      target_org_id,
+      (balance_row->>'employee_id')::uuid,
+      (balance_row->>'tax_year')::integer,
+      balance_row->>'source',
+      (balance_row->>'gross_cents')::bigint
+    )
+    on conflict (employee_id, tax_year, source) do update
+      set gross_cents = excluded.gross_cents
+    returning id into balance_id;
+
+    delete from public.payroll_opening_balance_taxes
+    where opening_balance_id = balance_id
+      and org_id = target_org_id;
+
+    for tax_row in select value from jsonb_array_elements(balance_row->'taxes')
+    loop
+      insert into public.payroll_opening_balance_taxes (
+        org_id,
+        opening_balance_id,
+        tax_code,
+        taxable_cents,
+        withheld_cents,
+        employer_cents
+      ) values (
+        target_org_id,
+        balance_id,
+        tax_row->>'tax_code',
+        (tax_row->>'taxable_cents')::bigint,
+        (tax_row->>'withheld_cents')::bigint,
+        (tax_row->>'employer_cents')::bigint
+      );
+    end loop;
+  end loop;
+end;
+$$;
+
+revoke all on function public.import_payroll_opening_balances(uuid, jsonb) from public, anon;
+grant execute on function public.import_payroll_opening_balances(uuid, jsonb) to authenticated;
+
+create or replace function public.delete_payroll_opening_balance(target_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  balance_row public.payroll_opening_balances;
+begin
+  select * into balance_row
+  from public.payroll_opening_balances
+  where id = target_id
+  for update;
+
+  if not found then
+    raise exception 'opening balance not found';
+  end if;
+
+  if not public.has_org_role(balance_row.org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(balance_row.org_id::text || ':' || balance_row.tax_year::text, 0)
+  );
+
+  delete from public.payroll_opening_balance_taxes
+  where opening_balance_id = target_id
+    and org_id = balance_row.org_id;
+
+  delete from public.payroll_opening_balances
+  where id = target_id
+    and org_id = balance_row.org_id;
+end;
+$$;
+
+revoke all on function public.delete_payroll_opening_balance(uuid) from public, anon;
+grant execute on function public.delete_payroll_opening_balance(uuid) to authenticated;
+
+revoke delete on table public.payroll_opening_balances from authenticated;
+revoke delete on table public.payroll_opening_balance_taxes from authenticated;
