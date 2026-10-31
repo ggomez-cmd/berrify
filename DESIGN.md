@@ -184,11 +184,12 @@ Underline tabs, not pills. Container `flex gap-1 overflow-x-auto border-b border
 There is no bottom sheet. Centered dialog: `src/components/ui/dialog.tsx` (Radix).
 
 - Scrim: `fixed inset-0 z-40 bg-navy/40 backdrop-blur-sm`. Mobile nav scrim is the same colour without blur.
-- Panel: `z-50 w-[min(560px,calc(100vw-1.5rem))] max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-xl sm:p-6`.
+- Panel: `z-50 w-dialog max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-xl sm:p-6`.
 - Title row: `mb-4 flex items-start justify-between gap-3`. Description `mt-1 text-sm text-muted`, or `sr-only` when there is no description.
 - Close: `Button variant="subtle"` with `aria-label="Close"`.
 - Footer: `mt-5 flex flex-wrap justify-end gap-2`.
-- Wide review dialog overrides width to `w-[min(1100px,calc(100vw-1.5rem))]`.
+- Dialog widths live in `@theme`: `--width-dialog` / `w-dialog` is `min(35rem, calc(100vw - 1.5rem))` (560px). `--width-dialog-lg` / `w-dialog-lg` is `min(45rem, calc(100vw - 1.5rem))` (720px) for payroll-profile and other dense forms (`Dialog` `size="lg"`). `--width-dialog-xl` / `w-dialog-xl` is `min(51.25rem, calc(100vw - 1.5rem))` (820px, empty-bottle review, `size="xl"`). `--width-dialog-2xl` / `w-dialog-2xl` is `min(68.75rem, calc(100vw - 1.5rem))` (1100px, invoice review, `size="2xl"`). Pick a size; never pass a `w-*` class to `Dialog`, because it loses to the size utility in CSS order.
+- Wide review dialog uses `size="2xl"`.
 
 Mobile nav is a drawer, not a sheet: `src/components/layout/AppShell.tsx`, `fixed inset-y-0 left-0 z-50 w-60 … transition-transform duration-200 ease-out`, closed with `-translate-x-full`. Escape and route change close it. Body scroll locks while open.
 

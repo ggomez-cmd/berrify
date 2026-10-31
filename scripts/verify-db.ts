@@ -44,6 +44,12 @@ const requiredTables = [
   "quickbooks_online_vendors",
   "quickbooks_online_accounts",
   "invoice_pages",
+  "payroll_employer_settings",
+  "payroll_employee_profiles",
+  "payroll_pay_rates",
+  "payroll_opening_balances",
+  "payroll_opening_balance_taxes",
+  "payroll_clover_names",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -88,6 +94,12 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   quickbooks_online_vendors: ["quickbooks_online_vendors_select_manager"],
   quickbooks_online_accounts: ["quickbooks_online_accounts_select_manager"],
   invoice_pages: ["invoice_pages_manager"],
+  payroll_employer_settings: ["payroll_employer_settings_admin"],
+  payroll_employee_profiles: ["payroll_employee_profiles_admin"],
+  payroll_pay_rates: ["payroll_pay_rates_admin"],
+  payroll_opening_balances: ["payroll_opening_balances_admin"],
+  payroll_opening_balance_taxes: ["payroll_opening_balance_taxes_admin"],
+  payroll_clover_names: ["payroll_clover_names_admin"],
 };
 
 const client = createPgClient();

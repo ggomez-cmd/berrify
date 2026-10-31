@@ -93,7 +93,7 @@ export function EmptyBottleReviewDialog({
       onOpenChange={onOpenChange}
       title="Review empty bottles"
       description={event.proposed_label}
-      className="w-[min(820px,calc(100vw-1.5rem))]"
+      size="xl"
       footer={
         pending ? (
           <>

@@ -19,7 +19,7 @@ import {
 } from "../../lib/payroll";
 import { payrollFileStem, toPayrollCsv, toPayrollTimeActivityIif } from "../../lib/payroll-export";
 import { restaurantFileSlug } from "../../lib/restaurant-route";
-import { isManager } from "../../lib/schedule";
+import { isAdmin, isManager } from "../../lib/schedule";
 import { useEmployees } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
 import {
@@ -54,6 +54,7 @@ function confirmOpenIssues(openExceptions: number, openSessions: number): boolea
 export function PayrollPage() {
   const { org, role } = useAuth();
   const manager = isManager(role);
+  const admin = isAdmin(role);
   const { data: restaurants = [], isLoading: restaurantsLoading } = useRestaurants();
   const { data: employees = [] } = useEmployees();
   const saveExport = useSavePayrollExport();
@@ -163,6 +164,15 @@ export function PayrollPage() {
         Hours from Time Clock punches × roster rate for one restaurant workweek. Export a CSV (or
         QuickBooks Desktop TIMEACTIVITY IIF) and run paychecks in QuickBooks or ADP. This is not a tax
         engine.
+        {admin ? (
+          <>
+            {" "}
+            <Link className="font-medium text-wine underline" to="/payroll/setup">
+              Payroll setup
+            </Link>{" "}
+            is where admins set SUT, withholding, opening balances, and Clover names.
+          </>
+        ) : null}
       </p>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
