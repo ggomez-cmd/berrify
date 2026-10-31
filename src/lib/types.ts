@@ -1,3 +1,11 @@
+import type { DailyWindowMode } from "./payroll-engine/hours/types";
+import type {
+  EmployeePayType,
+  PayFrequency,
+  PersonalExemptionStatus,
+  SwhMethod,
+  TaxCode,
+} from "./payroll-engine/types";
 import type {
   BreakType,
   ClockActorType,
@@ -451,6 +459,98 @@ export type PayrollExportLine = {
   hourly_rate: number;
   gross: number;
   created_at: string;
+};
+
+export type PayrollEmployerSettingsRow = {
+  id: string;
+  org_id: string;
+  effective_from: string;
+  sut_rate_bp: number;
+  swh_method: SwhMethod;
+  pay_frequency: PayFrequency;
+  daily_ot_mode: DailyWindowMode;
+  workweek_start_day: number;
+  time_zone: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollEmployeeProfileRow = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  employee_number: string | null;
+  pay_type: EmployeePayType;
+  is_tipped: boolean;
+  hire_date: string | null;
+  daily_ot_multiplier_ppm: number;
+  weekly_ot_multiplier_ppm: number;
+  default_restaurant_id: string | null;
+  salary_cents: number | null;
+  personal_exemption: PersonalExemptionStatus;
+  veteran: boolean;
+  dependents: number;
+  reduced_dependents: number;
+  deduction_cents: number;
+  annual_exemption_override_cents: number | null;
+  biweekly_exemption_override_cents: number | null;
+  young_worker_exempt: boolean;
+  additional_withholding_cents: number;
+  r41_effective_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollPayRateRow = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  restaurant_id: string | null;
+  position: Station | null;
+  rate_cents: number;
+  effective_from: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollOpeningBalanceRow = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  tax_year: number;
+  source: string;
+  gross_cents: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollOpeningBalanceTaxRow = {
+  id: string;
+  org_id: string;
+  opening_balance_id: string;
+  tax_code: TaxCode;
+  taxable_cents: number;
+  withheld_cents: number;
+  employer_cents: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollOpeningBalanceWithTaxes = PayrollOpeningBalanceRow & {
+  payroll_opening_balance_taxes: PayrollOpeningBalanceTaxRow[];
+};
+
+export type PayrollCloverNameRow = {
+  id: string;
+  org_id: string;
+  clover_name: string;
+  employee_id: string | null;
+  ignored: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type QuickbooksOnlineConnection = {

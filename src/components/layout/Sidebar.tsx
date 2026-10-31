@@ -110,7 +110,8 @@ export function Sidebar({
         { to: "/invoices", label: "Invoices", icon: Receipt, end: false },
         { to: "/quickbooks", label: "QuickBooks", icon: BookMarked, end: false },
         { to: "/empty-bottles", label: "Empty bottles", icon: Wine, end: false },
-        { to: "/payroll", label: "Payroll", icon: Wallet, end: false },
+        { to: "/payroll", label: "Payroll", icon: Wallet, end: true },
+        ...(admin ? [{ to: "/payroll/setup", label: "Payroll setup", icon: Wallet, end: false }] : []),
         { to: "/suppliers", label: "Suppliers", icon: Truck, end: false },
         { to: "/movements", label: "Movements", icon: ClipboardList, end: false },
       ]
