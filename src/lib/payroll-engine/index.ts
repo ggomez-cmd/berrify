@@ -21,6 +21,25 @@ export {
 } from "./money";
 export { assertCheckDate, PR_2026, selectTaxSchedule } from "./data";
 export type { PrTaxSchedule } from "./data";
+export {
+  buildHourlyWeeks,
+  mealBreakFlags,
+  parseCloverShifts,
+  secondsToHoursHundredths,
+  shiftsFromTimeEntries,
+  splitHours,
+  UNCONFIRMED_MEAL_BREAK_RULES,
+} from "./hours";
+export type {
+  CloverParseResult,
+  HoursSplitResult,
+  HoursSplitSettings,
+  MealBreakFlag,
+  PositionRate,
+  ShiftAllocation,
+  WeekTips,
+  WorkedShift,
+} from "./hours";
 export type {
   ClassCost,
   ClosingYtd,
