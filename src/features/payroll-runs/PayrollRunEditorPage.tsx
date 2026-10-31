@@ -15,6 +15,8 @@ import {
   isRunInputsSnapshot,
   openingBalancesForYtd,
   payrollCalculationIsStale,
+  payrollOpeningBalancesFingerprint,
+  payrollYtdHistoryFingerprint,
   previewPayrollRun,
   taxYearFromCheckDate,
   toDraftPayload,
@@ -41,6 +43,7 @@ import { CheckDetail, ChecksTable, IssuesPanel, RunSummaryPanel } from "./RunPan
 import { parseSignedCents } from "./format";
 import {
   useApprovePayrollRun,
+  useDiscardPayrollRunDraft,
   usePayrollRun,
   usePayrollRunHistory,
   usePayrollRunTimeEntries,
@@ -73,6 +76,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const restaurantsQuery = useRestaurants();
   const saveDraft = useSavePayrollRunDraft();
   const approve = useApprovePayrollRun();
+  const discardDraft = useDiscardPayrollRunDraft();
 
   const restored = isRunInputsSnapshot(stored.data?.inputs) ? stored.data.inputs : null;
   const [periodStart, setPeriodStart] = useState(stored.data?.period_start.slice(0, 10) ?? restored?.periodStart ?? "");
@@ -105,6 +109,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const [computedFrom, setComputedFrom] = useState<PayrollCalculationSource | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
 
   const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd);
@@ -186,8 +191,22 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         reason: row.reason,
         restaurantId: row.restaurantId,
       })),
+      historyFingerprint: `${historyQuery.dataUpdatedAt}:${payrollYtdHistoryFingerprint(historyQuery.data ?? [])}`,
+      openingBalancesFingerprint: `${balancesQuery.dataUpdatedAt}:${payrollOpeningBalancesFingerprint(balancesQuery.data ?? [])}`,
     }),
-    [adjustments, checkDate, cloverCsv, hoursSource, periodEnd, periodStart, tips],
+    [
+      adjustments,
+      balancesQuery.data,
+      balancesQuery.dataUpdatedAt,
+      checkDate,
+      cloverCsv,
+      historyQuery.data,
+      historyQuery.dataUpdatedAt,
+      hoursSource,
+      periodEnd,
+      periodStart,
+      tips,
+    ],
   );
 
   useEffect(() => {
@@ -348,7 +367,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       return null;
     }
     if (payrollCalculationIsStale(computedFrom, calculationSource)) {
-      setFormError("Calculate again after changing the period, date, hours, tips, or adjustments");
+      setFormError("Calculate again after changing the period, date, hours, tips, adjustments, history, or opening balances");
       return null;
     }
     if (!settingsSnapshot) {
@@ -530,6 +549,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       ))}
       {saveDraft.error ? <p className="text-sm text-danger">{saveDraft.error.message}</p> : null}
       {approve.error ? <p className="text-sm text-danger">{approve.error.message}</p> : null}
+      {discardDraft.error ? <p className="text-sm text-danger">{discardDraft.error.message}</p> : null}
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={calculate} disabled={!prerequisitesReady}>
@@ -549,6 +569,15 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         <Button disabled={!approval.ok || saveDraft.isPending || approve.isPending} onClick={() => setConfirmApprove(true)}>
           Approve
         </Button>
+        {runId ? (
+          <Button
+            variant="danger"
+            disabled={discardDraft.isPending || saveDraft.isPending || approve.isPending}
+            onClick={() => setConfirmDiscard(true)}
+          >
+            Discard
+          </Button>
+        ) : null}
         {runId ? (
           <Link className="inline-flex items-center text-sm font-medium text-wine" to={`/payroll/runs/${runId}`}>
             View detail
@@ -593,11 +622,16 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
               disabled={saveDraft.isPending || approve.isPending}
               onClick={() => {
                 void (async () => {
-                  const id = await persist();
-                  if (!id) return;
-                  await approve.mutateAsync(id);
-                  setConfirmApprove(false);
-                  navigate(`/payroll/runs/${id}`);
+                  try {
+                    const id = await persist();
+                    if (!id) return;
+                    await approve.mutateAsync(id);
+                    setConfirmApprove(false);
+                    navigate(`/payroll/runs/${id}`);
+                  } catch (error) {
+                    setConfirmApprove(false);
+                    setFormError(error instanceof Error ? error.message : "Could not approve payroll run");
+                  }
                 })();
               }}
             >
@@ -609,6 +643,41 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         <p className="text-sm text-ink">
           The saved draft becomes the locked payroll run for check date {checkDate || "—"}.
         </p>
+      </Dialog>
+
+      <Dialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Discard this draft"
+        description="Discarding deletes this draft and its checks so it no longer blocks later approvals."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDiscard(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={!runId || discardDraft.isPending}
+              onClick={() => {
+                void (async () => {
+                  if (!runId) return;
+                  try {
+                    await discardDraft.mutateAsync(runId);
+                    setConfirmDiscard(false);
+                    navigate("/payroll/runs");
+                  } catch (error) {
+                    setConfirmDiscard(false);
+                    setFormError(error instanceof Error ? error.message : "Could not discard payroll draft");
+                  }
+                })();
+              }}
+            >
+              Discard
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">This cannot be undone.</p>
       </Dialog>
     </div>
   );

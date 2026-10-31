@@ -153,6 +153,21 @@ export function useApprovePayrollRun() {
   });
 }
 
+export function useDiscardPayrollRunDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      const { error } = await supabase.rpc("discard_payroll_run_draft", { target_run_id: runId });
+      if (error) throw toThrownError(error, "Could not discard payroll draft");
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_run"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
+    },
+  });
+}
+
 export function useVoidPayrollRun() {
   const qc = useQueryClient();
   return useMutation({

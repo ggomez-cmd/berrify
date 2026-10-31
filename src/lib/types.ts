@@ -582,6 +582,8 @@ export type PayrollRunRow = {
   voided_at: string | null;
   void_reason: string | null;
   notes: string | null;
+  saved_at: string;
+  opening_balance_row_count: number;
   created_at: string;
   updated_at: string;
 };

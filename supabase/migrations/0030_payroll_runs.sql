@@ -32,6 +32,12 @@ create table if not exists public.payroll_runs (
   voided_at timestamptz,
   void_reason text,
   notes text,
+  -- Last draft save. approve_payroll_run compares later history and opening-balance
+  -- timestamps against this. Opening-balance deletes are not visible via updated_at;
+  -- save stores opening_balance_row_count (balances + tax rows for the org tax year)
+  -- and approve rejects if that count changed.
+  saved_at timestamptz not null default now(),
+  opening_balance_row_count integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint payroll_runs_period_check check (period_end >= period_start),
@@ -350,6 +356,35 @@ grant select on table public.payroll_checks to authenticated;
 grant select on table public.payroll_check_earnings to authenticated;
 grant select on table public.payroll_check_taxes to authenticated;
 
+-- Balances + tax lines for the org tax year. Deletes leave no leftover updated_at,
+-- so approve_payroll_run rejects when this count differs from the value stored at save.
+create or replace function public.payroll_opening_balance_row_count(
+  target_org_id uuid,
+  target_tax_year integer
+)
+returns integer
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select
+    (
+      select count(*)::integer
+      from public.payroll_opening_balances
+      where org_id = target_org_id
+        and tax_year = target_tax_year
+    )
+    + (
+      select count(*)::integer
+      from public.payroll_opening_balance_taxes t
+      join public.payroll_opening_balances b
+        on b.id = t.opening_balance_id
+       and b.org_id = t.org_id
+      where b.org_id = target_org_id
+        and b.tax_year = target_tax_year
+    );
+$$;
+
 create or replace function public.save_payroll_run_draft(
   target_run_id uuid,
   run jsonb,
@@ -373,6 +408,8 @@ declare
   first_employee uuid;
   run_errors text[];
   run_warnings text[];
+  run_tax_year integer;
+  opening_count integer;
 begin
   if jsonb_typeof(run) is distinct from 'object' then
     raise exception 'run must be a json object';
@@ -436,6 +473,9 @@ begin
     resolved_id := null;
   end if;
 
+  run_tax_year := extract(year from (run->>'check_date')::date)::integer;
+  opening_count := public.payroll_opening_balance_row_count(resolved_org, run_tax_year);
+
   for check_row in select value from jsonb_array_elements(checks)
   loop
     select org_id into emp_org
@@ -470,7 +510,9 @@ begin
       cash_gross_cents,
       errors,
       warnings,
-      notes
+      notes,
+      saved_at,
+      opening_balance_row_count
     ) values (
       resolved_org,
       (run->>'period_start')::date,
@@ -489,7 +531,9 @@ begin
       coalesce((run->>'cash_gross_cents')::bigint, 0),
       run_errors,
       run_warnings,
-      nullif(run->>'notes', '')
+      nullif(run->>'notes', ''),
+      now(),
+      opening_count
     )
     returning id into resolved_id;
   else
@@ -510,7 +554,9 @@ begin
       cash_gross_cents = coalesce((run->>'cash_gross_cents')::bigint, 0),
       errors = run_errors,
       warnings = run_warnings,
-      notes = nullif(run->>'notes', '')
+      notes = nullif(run->>'notes', ''),
+      saved_at = now(),
+      opening_balance_row_count = opening_count
     where id = resolved_id
       and org_id = resolved_org
       and status = 'draft';
@@ -646,6 +692,8 @@ declare
   withholdings_sum bigint := 0;
   net_sum bigint := 0;
   employer_tax_total bigint := 0;
+  run_tax_year integer;
+  current_opening_count integer;
 begin
   select * into run_row
   from public.payroll_runs
@@ -656,12 +704,84 @@ begin
     raise exception 'payroll run not found';
   end if;
 
+  run_tax_year := extract(year from run_row.check_date)::integer;
+  perform pg_advisory_xact_lock(
+    hashtextextended(run_row.org_id::text || ':' || run_tax_year::text, 0)
+  );
+
   if not public.has_org_role(run_row.org_id, array['admin']) then
     raise exception 'not authorized';
   end if;
 
   if run_row.status is distinct from 'draft' then
     raise exception 'payroll run is not a draft';
+  end if;
+
+  if exists (
+    select 1
+    from public.payroll_runs other
+    where other.org_id = run_row.org_id
+      and other.id is distinct from run_row.id
+      and extract(year from other.check_date) = run_tax_year
+      and other.check_date > run_row.check_date
+      and other.status = 'approved'
+  ) then
+    raise exception 'a later run is already approved';
+  end if;
+
+  if exists (
+    select 1
+    from public.payroll_runs other
+    where other.org_id = run_row.org_id
+      and other.id is distinct from run_row.id
+      and extract(year from other.check_date) = run_tax_year
+      and other.check_date < run_row.check_date
+      and other.status = 'draft'
+  ) then
+    raise exception 'approve or discard earlier draft runs first';
+  end if;
+
+  if exists (
+    select 1
+    from public.payroll_runs other
+    where other.org_id = run_row.org_id
+      and other.id is distinct from run_row.id
+      and extract(year from other.check_date) = run_tax_year
+      and other.check_date < run_row.check_date
+      and (
+        (other.approved_at is not null and other.approved_at > run_row.saved_at)
+        or (other.voided_at is not null and other.voided_at > run_row.saved_at)
+      )
+  ) then
+    raise exception 'payroll run is stale: recalculate';
+  end if;
+
+  if exists (
+    select 1
+    from public.payroll_opening_balances b
+    where b.org_id = run_row.org_id
+      and b.tax_year = run_tax_year
+      and (b.updated_at > run_row.saved_at or b.created_at > run_row.saved_at)
+  ) then
+    raise exception 'payroll run is stale: recalculate';
+  end if;
+
+  if exists (
+    select 1
+    from public.payroll_opening_balance_taxes t
+    join public.payroll_opening_balances b
+      on b.id = t.opening_balance_id
+     and b.org_id = t.org_id
+    where b.org_id = run_row.org_id
+      and b.tax_year = run_tax_year
+      and (t.updated_at > run_row.saved_at or t.created_at > run_row.saved_at)
+  ) then
+    raise exception 'payroll run is stale: recalculate';
+  end if;
+
+  current_opening_count := public.payroll_opening_balance_row_count(run_row.org_id, run_tax_year);
+  if current_opening_count is distinct from run_row.opening_balance_row_count then
+    raise exception 'payroll run is stale: recalculate';
   end if;
 
   if coalesce(cardinality(run_row.errors), 0) > 0 then
@@ -773,6 +893,10 @@ begin
     raise exception 'payroll run not found';
   end if;
 
+  perform pg_advisory_xact_lock(
+    hashtextextended(run_row.org_id::text || ':' || extract(year from run_row.check_date)::text, 0)
+  );
+
   if not public.has_org_role(run_row.org_id, array['admin']) then
     raise exception 'not authorized';
   end if;
@@ -798,3 +922,43 @@ $$;
 
 revoke all on function public.void_payroll_run(uuid, text) from public, anon;
 grant execute on function public.void_payroll_run(uuid, text) to authenticated;
+
+create or replace function public.discard_payroll_run_draft(target_run_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  run_row public.payroll_runs;
+begin
+  select * into run_row
+  from public.payroll_runs
+  where id = target_run_id
+  for update;
+
+  if not found then
+    raise exception 'payroll run not found';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(run_row.org_id::text || ':' || extract(year from run_row.check_date)::text, 0)
+  );
+
+  if not public.has_org_role(run_row.org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  if run_row.status is distinct from 'draft' then
+    raise exception 'only a draft payroll run can be discarded';
+  end if;
+
+  delete from public.payroll_runs
+  where id = target_run_id
+    and org_id = run_row.org_id
+    and status = 'draft';
+end;
+$$;
+
+revoke all on function public.discard_payroll_run_draft(uuid) from public, anon;
+grant execute on function public.discard_payroll_run_draft(uuid) to authenticated;

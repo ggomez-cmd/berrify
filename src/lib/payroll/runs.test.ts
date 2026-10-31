@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeCheck, computePayrollRun } from "../payroll-engine";
+import { allocateLargestRemainder, computeCheck, computePayrollRun } from "../payroll-engine";
 import { amountOn, explicitEmployee } from "../payroll-engine/fixtures/helpers";
 import {
   FIXTURE_A_CHECK_DATE,
@@ -9,6 +9,7 @@ import {
 } from "../payroll-engine/fixtures/fixture-a";
 import { isoFromSeconds, utcSecondsFromZoned } from "../payroll-engine/hours/time";
 import type { WorkedShift } from "../payroll-engine/hours/types";
+import type { PayrollRunResult } from "../payroll-engine/types";
 import type {
   PayrollEmployeeProfileRow,
   PayrollEmployerSettingsRow,
@@ -20,6 +21,8 @@ import {
   buildRunInput,
   canApprove,
   payrollCalculationIsStale,
+  payrollOpeningBalancesFingerprint,
+  payrollYtdHistoryFingerprint,
   previewPayrollRun,
   resultFromStoredRun,
   toDraftPayload,
@@ -421,6 +424,8 @@ const source = (partial: Partial<PayrollCalculationSource> = {}): PayrollCalcula
   cloverCsv: "",
   tips: {},
   adjustments: [],
+  historyFingerprint: "history-0",
+  openingBalancesFingerprint: "opening-0",
   ...partial,
 });
 
@@ -448,6 +453,98 @@ describe("payrollCalculationIsStale", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("invalidates a calculated result after YTD history or opening balances change", () => {
+    const original = source();
+    expect(payrollCalculationIsStale(original, source({ ...original, historyFingerprint: "history-1" }))).toBe(true);
+    expect(
+      payrollCalculationIsStale(original, source({ ...original, openingBalancesFingerprint: "opening-1" })),
+    ).toBe(true);
+    expect(
+      payrollYtdHistoryFingerprint([
+        {
+          check_date: "2026-10-09",
+          status: "approved",
+          payroll_checks: [
+            {
+              employee_id: "E1",
+              gross_cents: 100_000,
+              payroll_check_taxes: [
+                {
+                  side: "employer",
+                  tax_code: "FED-FUT",
+                  taxable_cents: 100_000,
+                  amount_cents: 600,
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    ).not.toBe(
+      payrollYtdHistoryFingerprint([
+        {
+          check_date: "2026-10-09",
+          status: "approved",
+          payroll_checks: [
+            {
+              employee_id: "E1",
+              gross_cents: 100_000,
+              payroll_check_taxes: [
+                {
+                  side: "employer",
+                  tax_code: "FED-FUT",
+                  taxable_cents: 100_000,
+                  amount_cents: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    );
+    expect(
+      payrollOpeningBalancesFingerprint([
+        {
+          employee_id: "E1",
+          tax_year: 2026,
+          gross_cents: 650_000,
+          created_at: timestamps.created_at,
+          updated_at: timestamps.updated_at,
+          payroll_opening_balance_taxes: [
+            {
+              tax_code: "FED-FUT",
+              taxable_cents: 650_000,
+              withheld_cents: 0,
+              employer_cents: 3_900,
+              created_at: timestamps.created_at,
+              updated_at: timestamps.updated_at,
+            },
+          ],
+        },
+      ]),
+    ).not.toBe(
+      payrollOpeningBalancesFingerprint([
+        {
+          employee_id: "E1",
+          tax_year: 2026,
+          gross_cents: 650_000,
+          created_at: timestamps.created_at,
+          updated_at: "2026-10-23T12:00:00.000Z",
+          payroll_opening_balance_taxes: [
+            {
+              tax_code: "FED-FUT",
+              taxable_cents: 650_000,
+              withheld_cents: 0,
+              employer_cents: 3_900,
+              created_at: timestamps.created_at,
+              updated_at: timestamps.updated_at,
+            },
+          ],
+        },
+      ]),
+    );
   });
 });
 
@@ -493,6 +590,8 @@ function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithC
     voided_at: null,
     void_reason: null,
     notes: null,
+    saved_at: timestamps.updated_at,
+    opening_balance_row_count: 0,
     created_at: timestamps.created_at,
     updated_at: timestamps.updated_at,
     payroll_checks: [
@@ -580,5 +679,207 @@ describe("resultFromStoredRun", () => {
     expect(result.errors).toContain("Missing rate for employee E1 (Cook) on 2026-10-13");
     expect(result.warnings).toContain("Hours outside the period");
     expect(canApprove(result).ok).toBe(false);
+  });
+});
+
+function approvedLedgerFromResult(result: PayrollRunResult): PayrollRunWithChecks {
+  return storedRun({
+    status: "approved",
+    schedule_id: result.scheduleId,
+    check_date: result.checkDate,
+    gross_cents: result.payrollGrossCents,
+    employee_withholdings_cents: result.employeeDeductionCents,
+    net_cents: result.netPayCents,
+    employer_taxes_cents: result.employerTaxCents,
+    employer_cost_cents: result.employerCostCents,
+    cash_gross_cents: result.cashTotalCents,
+    errors: result.errors,
+    warnings: result.warnings,
+    payroll_checks: result.checks.map((check) => ({
+      id: `check-${check.employeeId}`,
+      org_id: "org-1",
+      run_id: "run-1",
+      employee_id: check.employeeId,
+      pay_type: check.payType,
+      gross_cents: check.grossCents,
+      deductions_cents: check.employeeDeductionCents,
+      net_cents: check.netCents,
+      employer_tax_cents: check.employerTaxCents,
+      closing_ytd: check.closingYtd,
+      created_at: timestamps.created_at,
+      updated_at: timestamps.updated_at,
+      payroll_check_earnings: check.earnings.map((line, index) => ({
+        id: `earn-${check.employeeId}-${index}`,
+        org_id: "org-1",
+        check_id: `check-${check.employeeId}`,
+        kind: line.kind,
+        restaurant_id: line.classId,
+        position: line.positionId,
+        workweek_id: line.workweekId,
+        hours_hundredths: line.hoursHundredths,
+        rate_cents: line.rateCents,
+        amount_cents: line.amountCents,
+        reason: line.reason,
+        created_at: timestamps.created_at,
+      })),
+      payroll_check_taxes: [
+        ...check.employeeWithholdings.map((line, index) => ({
+          id: `tax-ee-${check.employeeId}-${index}`,
+          org_id: "org-1",
+          check_id: `check-${check.employeeId}`,
+          side: "employee" as const,
+          tax_code: line.code,
+          taxable_cents: line.taxableCents,
+          amount_cents: line.amountCents,
+          created_at: timestamps.created_at,
+        })),
+        ...check.employerTaxes.map((line, index) => ({
+          id: `tax-er-${check.employeeId}-${index}`,
+          org_id: "org-1",
+          check_id: `check-${check.employeeId}`,
+          side: "employer" as const,
+          tax_code: line.code,
+          taxable_cents: line.taxableCents,
+          amount_cents: line.amountCents,
+          created_at: timestamps.created_at,
+        })),
+      ],
+    })),
+  });
+}
+
+function expectLedgerClassCostsMatchPreview(preview: PayrollRunResult) {
+  const ledger = resultFromStoredRun(approvedLedgerFromResult(preview));
+  expect(ledger.classCosts).toEqual(preview.classCosts);
+  expect(ledger.classCosts.reduce((sum, row) => sum + row.employerTaxCents, 0)).toBe(preview.employerTaxCents);
+  expect(ledger.employerTaxCents).toBe(preview.employerTaxCents);
+  expect(ledger.employerCostCents).toBe(preview.employerCostCents);
+}
+
+describe("stored class costs", () => {
+  it("keeps leftover cents when four $100.03 lines share one restaurant", () => {
+    const weights = [
+      { id: "north", weight: 10_003 },
+      { id: "north", weight: 10_003 },
+      { id: "north", weight: 10_003 },
+      { id: "north", weight: 10_003 },
+    ];
+    const preview = computePayrollRun({
+      checkDate: "2026-10-23",
+      settings: { sutRateBp: 540, swhMethod: "annualized", payFrequency: "biweekly" },
+      employees: [
+        {
+          employeeId: "E1",
+          payType: "payroll",
+          exemption: { personal: "none", annualExemptionOverrideCents: 0 },
+          earnings: weights.map((row) => ({ kind: "regular" as const, amountCents: row.weight, classId: row.id })),
+        },
+      ],
+    });
+    expect(preview.employerTaxCents).toBe(5_582);
+    expect(preview.employerCostCents).toBe(45_594);
+    expect(allocateLargestRemainder(preview.employerTaxCents, weights).get("north")).toBe(5_582);
+    expectLedgerClassCostsMatchPreview(preview);
+    const ledger = resultFromStoredRun(approvedLedgerFromResult(preview));
+    expect(ledger.classCosts).toEqual([{ classId: "north", grossCents: 40_012, employerTaxCents: 5_582, employerCostCents: 45_594 }]);
+  });
+
+  it("merges repeated restaurant IDs before handing out leftover cents", () => {
+    const weights = [
+      { id: "north", weight: 10_003 },
+      { id: "south", weight: 10_003 },
+      { id: "north", weight: 10_003 },
+      { id: "south", weight: 10_003 },
+    ];
+    const preview = computePayrollRun({
+      checkDate: "2026-10-23",
+      settings: { sutRateBp: 540, swhMethod: "annualized", payFrequency: "biweekly" },
+      employees: [
+        {
+          employeeId: "E1",
+          payType: "payroll",
+          exemption: { personal: "none", annualExemptionOverrideCents: 0 },
+          earnings: weights.map((row) => ({ kind: "regular" as const, amountCents: row.weight, classId: row.id })),
+        },
+      ],
+    });
+    const engine = allocateLargestRemainder(preview.employerTaxCents, weights);
+    expect((engine.get("north") ?? 0) + (engine.get("south") ?? 0)).toBe(preview.employerTaxCents);
+    expectLedgerClassCostsMatchPreview(preview);
+  });
+
+  it("uses largest remainder and id tie-break for unequal weights", () => {
+    const weights = [
+      { id: "north", weight: 100 },
+      { id: "south", weight: 200 },
+    ];
+    const engine = allocateLargestRemainder(100, weights);
+    expect(engine.get("north")).toBe(33);
+    expect(engine.get("south")).toBe(67);
+    const preview = computePayrollRun({
+      checkDate: "2026-10-23",
+      settings: { sutRateBp: 540, swhMethod: "annualized", payFrequency: "biweekly" },
+      employees: [
+        {
+          employeeId: "E1",
+          payType: "payroll",
+          exemption: { personal: "none", annualExemptionOverrideCents: 0 },
+          earnings: [
+            { kind: "regular", amountCents: 100_000, classId: "north" },
+            { kind: "regular", amountCents: 200_000, classId: "south" },
+          ],
+        },
+      ],
+    });
+    expectLedgerClassCostsMatchPreview(preview);
+  });
+
+  it("allocates a negative adjustment line with floor toward -infinity", () => {
+    const weights = [
+      { id: "north", weight: 20_000 },
+      { id: "south", weight: -333 },
+    ];
+    const preview = computePayrollRun({
+      checkDate: "2026-10-23",
+      settings: { sutRateBp: 540, swhMethod: "annualized", payFrequency: "biweekly" },
+      employees: [
+        {
+          employeeId: "E1",
+          payType: "payroll",
+          exemption: { personal: "none", annualExemptionOverrideCents: 0 },
+          earnings: [
+            { kind: "regular", amountCents: 20_000, classId: "north" },
+            { kind: "adjustment", amountCents: -333, classId: "south", reason: "correction" },
+          ],
+        },
+      ],
+    });
+    const engine = allocateLargestRemainder(preview.employerTaxCents, weights);
+    expect((engine.get("north") ?? 0) + (engine.get("south") ?? 0)).toBe(preview.employerTaxCents);
+    expect(engine.get("south")).toBeLessThan(0);
+    expectLedgerClassCostsMatchPreview(preview);
+  });
+
+  it("round-trips fixture A and a multi-restaurant run so per-business taxes sum to the run", () => {
+    const fixtureA = computePayrollRun({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      settings: FIXTURE_A_SETTINGS,
+      employees: fixtureAEmployees(),
+    });
+    expectLedgerClassCostsMatchPreview(fixtureA);
+
+    const multi = computePayrollRun({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      settings: FIXTURE_A_SETTINGS,
+      employees: fixtureAEmployees().map((employee, index) => ({
+        ...employee,
+        earnings: (employee.earnings ?? []).map((line) => ({
+          ...line,
+          classId: index % 2 === 0 ? "alpha" : "beta",
+        })),
+      })),
+    });
+    expect(multi.classCosts.map((row) => row.classId).sort()).toEqual(["alpha", "beta"]);
+    expectLedgerClassCostsMatchPreview(multi);
   });
 });

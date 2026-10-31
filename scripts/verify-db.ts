@@ -199,6 +199,7 @@ try {
       "save_payroll_run_draft",
       "approve_payroll_run",
       "void_payroll_run",
+      "discard_payroll_run_draft",
     ]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
@@ -231,6 +232,7 @@ try {
     "save_payroll_run_draft",
     "approve_payroll_run",
     "void_payroll_run",
+    "discard_payroll_run_draft",
   ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);

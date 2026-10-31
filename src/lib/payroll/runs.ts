@@ -1,4 +1,5 @@
 import {
+  allocateLargestRemainder,
   buildHourlyWeeks,
   computePayrollLiabilities,
   computePayrollRun,
@@ -322,7 +323,80 @@ export type PayrollCalculationSource = {
     reason: string;
     restaurantId: string;
   }>;
+  historyFingerprint: string;
+  openingBalancesFingerprint: string;
 };
+
+export function payrollYtdHistoryFingerprint(
+  runs: readonly {
+    check_date: string;
+    status: PayrollRunStatus;
+    payroll_checks?: readonly {
+      employee_id: string;
+      gross_cents: number;
+      payroll_check_taxes?: readonly {
+        side: "employee" | "employer";
+        tax_code: TaxCode;
+        taxable_cents: number;
+        amount_cents: number;
+      }[];
+    }[];
+  }[],
+): string {
+  return JSON.stringify(
+    [...runs]
+      .map((run) => ({
+        check_date: run.check_date,
+        status: run.status,
+        checks: [...(run.payroll_checks ?? [])]
+          .map((check) => ({
+            employee_id: check.employee_id,
+            gross_cents: check.gross_cents,
+            taxes: [...(check.payroll_check_taxes ?? [])]
+              .map((tax) => ({
+                side: tax.side,
+                tax_code: tax.tax_code,
+                taxable_cents: tax.taxable_cents,
+                amount_cents: tax.amount_cents,
+              }))
+              .sort((a, b) => `${a.side}:${a.tax_code}`.localeCompare(`${b.side}:${b.tax_code}`)),
+          }))
+          .sort((a, b) => a.employee_id.localeCompare(b.employee_id)),
+      }))
+      .sort((a, b) => a.check_date.localeCompare(b.check_date) || a.status.localeCompare(b.status)),
+  );
+}
+
+export function payrollOpeningBalancesFingerprint(
+  rows: readonly (Pick<PayrollOpeningBalanceWithTaxes, "employee_id" | "tax_year" | "gross_cents" | "updated_at" | "created_at"> & {
+    payroll_opening_balance_taxes?: readonly Pick<
+      PayrollOpeningBalanceTaxRow,
+      "tax_code" | "taxable_cents" | "withheld_cents" | "employer_cents" | "updated_at" | "created_at"
+    >[];
+  })[],
+): string {
+  return JSON.stringify(
+    [...rows]
+      .map((row) => ({
+        employee_id: row.employee_id,
+        tax_year: row.tax_year,
+        gross_cents: row.gross_cents,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        taxes: [...(row.payroll_opening_balance_taxes ?? [])]
+          .map((tax) => ({
+            tax_code: tax.tax_code,
+            taxable_cents: tax.taxable_cents,
+            withheld_cents: tax.withheld_cents,
+            employer_cents: tax.employer_cents,
+            created_at: tax.created_at,
+            updated_at: tax.updated_at,
+          }))
+          .sort((a, b) => a.tax_code.localeCompare(b.tax_code)),
+      }))
+      .sort((a, b) => a.employee_id.localeCompare(b.employee_id) || a.tax_year - b.tax_year),
+  );
+}
 
 export function payrollCalculationSourceKey(source: PayrollCalculationSource): string {
   return JSON.stringify({
@@ -338,6 +412,8 @@ export function payrollCalculationSourceKey(source: PayrollCalculationSource): s
       reason: row.reason,
       restaurantId: row.restaurantId,
     })),
+    historyFingerprint: source.historyFingerprint,
+    openingBalancesFingerprint: source.openingBalancesFingerprint,
   });
 }
 
@@ -793,22 +869,7 @@ function storedClassCosts(checks: PayrollCheck[]): ClassCost[] {
   const totals = new Map<string, { grossCents: number; employerTaxCents: number }>();
   for (const check of checks) {
     const weights = check.earnings.map((line) => ({ id: line.classId ?? "", weight: line.amountCents }));
-    const allocated = new Map<string, number>();
-    const weightSum = weights.reduce((sum, row) => sum + row.weight, 0);
-    let used = 0;
-    if (weightSum > 0 && check.employerTaxCents !== 0) {
-      for (const row of [...weights].sort((a, b) => a.id.localeCompare(b.id))) {
-        const share = Math.trunc((check.employerTaxCents * row.weight) / weightSum);
-        allocated.set(row.id, (allocated.get(row.id) ?? 0) + share);
-        used += share;
-      }
-    }
-    let leftover = check.employerTaxCents - used;
-    for (const row of [...allocated.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      if (leftover === 0) break;
-      allocated.set(row[0], row[1] + 1);
-      leftover -= 1;
-    }
+    const allocated = allocateLargestRemainder(check.employerTaxCents, weights);
     const classGross = new Map<string, number>();
     for (const line of check.earnings) {
       const id = line.classId ?? "";
