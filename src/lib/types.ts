@@ -575,6 +575,8 @@ export type PayrollRunRow = {
   employer_taxes_cents: number;
   employer_cost_cents: number;
   cash_gross_cents: number;
+  errors: string[];
+  warnings: string[];
   approved_by: string | null;
   approved_at: string | null;
   voided_at: string | null;

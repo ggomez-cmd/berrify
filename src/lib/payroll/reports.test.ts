@@ -7,7 +7,7 @@ import {
   fixtureAEmployees,
 } from "../payroll-engine/fixtures/fixture-a";
 import { emptyYtd } from "../payroll-engine/fixtures/helpers";
-import { costPerBusinessCsv, registerCsv, summarizeRun } from "./reports";
+import { costPerBusinessCsv, neutralizeCsvFormula, registerCsv, summarizeRun } from "./reports";
 import { ytdFromHistory } from "./runs";
 
 function fixtureARun() {
@@ -94,5 +94,34 @@ describe("Alchavo 2026-10-23 run reports", () => {
     expect(register).toContain("A01,payroll,68.16,");
     const cost = costPerBusinessCsv(run, { "": "Unassigned" });
     expect(cost.startsWith("Business,Pay type,Gross,")).toBe(true);
+  });
+
+  it("neutralizes CSV formula injection in text cells and quotes names", () => {
+    expect(neutralizeCsvFormula("=1+1")).toBe("'=1+1");
+    expect(neutralizeCsvFormula(" +SUM(A1)")).toBe("' +SUM(A1)");
+    expect(neutralizeCsvFormula("@x")).toBe("'@x");
+    const run = fixtureARun();
+    const first = run.checks[0];
+    if (!first) throw new Error("missing check");
+    const poisoned = {
+      ...run,
+      checks: [
+        { ...first, employeeId: "=1+1" },
+        { ...first, employeeId: " +SUM(A1)" },
+        { ...first, employeeId: "@x" },
+        { ...first, employeeId: 'Garcia, "Ana"' },
+      ],
+    };
+    const csv = registerCsv(poisoned, {
+      "=1+1": "=1+1",
+      " +SUM(A1)": " +SUM(A1)",
+      "@x": "@x",
+      'Garcia, "Ana"': 'Garcia, "Ana"',
+    });
+    expect(csv).toContain("'=1+1,payroll,");
+    expect(csv).toContain("' +SUM(A1),payroll,");
+    expect(csv).toContain("'@x,payroll,");
+    expect(csv).toContain('"Garcia, ""Ana""",payroll,');
+    expect(csv).toMatch(/payroll,\d+\.\d{2},/);
   });
 });

@@ -214,6 +214,8 @@ export type PayrollRunDraftPayload = {
   employer_taxes_cents: number;
   employer_cost_cents: number;
   cash_gross_cents: number;
+  errors: string[];
+  warnings: string[];
   notes: string | null;
 };
 
@@ -301,6 +303,71 @@ function mealWarning(flag: { employeeId: string; shiftId: string; code: string }
     default:
       return `Employee ${flag.employeeId} shift ${flag.shiftId}: ${flag.code}`;
   }
+}
+
+export function scopedEnginePositionKey(positionKey: string, classId: string): string {
+  return `${positionKey}::${classId}`;
+}
+
+export type PayrollCalculationSource = {
+  periodStart: string;
+  periodEnd: string;
+  checkDate: string;
+  hoursSource: HoursSource;
+  cloverCsv: string;
+  tips: Readonly<Record<string, string>>;
+  adjustments: ReadonlyArray<{
+    employeeId: string;
+    dollars: string;
+    reason: string;
+    restaurantId: string;
+  }>;
+};
+
+export function payrollCalculationSourceKey(source: PayrollCalculationSource): string {
+  return JSON.stringify({
+    periodStart: source.periodStart,
+    periodEnd: source.periodEnd,
+    checkDate: source.checkDate,
+    hoursSource: source.hoursSource,
+    cloverCsv: source.cloverCsv,
+    tips: Object.entries(source.tips).sort(([left], [right]) => left.localeCompare(right)),
+    adjustments: source.adjustments.map((row) => ({
+      employeeId: row.employeeId,
+      dollars: row.dollars,
+      reason: row.reason,
+      restaurantId: row.restaurantId,
+    })),
+  });
+}
+
+export function payrollCalculationIsStale(
+  computedFrom: PayrollCalculationSource | null,
+  current: PayrollCalculationSource,
+): boolean {
+  if (!computedFrom) return true;
+  return payrollCalculationSourceKey(computedFrom) !== payrollCalculationSourceKey(current);
+}
+
+function uniqueMessages(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    next.push(value);
+  }
+  return next;
+}
+
+function storedRunMessages(run: Pick<PayrollRunWithChecks, "errors" | "warnings">): {
+  errors: string[];
+  warnings: string[];
+} {
+  return {
+    errors: Array.isArray(run.errors) ? [...run.errors] : [],
+    warnings: Array.isArray(run.warnings) ? [...run.warnings] : [],
+  };
 }
 
 function adjustmentEarnings(line: ManualAdjustmentInput): EarningsLineInput {
@@ -411,8 +478,11 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   warnings.push(...split.warnings);
 
   const positionRates: PositionRate[] = [];
+  const engineShifts: WorkedShift[] = [];
   const missingRateKeys = new Set<string>();
   for (const shift of shifts) {
+    const scopedKey = scopedEnginePositionKey(shift.positionKey, shift.classId);
+    engineShifts.push({ ...shift, positionKey: scopedKey, classId: shift.classId });
     const started = instantSeconds(shift.startedAt);
     if (started === null) continue;
     const onDate = ymdInTimeZone(started, timeZone);
@@ -423,7 +493,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
       onDate,
     });
     if (!found) {
-      const key = `${shift.employeeId}\t${shift.positionKey}\t${onDate}`;
+      const key = `${shift.employeeId}\t${shift.positionKey}\t${shift.classId}\t${onDate}`;
       if (!missingRateKeys.has(key)) {
         errors.push(`Missing rate for employee ${shift.employeeId} (${shift.positionKey}) on ${onDate}`);
         missingRateKeys.add(key);
@@ -432,14 +502,14 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     }
     positionRates.push({
       employeeId: shift.employeeId,
-      positionKey: shift.positionKey,
+      positionKey: scopedKey,
       rateCents: found.rate_cents,
       effectiveFrom: found.effective_from.slice(0, 10),
     });
   }
 
   const hourly = buildHourlyWeeks({
-    shifts,
+    shifts: engineShifts,
     allocations: split.allocations,
     rates: positionRates,
     tips,
@@ -578,6 +648,8 @@ export function toDraftPayload(
       employer_taxes_cents: result.employerTaxCents,
       employer_cost_cents: result.employerCostCents,
       cash_gross_cents: result.cashTotalCents,
+      errors: result.errors,
+      warnings: result.warnings,
       notes: meta.notes ?? null,
     },
     checks: result.checks.map((check) => ({
@@ -759,15 +831,8 @@ function storedClassCosts(checks: PayrollCheck[]): ClassCost[] {
     }));
 }
 
-export function resultFromStoredRun(run: PayrollRunWithChecks): PayrollRunResult {
-  if (isRunInputsSnapshot(run.inputs)) {
-    return computePayrollRun({
-      checkDate: run.inputs.checkDate,
-      settings: run.inputs.settings,
-      employees: run.inputs.employees,
-    });
-  }
-
+function resultFromLedger(run: PayrollRunWithChecks): PayrollRunResult {
+  const stored = storedRunMessages(run);
   const checks: PayrollCheck[] = [...run.payroll_checks]
     .sort((a, b) => a.employee_id.localeCompare(b.employee_id))
     .map((row) => {
@@ -824,7 +889,24 @@ export function resultFromStoredRun(run: PayrollRunWithChecks): PayrollRunResult
     cashTotalCents: run.cash_gross_cents,
     classCosts: storedClassCosts(payrollChecks),
     cashClassCosts: storedClassCosts(cashChecks),
-    warnings: [],
-    errors: [],
+    warnings: stored.warnings,
+    errors: stored.errors,
   };
+}
+
+export function resultFromStoredRun(run: PayrollRunWithChecks): PayrollRunResult {
+  if (run.status === "draft" && isRunInputsSnapshot(run.inputs)) {
+    const recomputed = computePayrollRun({
+      checkDate: run.inputs.checkDate,
+      settings: run.inputs.settings,
+      employees: run.inputs.employees,
+    });
+    const stored = storedRunMessages(run);
+    return {
+      ...recomputed,
+      errors: uniqueMessages([...stored.errors, ...recomputed.errors]),
+      warnings: uniqueMessages([...stored.warnings, ...recomputed.warnings]),
+    };
+  }
+  return resultFromLedger(run);
 }

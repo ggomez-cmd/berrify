@@ -69,9 +69,28 @@ const TAX_LABELS: Record<TaxCode, string> = {
   SWH: "Income tax",
 };
 
-function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+function csvFormulaStart(value: string): boolean {
+  let index = 0;
+  while (index < value.length) {
+    const code = value.charCodeAt(index);
+    const tabOrCr = code === 9 || code === 13;
+    const leadingSpaceOrControl = !tabOrCr && (code <= 32 || code === 127);
+    if (!leadingSpaceOrControl) break;
+    index += 1;
+  }
+  const first = value.charCodeAt(index);
+  return first === 9 || first === 13 || first === 61 || first === 43 || first === 45 || first === 64;
+}
+
+export function neutralizeCsvFormula(value: string): string {
+  if (csvFormulaStart(value)) return `'${value}`;
   return value;
+}
+
+function csvEscape(value: string): string {
+  const safe = neutralizeCsvFormula(value);
+  if (/[",\r\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
 }
 
 export function centsToCsvAmount(cents: number): string {

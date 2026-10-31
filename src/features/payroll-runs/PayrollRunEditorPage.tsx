@@ -14,11 +14,13 @@ import {
   historyFromStoredRuns,
   isRunInputsSnapshot,
   openingBalancesForYtd,
+  payrollCalculationIsStale,
   previewPayrollRun,
   taxYearFromCheckDate,
   toDraftPayload,
   ytdFromHistory,
   type ManualAdjustmentInput,
+  type PayrollCalculationSource,
   type PayrollRunInputsSnapshot,
   type PayrollRunSettingsSnapshot,
 } from "../../lib/payroll/runs";
@@ -100,6 +102,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const [result, setResult] = useState<PayrollRunResult | null>(null);
   const [builtInputs, setBuiltInputs] = useState<PayrollRunInputsSnapshot | null>(null);
   const [settingsSnapshot, setSettingsSnapshot] = useState<PayrollRunSettingsSnapshot | null>(null);
+  const [computedFrom, setComputedFrom] = useState<PayrollCalculationSource | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
@@ -169,6 +172,61 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
 
   const tippedProfiles = (profilesQuery.data ?? []).filter((row) => row.is_tipped);
 
+  const calculationSource = useMemo<PayrollCalculationSource>(
+    () => ({
+      periodStart,
+      periodEnd,
+      checkDate,
+      hoursSource,
+      cloverCsv,
+      tips,
+      adjustments: adjustments.map((row) => ({
+        employeeId: row.employeeId,
+        dollars: row.dollars,
+        reason: row.reason,
+        restaurantId: row.restaurantId,
+      })),
+    }),
+    [adjustments, checkDate, cloverCsv, hoursSource, periodEnd, periodStart, tips],
+  );
+
+  useEffect(() => {
+    if (!payrollCalculationIsStale(computedFrom, calculationSource)) return;
+    setResult(null);
+    setBuiltInputs(null);
+    setSettingsSnapshot(null);
+    setComputedFrom(null);
+  }, [calculationSource, computedFrom]);
+
+  const sharedPrerequisites = [
+    settingsQuery,
+    profilesQuery,
+    ratesQuery,
+    balancesQuery,
+    historyQuery,
+    restaurantsQuery,
+    employeesQuery,
+  ];
+  const hoursPrerequisites = (() => {
+    switch (hoursSource) {
+      case "time_clock":
+        return [timeQuery];
+      case "clover":
+        return [cloverQuery];
+      default: {
+        const exhaustive: never = hoursSource;
+        throw new Error(`Unhandled hours source: ${exhaustive}`);
+      }
+    }
+  })();
+  const prerequisiteQueries = [...sharedPrerequisites, ...hoursPrerequisites];
+  const prerequisitesReady =
+    prerequisiteQueries.every((query) => query.isSuccess) &&
+    (hoursSource !== "clover" || cloverCsv.trim().length > 0);
+  const prerequisiteErrors = prerequisiteQueries.flatMap((query) =>
+    query.error ? [query.error.message] : [],
+  );
+
   if (!isAdmin(role)) {
     return (
       <p className="text-sm text-muted">
@@ -204,8 +262,26 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
 
   const calculate = () => {
     setFormError(null);
+    if (!prerequisitesReady) {
+      setFormError("Wait for payroll setup, history, and hours to finish loading");
+      return;
+    }
     if (!periodStart || !periodEnd || !checkDate) {
       setFormError("Period start, period end, and check date are required");
+      return;
+    }
+    if (!settingsQuery.data || !profilesQuery.data || !ratesQuery.data || !balancesQuery.data || !historyQuery.data) {
+      setFormError("Payroll setup and history must finish loading before calculate");
+      return;
+    }
+    const clockHours = hoursSource === "time_clock" ? timeQuery.data : undefined;
+    const cloverNames = hoursSource === "clover" ? cloverQuery.data : undefined;
+    if (hoursSource === "time_clock" && !clockHours) {
+      setFormError("Time Clock punches must finish loading before calculate");
+      return;
+    }
+    if (hoursSource === "clover" && !cloverNames) {
+      setFormError("Clover name mappings must finish loading before calculate");
       return;
     }
     const tipLines = Object.entries(tips).flatMap(([key, raw]) => {
@@ -232,25 +308,20 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       });
     }
     const year = taxYearFromCheckDate(checkDate);
-    const history = historyFromStoredRuns(historyQuery.data ?? [], checkDate, year);
-    const ytd = ytdFromHistory(
-      openingBalancesForYtd(balancesQuery.data ?? []),
-      history.taxes,
-      history.gross,
-      year,
-    );
+    const history = historyFromStoredRuns(historyQuery.data, checkDate, year);
+    const ytd = ytdFromHistory(openingBalancesForYtd(balancesQuery.data), history.taxes, history.gross, year);
     const built = buildRunInput({
       checkDate,
       periodStart,
       periodEnd,
       hoursSource,
       workweekStartTime: org?.workweek_start_time ?? "00:00",
-      employerSettingsRows: settingsQuery.data ?? [],
-      profiles: profilesQuery.data ?? [],
-      payRates: ratesQuery.data ?? [],
-      cloverNames: cloverQuery.data ?? [],
-      timeEntries: hoursSource === "time_clock" ? (timeQuery.data?.timeEntries ?? []) : [],
-      timeBreaks: hoursSource === "time_clock" ? (timeQuery.data?.timeBreaks ?? []) : [],
+      employerSettingsRows: settingsQuery.data,
+      profiles: profilesQuery.data,
+      payRates: ratesQuery.data,
+      cloverNames,
+      timeEntries: clockHours?.timeEntries,
+      timeBreaks: clockHours?.timeBreaks,
       cloverCsv: hoursSource === "clover" ? cloverCsv : undefined,
       tips: tipLines,
       adjustments: adjustmentLines,
@@ -259,6 +330,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
     const preview = previewPayrollRun(built);
     setResult(preview);
     setSettingsSnapshot(built.settingsSnapshot);
+    setComputedFrom(calculationSource);
     setBuiltInputs({
       ...built.input,
       hoursSource,
@@ -271,8 +343,12 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   };
 
   const persist = async (): Promise<string | null> => {
-    if (!result || !builtInputs) {
+    if (!result || !builtInputs || !computedFrom) {
       setFormError("Calculate the run before saving");
+      return null;
+    }
+    if (payrollCalculationIsStale(computedFrom, calculationSource)) {
+      setFormError("Calculate again after changing the period, date, hours, tips, or adjustments");
       return null;
     }
     if (!settingsSnapshot) {
@@ -280,9 +356,9 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       return null;
     }
     const payload = toDraftPayload(result, {
-      periodStart,
-      periodEnd,
-      hoursSource,
+      periodStart: builtInputs.periodStart,
+      periodEnd: builtInputs.periodEnd,
+      hoursSource: builtInputs.hoursSource,
       settings: settingsSnapshot,
       inputs: builtInputs,
       notes,
@@ -447,11 +523,16 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       </Card>
 
       {formError ? <p className="text-sm text-danger">{formError}</p> : null}
+      {prerequisiteErrors.map((message) => (
+        <p key={message} className="text-sm text-danger">
+          {message}
+        </p>
+      ))}
       {saveDraft.error ? <p className="text-sm text-danger">{saveDraft.error.message}</p> : null}
       {approve.error ? <p className="text-sm text-danger">{approve.error.message}</p> : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={calculate} disabled={hoursSource === "time_clock" && timeQuery.isLoading}>
+        <Button onClick={calculate} disabled={!prerequisitesReady}>
           Calculate
         </Button>
         <Button
