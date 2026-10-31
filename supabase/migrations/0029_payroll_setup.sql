@@ -429,6 +429,11 @@ begin
       raise exception 'employee does not belong to organization';
     end if;
 
+    -- An omitted taxes key must not silently clear stored tax lines; send [] to clear.
+    if jsonb_typeof(balance_row->'taxes') is distinct from 'array' then
+      raise exception 'taxes must be a json array';
+    end if;
+
     insert into public.payroll_opening_balances (
       org_id,
       employee_id,
@@ -450,11 +455,7 @@ begin
     where opening_balance_id = balance_id
       and org_id = target_org_id;
 
-    if jsonb_typeof(coalesce(balance_row->'taxes', '[]'::jsonb)) is distinct from 'array' then
-      raise exception 'taxes must be a json array';
-    end if;
-
-    for tax_row in select value from jsonb_array_elements(coalesce(balance_row->'taxes', '[]'::jsonb))
+    for tax_row in select value from jsonb_array_elements(balance_row->'taxes')
     loop
       insert into public.payroll_opening_balance_taxes (
         org_id,
@@ -467,9 +468,9 @@ begin
         target_org_id,
         balance_id,
         tax_row->>'tax_code',
-        coalesce((tax_row->>'taxable_cents')::bigint, 0),
-        coalesce((tax_row->>'withheld_cents')::bigint, 0),
-        coalesce((tax_row->>'employer_cents')::bigint, 0)
+        (tax_row->>'taxable_cents')::bigint,
+        (tax_row->>'withheld_cents')::bigint,
+        (tax_row->>'employer_cents')::bigint
       );
     end loop;
   end loop;

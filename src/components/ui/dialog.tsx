@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
-type DialogSize = "md" | "lg";
+type DialogSize = "md" | "lg" | "xl" | "2xl";
 
 function dialogWidthClass(size: DialogSize): string {
   switch (size) {
@@ -12,6 +12,10 @@ function dialogWidthClass(size: DialogSize): string {
       return "w-dialog";
     case "lg":
       return "w-dialog-lg";
+    case "xl":
+      return "w-dialog-xl";
+    case "2xl":
+      return "w-dialog-2xl";
     default: {
       const exhaustive: never = size;
       throw new Error(`Unhandled dialog size: ${exhaustive}`);
