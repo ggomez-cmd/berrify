@@ -4,6 +4,21 @@ import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
+type DialogSize = "md" | "lg";
+
+function dialogWidthClass(size: DialogSize): string {
+  switch (size) {
+    case "md":
+      return "w-dialog";
+    case "lg":
+      return "w-dialog-lg";
+    default: {
+      const exhaustive: never = size;
+      throw new Error(`Unhandled dialog size: ${exhaustive}`);
+    }
+  }
+}
+
 type DialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -12,6 +27,7 @@ type DialogProps = {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  size?: DialogSize;
 };
 
 export function Dialog({
@@ -22,6 +38,7 @@ export function Dialog({
   children,
   footer,
   className,
+  size = "md",
 }: DialogProps) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -29,7 +46,8 @@ export function Dialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-navy/40 backdrop-blur-sm" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 max-h-[min(92vh,calc(100dvh-1.5rem))] w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-xl focus:outline-none sm:p-6",
+            "fixed left-1/2 top-1/2 z-50 max-h-[min(92vh,calc(100dvh-1.5rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-xl focus:outline-none sm:p-6",
+            dialogWidthClass(size),
             className,
           )}
         >

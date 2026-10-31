@@ -6,12 +6,17 @@ import { Input, Select, Textarea } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { STATIONS } from "../../lib/constants";
-import { centsToDollarInput, dollarsToCents } from "../../lib/payroll/setup";
+import {
+  buildPayrollEmployeeSetupProfile,
+  buildPayrollPayRateSetupPayloads,
+  centsToDollarInput,
+  type PayrollEmployeeSetupDraft,
+} from "../../lib/payroll/setup";
 import type { EmployeePayType, PersonalExemptionStatus } from "../../lib/payroll-engine/types";
-import type { Employee, PayrollEmployeeProfileRow, PayrollPayRateRow, Station } from "../../lib/types";
+import type { Employee, PayrollEmployeeProfileRow, PayrollPayRateRow } from "../../lib/types";
 import { useEmployees } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
-import { usePayrollEmployeeProfiles, usePayrollPayRates, useReplacePayrollPayRates, useUpsertPayrollEmployeeProfile } from "./hooks";
+import { usePayrollEmployeeProfiles, usePayrollPayRates, useSavePayrollEmployeeSetup } from "./hooks";
 
 const EXEMPTIONS: Array<{ id: PersonalExemptionStatus; label: string }> = [
   { id: "none", label: "None" },
@@ -29,29 +34,7 @@ type RateDraft = {
   effective_from: string;
 };
 
-type ProfileForm = {
-  employee_number: string;
-  pay_type: EmployeePayType;
-  is_tipped: boolean;
-  hire_date: string;
-  daily_ot_multiplier_ppm: string;
-  weekly_ot_multiplier_ppm: string;
-  default_restaurant_id: string;
-  salary_dollars: string;
-  personal_exemption: PersonalExemptionStatus;
-  veteran: boolean;
-  dependents: string;
-  reduced_dependents: string;
-  deduction_dollars: string;
-  annual_exemption_override_dollars: string;
-  biweekly_exemption_override_dollars: string;
-  young_worker_exempt: boolean;
-  additional_withholding_dollars: string;
-  r41_effective_date: string;
-  notes: string;
-};
-
-const emptyProfile: ProfileForm = {
+const emptyProfile: PayrollEmployeeSetupDraft = {
   employee_number: "",
   pay_type: "payroll",
   is_tipped: false,
@@ -73,38 +56,25 @@ const emptyProfile: ProfileForm = {
   notes: "",
 };
 
-function optionalCents(raw: string): { ok: true; value: number | null } | { ok: false } {
-  if (!raw.trim()) return { ok: true, value: null };
-  const cents = dollarsToCents(raw);
-  if (cents === null) return { ok: false };
-  return { ok: true, value: cents };
-}
-
-function requiredCents(raw: string, fallback = 0): { ok: true; value: number } | { ok: false } {
-  if (!raw.trim()) return { ok: true, value: fallback };
-  const cents = dollarsToCents(raw);
-  if (cents === null) return { ok: false };
-  return { ok: true, value: cents };
-}
-
 export function EmployeesPanel() {
   const { data: employees = [], isLoading, error } = useEmployees();
-  const { data: profiles = [] } = usePayrollEmployeeProfiles();
-  const { data: rates = [] } = usePayrollPayRates();
+  const profilesQuery = usePayrollEmployeeProfiles();
+  const ratesQuery = usePayrollPayRates();
   const { data: restaurants = [] } = useRestaurants();
   const [editing, setEditing] = useState<Employee | null>(null);
+  const setupReady = profilesQuery.isSuccess && ratesQuery.isSuccess;
 
   const profileByEmployee = useMemo(() => {
     const map = new Map<string, PayrollEmployeeProfileRow>();
-    for (const row of profiles) map.set(row.employee_id, row);
+    for (const row of profilesQuery.data ?? []) map.set(row.employee_id, row);
     return map;
-  }, [profiles]);
+  }, [profilesQuery.data]);
 
   const rateCountByEmployee = useMemo(() => {
     const map = new Map<string, number>();
-    for (const row of rates) map.set(row.employee_id, (map.get(row.employee_id) ?? 0) + 1);
+    for (const row of ratesQuery.data ?? []) map.set(row.employee_id, (map.get(row.employee_id) ?? 0) + 1);
     return map;
-  }, [rates]);
+  }, [ratesQuery.data]);
 
   const restaurantName = useMemo(() => {
     const map = new Map(restaurants.map((row) => [row.id, row.name]));
@@ -116,7 +86,12 @@ export function EmployeesPanel() {
   return (
     <div>
       {error ? <p className="mb-3 text-sm text-danger">{error.message}</p> : null}
+      {profilesQuery.error ? <p className="mb-3 text-sm text-danger">{profilesQuery.error.message}</p> : null}
+      {ratesQuery.error ? <p className="mb-3 text-sm text-danger">{ratesQuery.error.message}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading employees…</p> : null}
+      {!setupReady && !profilesQuery.error && !ratesQuery.error ? (
+        <p className="mb-3 text-sm text-muted">Loading payroll profiles and rates…</p>
+      ) : null}
       {!isLoading ? (
         <Table>
           <THead>
@@ -156,10 +131,10 @@ export function EmployeesPanel() {
                       )}
                     </Td>
                     <Td>{restaurantName(profile?.default_restaurant_id)}</Td>
-                    <Td>{rateCountByEmployee.get(employee.id) ?? 0}</Td>
+                    <Td>{setupReady ? (rateCountByEmployee.get(employee.id) ?? 0) : "—"}</Td>
                     <Td>
                       <div className="flex justify-end">
-                        <Button variant="subtle" onClick={() => setEditing(employee)}>
+                        <Button variant="subtle" disabled={!setupReady} onClick={() => setEditing(employee)}>
                           Edit
                         </Button>
                       </div>
@@ -174,7 +149,15 @@ export function EmployeesPanel() {
       <EmployeePayrollDialog
         employee={editing}
         profile={editing ? (profileByEmployee.get(editing.id) ?? null) : null}
-        rates={editing ? rates.filter((row) => row.employee_id === editing.id) : []}
+        rates={
+          editing && ratesQuery.isSuccess
+            ? (ratesQuery.data ?? []).filter((row) => row.employee_id === editing.id)
+            : []
+        }
+        setupReady={setupReady}
+        loadError={
+          profilesQuery.error?.message ?? ratesQuery.error?.message ?? null
+        }
         onOpenChange={(open) => {
           if (!open) setEditing(null);
         }}
@@ -187,22 +170,29 @@ function EmployeePayrollDialog({
   employee,
   profile,
   rates,
+  setupReady,
+  loadError,
   onOpenChange,
 }: {
   employee: Employee | null;
   profile: PayrollEmployeeProfileRow | null;
   rates: PayrollPayRateRow[];
+  setupReady: boolean;
+  loadError: string | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const { data: restaurants = [] } = useRestaurants();
-  const upsert = useUpsertPayrollEmployeeProfile();
-  const replaceRates = useReplacePayrollPayRates();
-  const [values, setValues] = useState<ProfileForm>(emptyProfile);
+  const save = useSavePayrollEmployeeSetup();
+  const [values, setValues] = useState<PayrollEmployeeSetupDraft>(emptyProfile);
   const [rateDrafts, setRateDrafts] = useState<RateDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [ratesDraftReady, setRatesDraftReady] = useState(false);
 
   useEffect(() => {
-    if (!employee) return;
+    if (!employee || !setupReady) {
+      setRatesDraftReady(false);
+      return;
+    }
     if (profile) {
       setValues({
         employee_number: profile.employee_number ?? "",
@@ -244,69 +234,31 @@ function EmployeePayrollDialog({
       })),
     );
     setFormError(null);
-  }, [employee, profile, rates]);
+    setRatesDraftReady(true);
+  }, [employee, profile, rates, setupReady]);
+
+  const canEdit = setupReady && ratesDraftReady;
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!employee) return;
+    if (!employee || !canEdit) return;
     setFormError(null);
-    const salary = optionalCents(values.salary_dollars);
-    const deduction = requiredCents(values.deduction_dollars);
-    const additional = requiredCents(values.additional_withholding_dollars);
-    const annual = optionalCents(values.annual_exemption_override_dollars);
-    const biweekly = optionalCents(values.biweekly_exemption_override_dollars);
-    if (!salary.ok || !deduction.ok || !additional.ok || !annual.ok || !biweekly.ok) {
-      setFormError("Dollar amounts must look like 1,234.56 with no negatives");
+    const profilePayload = buildPayrollEmployeeSetupProfile(values);
+    if (!profilePayload.ok) {
+      setFormError(profilePayload.error);
       return;
     }
-    const dailyOt = Number(values.daily_ot_multiplier_ppm);
-    const weeklyOt = Number(values.weekly_ot_multiplier_ppm);
-    if (!Number.isSafeInteger(dailyOt) || !Number.isSafeInteger(weeklyOt)) {
-      setFormError("OT multipliers must be integer parts per million (1500000 is 1.5×)");
+    const ratePayload = buildPayrollPayRateSetupPayloads(rateDrafts);
+    if (!ratePayload.ok) {
+      setFormError(ratePayload.error);
       return;
-    }
-    const parsedRates: Array<Pick<PayrollPayRateRow, "restaurant_id" | "position" | "rate_cents" | "effective_from">> =
-      [];
-    for (const draft of rateDrafts) {
-      const rateCents = dollarsToCents(draft.rate_dollars);
-      if (rateCents === null || !draft.effective_from) {
-        setFormError("Each pay rate needs an effective date and a non-negative dollar amount");
-        return;
-      }
-      parsedRates.push({
-        restaurant_id: draft.restaurant_id || null,
-        position: (draft.position || null) as Station | null,
-        rate_cents: rateCents,
-        effective_from: draft.effective_from,
-      });
     }
     try {
-      await upsert.mutateAsync({
-        id: profile?.id,
-        values: {
-          employee_id: employee.id,
-          employee_number: values.employee_number.trim() || null,
-          pay_type: values.pay_type,
-          is_tipped: values.is_tipped,
-          hire_date: values.hire_date || null,
-          daily_ot_multiplier_ppm: dailyOt,
-          weekly_ot_multiplier_ppm: weeklyOt,
-          default_restaurant_id: values.default_restaurant_id || null,
-          salary_cents: salary.value,
-          personal_exemption: values.personal_exemption,
-          veteran: values.veteran,
-          dependents: Number(values.dependents) || 0,
-          reduced_dependents: Number(values.reduced_dependents) || 0,
-          deduction_cents: deduction.value,
-          annual_exemption_override_cents: annual.value,
-          biweekly_exemption_override_cents: biweekly.value,
-          young_worker_exempt: values.young_worker_exempt,
-          additional_withholding_cents: additional.value,
-          r41_effective_date: values.r41_effective_date || null,
-          notes: values.notes.trim() || null,
-        },
+      await save.mutateAsync({
+        employeeId: employee.id,
+        profile: profilePayload.value,
+        rates: ratePayload.value,
       });
-      await replaceRates.mutateAsync({ employeeId: employee.id, rates: parsedRates });
       onOpenChange(false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not save payroll profile");
@@ -319,8 +271,9 @@ function EmployeePayrollDialog({
       onOpenChange={onOpenChange}
       title={employee ? `Payroll profile · ${employee.full_name}` : "Payroll profile"}
       description="Withholding and dated rates feed the payroll engine. Leave salary blank for hourly."
-      className="w-[min(720px,calc(100vw-1.5rem))]"
+      size="lg"
     >
+      <fieldset disabled={!canEdit} className="contents">
       <form id="payroll-profile-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
         <Field label="Employee number" htmlFor="pay-number">
           <Input
@@ -617,18 +570,16 @@ function EmployeePayrollDialog({
           </tbody>
         </Table>
       </div>
+      </fieldset>
 
+      {loadError ? <p className="mt-3 text-sm text-danger">{loadError}</p> : null}
       {formError ? <p className="mt-3 text-sm text-danger">{formError}</p> : null}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button
-          type="submit"
-          form="payroll-profile-form"
-          disabled={upsert.isPending || replaceRates.isPending}
-        >
-          {upsert.isPending || replaceRates.isPending ? "Saving…" : "Save profile"}
+        <Button type="submit" form="payroll-profile-form" disabled={!canEdit || save.isPending}>
+          {save.isPending ? "Saving…" : "Save profile"}
         </Button>
       </div>
     </Dialog>

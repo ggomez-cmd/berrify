@@ -1,5 +1,13 @@
 import type { DailyWindowMode } from "../payroll-engine/hours/types";
-import type { Cents, EmployeePayInput, EmployerSettings, OpeningYtd, TaxCode } from "../payroll-engine/types";
+import type {
+  Cents,
+  EmployeePayInput,
+  EmployeePayType,
+  EmployerSettings,
+  OpeningYtd,
+  PersonalExemptionStatus,
+  TaxCode,
+} from "../payroll-engine/types";
 import { ALL_TAX_CODES } from "../payroll-engine/types";
 import type {
   PayrollCloverNameRow,
@@ -61,6 +69,101 @@ export type CloverParseMaps = {
   ignore: string[];
 };
 
+/** jsonb `profile` for `save_payroll_employee_setup`. Keys must match the SQL. */
+export type PayrollEmployeeSetupProfilePayload = {
+  employee_number: string | null;
+  pay_type: EmployeePayType;
+  is_tipped: boolean;
+  hire_date: string | null;
+  daily_ot_multiplier_ppm: number;
+  weekly_ot_multiplier_ppm: number;
+  default_restaurant_id: string | null;
+  salary_cents: number | null;
+  personal_exemption: PersonalExemptionStatus;
+  veteran: boolean;
+  dependents: number;
+  reduced_dependents: number;
+  deduction_cents: number;
+  annual_exemption_override_cents: number | null;
+  biweekly_exemption_override_cents: number | null;
+  young_worker_exempt: boolean;
+  additional_withholding_cents: number;
+  r41_effective_date: string | null;
+  notes: string | null;
+};
+
+/** jsonb array element for `save_payroll_employee_setup` `rates`. Keys must match the SQL. */
+export type PayrollPayRateSetupPayload = {
+  restaurant_id: string | null;
+  position: string | null;
+  rate_cents: number;
+  effective_from: string;
+};
+
+/** jsonb array element for `import_payroll_opening_balances` `balances`. Keys must match the SQL. */
+export type OpeningBalanceImportPayload = {
+  employee_id: string;
+  tax_year: number;
+  source: string;
+  gross_cents: number;
+  taxes: Array<{
+    tax_code: TaxCode;
+    taxable_cents: number;
+    withheld_cents: number;
+    employer_cents: number;
+  }>;
+};
+
+export type PayrollEmployeeSetupDraft = {
+  employee_number: string;
+  pay_type: EmployeePayType;
+  is_tipped: boolean;
+  hire_date: string;
+  daily_ot_multiplier_ppm: string;
+  weekly_ot_multiplier_ppm: string;
+  default_restaurant_id: string;
+  salary_dollars: string;
+  personal_exemption: PersonalExemptionStatus;
+  veteran: boolean;
+  dependents: string;
+  reduced_dependents: string;
+  deduction_dollars: string;
+  annual_exemption_override_dollars: string;
+  biweekly_exemption_override_dollars: string;
+  young_worker_exempt: boolean;
+  additional_withholding_dollars: string;
+  r41_effective_date: string;
+  notes: string;
+};
+
+export type PayrollPayRateSetupDraft = {
+  restaurant_id: string;
+  position: string;
+  rate_dollars: string;
+  effective_from: string;
+};
+
+export type PayrollSetupBuildResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export const DUPLICATE_PAY_RATE_ERROR =
+  "Each rate needs a unique restaurant, position, and effective date. Two rows cannot share that combination.";
+
+export function payRateMatchKey(rate: Pick<PayrollPayRateSetupPayload, "restaurant_id" | "position" | "effective_from">): string {
+  return `${rate.restaurant_id ?? ""}\t${rate.position ?? ""}\t${rate.effective_from}`;
+}
+
+export function findDuplicatePayRateError(
+  rates: ReadonlyArray<Pick<PayrollPayRateSetupPayload, "restaurant_id" | "position" | "effective_from">>,
+): string | null {
+  const seen = new Set<string>();
+  for (const rate of rates) {
+    const key = payRateMatchKey(rate);
+    if (seen.has(key)) return DUPLICATE_PAY_RATE_ERROR;
+    seen.add(key);
+  }
+  return null;
+}
+
 const TAX_CODE_SET = new Set<string>(ALL_TAX_CODES);
 
 export const OPENING_BALANCES_CSV_HEADER = [
@@ -105,6 +208,105 @@ export function centsToDollarInput(cents: number): string {
 
 export function basisPointsToPercentInput(bp: number): string {
   return `${Math.trunc(bp / 100)}.${String(bp % 100).padStart(2, "0")}`;
+}
+
+function optionalCents(raw: string): { ok: true; value: number | null } | { ok: false } {
+  if (!raw.trim()) return { ok: true, value: null };
+  const cents = dollarsToCents(raw);
+  if (cents === null) return { ok: false };
+  return { ok: true, value: cents };
+}
+
+function requiredCents(raw: string, fallback = 0): { ok: true; value: number } | { ok: false } {
+  if (!raw.trim()) return { ok: true, value: fallback };
+  const cents = dollarsToCents(raw);
+  if (cents === null) return { ok: false };
+  return { ok: true, value: cents };
+}
+
+export function buildPayrollEmployeeSetupProfile(
+  draft: PayrollEmployeeSetupDraft,
+): PayrollSetupBuildResult<PayrollEmployeeSetupProfilePayload> {
+  const salary = optionalCents(draft.salary_dollars);
+  const deduction = requiredCents(draft.deduction_dollars);
+  const additional = requiredCents(draft.additional_withholding_dollars);
+  const annual = optionalCents(draft.annual_exemption_override_dollars);
+  const biweekly = optionalCents(draft.biweekly_exemption_override_dollars);
+  if (!salary.ok || !deduction.ok || !additional.ok || !annual.ok || !biweekly.ok) {
+    return { ok: false, error: "Dollar amounts must look like 1,234.56 with no negatives" };
+  }
+  const dailyOt = Number(draft.daily_ot_multiplier_ppm);
+  const weeklyOt = Number(draft.weekly_ot_multiplier_ppm);
+  if (!Number.isSafeInteger(dailyOt) || !Number.isSafeInteger(weeklyOt)) {
+    return { ok: false, error: "OT multipliers must be integer parts per million (1500000 is 1.5×)" };
+  }
+  return {
+    ok: true,
+    value: {
+      employee_number: draft.employee_number.trim() || null,
+      pay_type: draft.pay_type,
+      is_tipped: draft.is_tipped,
+      hire_date: draft.hire_date || null,
+      daily_ot_multiplier_ppm: dailyOt,
+      weekly_ot_multiplier_ppm: weeklyOt,
+      default_restaurant_id: draft.default_restaurant_id || null,
+      salary_cents: salary.value,
+      personal_exemption: draft.personal_exemption,
+      veteran: draft.veteran,
+      dependents: Number(draft.dependents) || 0,
+      reduced_dependents: Number(draft.reduced_dependents) || 0,
+      deduction_cents: deduction.value,
+      annual_exemption_override_cents: annual.value,
+      biweekly_exemption_override_cents: biweekly.value,
+      young_worker_exempt: draft.young_worker_exempt,
+      additional_withholding_cents: additional.value,
+      r41_effective_date: draft.r41_effective_date || null,
+      notes: draft.notes.trim() || null,
+    },
+  };
+}
+
+export function buildPayrollPayRateSetupPayloads(
+  drafts: readonly PayrollPayRateSetupDraft[],
+): PayrollSetupBuildResult<PayrollPayRateSetupPayload[]> {
+  const rates: PayrollPayRateSetupPayload[] = [];
+  for (const draft of drafts) {
+    const rateCents = dollarsToCents(draft.rate_dollars);
+    if (rateCents === null || !draft.effective_from) {
+      return { ok: false, error: "Each pay rate needs an effective date and a non-negative dollar amount" };
+    }
+    rates.push({
+      restaurant_id: draft.restaurant_id || null,
+      position: draft.position || null,
+      rate_cents: rateCents,
+      effective_from: draft.effective_from,
+    });
+  }
+  const duplicate = findDuplicatePayRateError(rates);
+  if (duplicate) return { ok: false, error: duplicate };
+  return { ok: true, value: rates };
+}
+
+export function toOpeningBalanceImportPayloads(
+  rows: readonly OpeningBalanceImportRow[],
+): OpeningBalanceImportPayload[] {
+  return rows.map((row) => {
+    if (!row.employeeId) {
+      throw new Error(`Missing employee for ${row.employeeNumber}`);
+    }
+    return {
+      employee_id: row.employeeId,
+      tax_year: row.taxYear,
+      source: row.source,
+      gross_cents: row.grossCents,
+      taxes: row.taxes.map((tax) => ({
+        tax_code: tax.taxCode,
+        taxable_cents: tax.taxableCents,
+        withheld_cents: tax.withheldCents,
+        employer_cents: tax.employerCents,
+      })),
+    };
+  });
 }
 
 function asYmd(value: string): string {

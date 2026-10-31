@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   basisPointsToPercentInput,
+  buildPayrollEmployeeSetupProfile,
+  buildPayrollPayRateSetupPayloads,
   centsToDollarInput,
   cloverMappingFrom,
   dollarsToCents,
+  DUPLICATE_PAY_RATE_ERROR,
   employeePayBase,
   employerSettingsFor,
+  findDuplicatePayRateError,
   OPENING_BALANCES_CSV_HEADER,
   parseOpeningBalancesCsv,
   percentToBasisPoints,
   rateFor,
+  toOpeningBalanceImportPayloads,
   type PayrollCloverNameRow,
   type PayrollEmployeeProfileRow,
+  type PayrollEmployeeSetupDraft,
   type PayrollEmployerSettingsRow,
   type PayrollOpeningBalanceRow,
   type PayrollOpeningBalanceTaxRow,
@@ -407,5 +413,130 @@ describe("parseOpeningBalancesCsv", () => {
     );
     expect(data.rows).toHaveLength(1);
     expect(data.rows[0]?.grossCents).toBe(1000);
+  });
+});
+
+describe("findDuplicatePayRateError", () => {
+  it("treats null restaurant and position as the same match key as empty", () => {
+    expect(
+      findDuplicatePayRateError([
+        { restaurant_id: null, position: null, effective_from: "2026-01-01" },
+        { restaurant_id: null, position: null, effective_from: "2026-01-01" },
+      ]),
+    ).toBe(DUPLICATE_PAY_RATE_ERROR);
+    expect(
+      findDuplicatePayRateError([
+        { restaurant_id: "rest-harbor", position: "Cook", effective_from: "2026-01-01" },
+        { restaurant_id: "rest-harbor", position: "Cook", effective_from: "2026-06-01" },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("setup RPC payload builders", () => {
+  const draft: PayrollEmployeeSetupDraft = {
+    employee_number: " E-100 ",
+    pay_type: "payroll",
+    is_tipped: true,
+    hire_date: "2024-03-01",
+    daily_ot_multiplier_ppm: "1500000",
+    weekly_ot_multiplier_ppm: "1500000",
+    default_restaurant_id: "rest-harbor",
+    salary_dollars: "",
+    personal_exemption: "single",
+    veteran: false,
+    dependents: "1",
+    reduced_dependents: "0",
+    deduction_dollars: "500.00",
+    annual_exemption_override_dollars: "",
+    biweekly_exemption_override_dollars: "",
+    young_worker_exempt: false,
+    additional_withholding_dollars: "25.00",
+    r41_effective_date: "2026-01-15",
+    notes: "  night  ",
+  };
+
+  it("builds the employee setup jsonb with the SQL keys", () => {
+    const result = buildPayrollEmployeeSetupProfile(draft);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        employee_number: "E-100",
+        pay_type: "payroll",
+        is_tipped: true,
+        hire_date: "2024-03-01",
+        daily_ot_multiplier_ppm: 1500000,
+        weekly_ot_multiplier_ppm: 1500000,
+        default_restaurant_id: "rest-harbor",
+        salary_cents: null,
+        personal_exemption: "single",
+        veteran: false,
+        dependents: 1,
+        reduced_dependents: 0,
+        deduction_cents: 50000,
+        annual_exemption_override_cents: null,
+        biweekly_exemption_override_cents: null,
+        young_worker_exempt: false,
+        additional_withholding_cents: 2500,
+        r41_effective_date: "2026-01-15",
+        notes: "night",
+      },
+    });
+  });
+
+  it("rejects invalid dollars and duplicate restaurant/position/effective_from rates", () => {
+    expect(buildPayrollEmployeeSetupProfile({ ...draft, salary_dollars: "-10.00" })).toEqual({
+      ok: false,
+      error: "Dollar amounts must look like 1,234.56 with no negatives",
+    });
+    expect(
+      buildPayrollPayRateSetupPayloads([
+        { restaurant_id: "rest-harbor", position: "Cook", rate_dollars: "12.00", effective_from: "2026-01-01" },
+        { restaurant_id: "rest-harbor", position: "Cook", rate_dollars: "13.00", effective_from: "2026-01-01" },
+      ]),
+    ).toEqual({ ok: false, error: DUPLICATE_PAY_RATE_ERROR });
+    expect(
+      buildPayrollPayRateSetupPayloads([
+        { restaurant_id: "", position: "", rate_dollars: "12.00", effective_from: "2026-01-01" },
+      ]),
+    ).toEqual({
+      ok: true,
+      value: [{ restaurant_id: null, position: null, rate_cents: 1200, effective_from: "2026-01-01" }],
+    });
+  });
+
+  it("maps opening-balance import rows onto the SQL jsonb keys", () => {
+    expect(
+      toOpeningBalanceImportPayloads([
+        {
+          employeeNumber: "E-100",
+          employeeId: "emp-jordan",
+          taxYear: 2026,
+          source: "Predecessor LLC",
+          grossCents: 123456,
+          taxes: [{ taxCode: "SWH", taxableCents: 1000, withheldCents: 40, employerCents: 0 }],
+        },
+      ]),
+    ).toEqual([
+      {
+        employee_id: "emp-jordan",
+        tax_year: 2026,
+        source: "Predecessor LLC",
+        gross_cents: 123456,
+        taxes: [{ tax_code: "SWH", taxable_cents: 1000, withheld_cents: 40, employer_cents: 0 }],
+      },
+    ]);
+    expect(() =>
+      toOpeningBalanceImportPayloads([
+        {
+          employeeNumber: "E-404",
+          employeeId: null,
+          taxYear: 2026,
+          source: "Predecessor LLC",
+          grossCents: 100,
+          taxes: [],
+        },
+      ]),
+    ).toThrow("Missing employee for E-404");
   });
 });

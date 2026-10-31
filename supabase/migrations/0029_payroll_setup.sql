@@ -259,3 +259,222 @@ grant select, insert, update, delete on public.payroll_pay_rates to authenticate
 grant select, insert, update, delete on public.payroll_opening_balances to authenticated;
 grant select, insert, update, delete on public.payroll_opening_balance_taxes to authenticated;
 grant select, insert, update, delete on public.payroll_clover_names to authenticated;
+
+-- Atomic profile + rate replace. org_id comes from the employee row, never jsonb.
+-- jsonb keys match PayrollEmployeeSetupProfilePayload and PayrollPayRateSetupPayload.
+create or replace function public.save_payroll_employee_setup(
+  target_employee_id uuid,
+  profile jsonb,
+  rates jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  emp public.employees;
+  rate_row jsonb;
+begin
+  select * into emp
+  from public.employees
+  where id = target_employee_id;
+
+  if not found then
+    raise exception 'employee not found';
+  end if;
+
+  if not public.has_org_role(emp.org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  if jsonb_typeof(profile) is distinct from 'object' then
+    raise exception 'profile must be a json object';
+  end if;
+
+  if jsonb_typeof(rates) is distinct from 'array' then
+    raise exception 'rates must be a json array';
+  end if;
+
+  insert into public.payroll_employee_profiles (
+    org_id,
+    employee_id,
+    employee_number,
+    pay_type,
+    is_tipped,
+    hire_date,
+    daily_ot_multiplier_ppm,
+    weekly_ot_multiplier_ppm,
+    default_restaurant_id,
+    salary_cents,
+    personal_exemption,
+    veteran,
+    dependents,
+    reduced_dependents,
+    deduction_cents,
+    annual_exemption_override_cents,
+    biweekly_exemption_override_cents,
+    young_worker_exempt,
+    additional_withholding_cents,
+    r41_effective_date,
+    notes
+  ) values (
+    emp.org_id,
+    target_employee_id,
+    nullif(profile->>'employee_number', ''),
+    profile->>'pay_type',
+    (profile->>'is_tipped')::boolean,
+    nullif(profile->>'hire_date', '')::date,
+    (profile->>'daily_ot_multiplier_ppm')::integer,
+    (profile->>'weekly_ot_multiplier_ppm')::integer,
+    nullif(profile->>'default_restaurant_id', '')::uuid,
+    (profile->>'salary_cents')::bigint,
+    profile->>'personal_exemption',
+    (profile->>'veteran')::boolean,
+    (profile->>'dependents')::integer,
+    (profile->>'reduced_dependents')::integer,
+    (profile->>'deduction_cents')::bigint,
+    (profile->>'annual_exemption_override_cents')::bigint,
+    (profile->>'biweekly_exemption_override_cents')::bigint,
+    (profile->>'young_worker_exempt')::boolean,
+    (profile->>'additional_withholding_cents')::bigint,
+    nullif(profile->>'r41_effective_date', '')::date,
+    nullif(profile->>'notes', '')
+  )
+  on conflict (employee_id) do update set
+    employee_number = excluded.employee_number,
+    pay_type = excluded.pay_type,
+    is_tipped = excluded.is_tipped,
+    hire_date = excluded.hire_date,
+    daily_ot_multiplier_ppm = excluded.daily_ot_multiplier_ppm,
+    weekly_ot_multiplier_ppm = excluded.weekly_ot_multiplier_ppm,
+    default_restaurant_id = excluded.default_restaurant_id,
+    salary_cents = excluded.salary_cents,
+    personal_exemption = excluded.personal_exemption,
+    veteran = excluded.veteran,
+    dependents = excluded.dependents,
+    reduced_dependents = excluded.reduced_dependents,
+    deduction_cents = excluded.deduction_cents,
+    annual_exemption_override_cents = excluded.annual_exemption_override_cents,
+    biweekly_exemption_override_cents = excluded.biweekly_exemption_override_cents,
+    young_worker_exempt = excluded.young_worker_exempt,
+    additional_withholding_cents = excluded.additional_withholding_cents,
+    r41_effective_date = excluded.r41_effective_date,
+    notes = excluded.notes;
+
+  delete from public.payroll_pay_rates
+  where employee_id = target_employee_id
+    and org_id = emp.org_id;
+
+  for rate_row in select value from jsonb_array_elements(rates)
+  loop
+    insert into public.payroll_pay_rates (
+      org_id,
+      employee_id,
+      restaurant_id,
+      position,
+      rate_cents,
+      effective_from
+    ) values (
+      emp.org_id,
+      target_employee_id,
+      nullif(rate_row->>'restaurant_id', '')::uuid,
+      nullif(rate_row->>'position', ''),
+      (rate_row->>'rate_cents')::bigint,
+      (rate_row->>'effective_from')::date
+    );
+  end loop;
+end;
+$$;
+
+revoke all on function public.save_payroll_employee_setup(uuid, jsonb, jsonb) from public, anon;
+grant execute on function public.save_payroll_employee_setup(uuid, jsonb, jsonb) to authenticated;
+
+-- Atomic opening-balance import. Every employee_id must belong to target_org_id.
+-- jsonb keys match OpeningBalanceImportPayload.
+create or replace function public.import_payroll_opening_balances(
+  target_org_id uuid,
+  balances jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  balance_row jsonb;
+  tax_row jsonb;
+  emp_org uuid;
+  balance_id uuid;
+begin
+  if not public.has_org_role(target_org_id, array['admin']) then
+    raise exception 'not authorized';
+  end if;
+
+  if jsonb_typeof(balances) is distinct from 'array' then
+    raise exception 'balances must be a json array';
+  end if;
+
+  for balance_row in select value from jsonb_array_elements(balances)
+  loop
+    select org_id into emp_org
+    from public.employees
+    where id = (balance_row->>'employee_id')::uuid;
+
+    if not found then
+      raise exception 'employee not found';
+    end if;
+
+    if emp_org is distinct from target_org_id then
+      raise exception 'employee does not belong to organization';
+    end if;
+
+    insert into public.payroll_opening_balances (
+      org_id,
+      employee_id,
+      tax_year,
+      source,
+      gross_cents
+    ) values (
+      target_org_id,
+      (balance_row->>'employee_id')::uuid,
+      (balance_row->>'tax_year')::integer,
+      balance_row->>'source',
+      (balance_row->>'gross_cents')::bigint
+    )
+    on conflict (employee_id, tax_year, source) do update
+      set gross_cents = excluded.gross_cents
+    returning id into balance_id;
+
+    delete from public.payroll_opening_balance_taxes
+    where opening_balance_id = balance_id
+      and org_id = target_org_id;
+
+    if jsonb_typeof(coalesce(balance_row->'taxes', '[]'::jsonb)) is distinct from 'array' then
+      raise exception 'taxes must be a json array';
+    end if;
+
+    for tax_row in select value from jsonb_array_elements(coalesce(balance_row->'taxes', '[]'::jsonb))
+    loop
+      insert into public.payroll_opening_balance_taxes (
+        org_id,
+        opening_balance_id,
+        tax_code,
+        taxable_cents,
+        withheld_cents,
+        employer_cents
+      ) values (
+        target_org_id,
+        balance_id,
+        tax_row->>'tax_code',
+        coalesce((tax_row->>'taxable_cents')::bigint, 0),
+        coalesce((tax_row->>'withheld_cents')::bigint, 0),
+        coalesce((tax_row->>'employer_cents')::bigint, 0)
+      );
+    end loop;
+  end loop;
+end;
+$$;
+
+revoke all on function public.import_payroll_opening_balances(uuid, jsonb) from public, anon;
+grant execute on function public.import_payroll_opening_balances(uuid, jsonb) to authenticated;
