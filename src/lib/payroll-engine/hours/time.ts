@@ -66,18 +66,29 @@ export function isoFromSeconds(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
 }
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = formatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    formatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 export function zonedParts(seconds: number, timeZone: string): ZonedParts {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(seconds * 1000));
+  const parts = zonedFormatter(timeZone).formatToParts(new Date(seconds * 1000));
   const read = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   const weekday = read("weekday");
   const dow = WEEKDAY_INDEX[weekday];
@@ -136,13 +147,22 @@ function compareLocal(shown: ZonedParts, input: ResolveZonedInput): number {
   return shown.second - input.second;
 }
 
+function zoneOffsetSeconds(seconds: number, timeZone: string): number {
+  const local = zonedParts(seconds, timeZone);
+  return (
+    Math.floor(Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) / 1000) -
+    seconds
+  );
+}
+
 function matchingZonedInstants(input: ResolveZonedInput): number[] {
   const targetUtc = Math.floor(
     Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, input.second) / 1000,
   );
   const found = new Set<number>();
-  for (let offset = -14 * 3600; offset <= 14 * 3600; offset += 1800) {
-    const guess = targetUtc - offset;
+  // Any instant showing this wall time uses one of the zone's offsets within a day of it.
+  for (const probe of [targetUtc - 86_400, targetUtc, targetUtc + 86_400]) {
+    const guess = targetUtc - zoneOffsetSeconds(probe, input.timeZone);
     if (sameLocal(zonedParts(guess, input.timeZone), input)) found.add(guess);
   }
   return [...found].sort((a, b) => a - b);
