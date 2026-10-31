@@ -208,17 +208,19 @@ function placeTimeOnShift(
   start: number,
   end: number,
   timeZone: string,
-): number | null {
+): { seconds: number; ambiguous: boolean } | null {
+  const placed = (resolved: { seconds: number | null; ambiguous: boolean }) =>
+    resolved.seconds === null ? null : { seconds: resolved.seconds, ambiguous: resolved.ambiguous };
   const onIn = resolveLocalSeconds(inYmd, time, timeZone);
   if (onIn.seconds === null) return null;
-  if (onIn.seconds >= start && onIn.seconds <= end) return onIn.seconds;
+  if (onIn.seconds >= start && onIn.seconds <= end) return placed(onIn);
   if (inYmd !== outYmd) {
     const onOut = resolveLocalSeconds(outYmd, time, timeZone);
     if (onOut.seconds === null) return null;
-    if (onOut.seconds >= start && onOut.seconds <= end) return onOut.seconds;
+    if (onOut.seconds >= start && onOut.seconds <= end) return placed(onOut);
   }
-  if (onIn.seconds >= start) return onIn.seconds;
-  return resolveLocalSeconds(outYmd, time, timeZone).seconds;
+  if (onIn.seconds >= start) return placed(onIn);
+  return placed(resolveLocalSeconds(outYmd, time, timeZone));
 }
 
 type ColumnMap = {
@@ -393,8 +395,13 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
             errors.push(`Clover row for ${name} has a break without Paid/Unpaid`);
             breakError = true;
           }
-          const breakStart = placeTimeOnShift(breakStartHms, inDate, outDate, start, end, input.timeZone);
-          let breakEnd = placeTimeOnShift(breakEndHms, inDate, outDate, start, end, input.timeZone);
+          const placedStart = placeTimeOnShift(breakStartHms, inDate, outDate, start, end, input.timeZone);
+          const placedEnd = placeTimeOnShift(breakEndHms, inDate, outDate, start, end, input.timeZone);
+          if (placedStart?.ambiguous || placedEnd?.ambiguous) {
+            warnings.push(`Clover row for ${name} uses the first occurrence of an ambiguous local break time`);
+          }
+          const breakStart = placedStart?.seconds ?? null;
+          let breakEnd = placedEnd?.seconds ?? null;
           if (breakStart === null || breakEnd === null) {
             errors.push(`Clover row for ${name} has a nonexistent local break time`);
             breakError = true;

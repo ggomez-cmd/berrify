@@ -150,7 +150,10 @@ export function buildHourlyWeeks(input: {
     buckets.set(key, existing);
   }
 
-  for (const tip of input.tips ?? []) {
+  if ((input.tips ?? []).length > 0 && allowedWorkweeks === null) {
+    errors.push("Tips need the run's workweeks: pass period or allowedWorkweekIds");
+  }
+  for (const tip of allowedWorkweeks === null ? [] : input.tips ?? []) {
     if (tip.tipsCents < 0) {
       errors.push(`Employee ${tip.employeeId} has negative tips on workweek ${tip.workweekId}`);
       continue;

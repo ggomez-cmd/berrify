@@ -169,19 +169,12 @@ function matchingZonedInstants(input: ResolveZonedInput): number[] {
 }
 
 function firstInstantAfterGap(input: ResolveZonedInput): number {
-  const ymd = ymdString(input.year, input.month, input.day);
-  const dayStart = utcSecondsFromZoned({
-    year: input.year,
-    month: input.month,
-    day: input.day,
-    hour: 0,
-    minute: 0,
-    second: 0,
-    timeZone: input.timeZone,
-  });
-  const nextDay = localMidnightSeconds(addCalendarDays(ymd, 1), input.timeZone);
-  let lo = dayStart;
-  let hi = nextDay;
+  // Real UTC offsets stay within ±14 h, so ±26 h around the naive instant brackets the gap.
+  const targetUtc = Math.floor(
+    Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, input.second) / 1000,
+  );
+  let lo = targetUtc - 26 * 3600;
+  let hi = targetUtc + 26 * 3600;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     if (compareLocal(zonedParts(mid, input.timeZone), input) >= 0) hi = mid;
@@ -239,15 +232,22 @@ function workweekBoundarySeconds(
 }
 
 export function localMidnightSeconds(ymd: string, timeZone: string): number {
-  return utcSecondsFromZoned({
-    year: Number(ymd.slice(0, 4)),
-    month: Number(ymd.slice(5, 7)),
-    day: Number(ymd.slice(8, 10)),
-    hour: 0,
-    minute: 0,
-    second: 0,
-    timeZone,
-  });
+  const resolved = resolveZonedInstant(
+    {
+      year: Number(ymd.slice(0, 4)),
+      month: Number(ymd.slice(5, 7)),
+      day: Number(ymd.slice(8, 10)),
+      hour: 0,
+      minute: 0,
+      second: 0,
+      timeZone,
+    },
+    { onNonexistent: "after_gap" },
+  );
+  if (resolved.seconds === null) {
+    throw new Error(`Could not resolve local midnight ${ymd} in ${timeZone}`);
+  }
+  return resolved.seconds;
 }
 
 export function nextLocalMidnightSeconds(seconds: number, timeZone: string): number {

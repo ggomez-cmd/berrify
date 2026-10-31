@@ -301,6 +301,7 @@ describe("buildHourlyWeeks", () => {
       timeZone: TZ,
       rates: [{ employeeId: "E1", positionKey: "main", rateCents: 1100, effectiveFrom: "2026-01-01" }],
       tips: [{ employeeId: "E1", workweekId: "2026-09-27", tipsCents: 2500 }],
+      allowedWorkweekIds: ["2026-09-27"],
     });
     expect(tipsOnly.errors).toEqual([]);
     expect(tipsOnly.weeks.get("E1")).toEqual([
