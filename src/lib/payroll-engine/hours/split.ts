@@ -116,12 +116,20 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
   }
 
   const valid: PreparedShift[] = [];
+  const seenIds = new Set<string>();
+  const duplicateIds = new Set<string>();
   for (const shift of shifts) {
+    if (seenIds.has(shift.id)) duplicateIds.add(shift.id);
+    seenIds.add(shift.id);
     if (!validateShift(shift, errors)) continue;
     valid.push({ shift, intervals: workedIntervals(shift) });
   }
+  for (const id of [...duplicateIds].sort()) {
+    errors.push(`Duplicate shift id ${id}`);
+  }
+  const unique = valid.filter((row) => !duplicateIds.has(row.shift.id));
   collectOverlapErrors(
-    valid.map((row) => row.shift),
+    unique.map((row) => row.shift),
     errors,
   );
 
@@ -140,8 +148,24 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
   const payableBuckets = new Map<string, HoursBucket>();
   const lookbackBuckets = new Map<string, HoursBucket>();
 
+  // Rolling 24h daily OT can reach back from the first workweek start. Callers must
+  // supply lookback shifts starting at least 24 hours before that instant.
+  if (settings.dailyWindow === "rolling_24h") {
+    let earliest: number | null = null;
+    for (const row of unique) {
+      for (const interval of row.intervals) {
+        if (earliest === null || interval.start < earliest) earliest = interval.start;
+      }
+    }
+    if (earliest !== null && earliest > firstWeekStart - SECONDS_PER_DAY) {
+      warnings.push(
+        "Earliest shift starts less than 24 hours before the first workweek start; daily OT at the period start may be understated",
+      );
+    }
+  }
+
   const byEmployee = new Map<string, PreparedShift[]>();
-  for (const row of valid) {
+  for (const row of unique) {
     const list = byEmployee.get(row.shift.employeeId) ?? [];
     list.push(row);
     byEmployee.set(row.shift.employeeId, list);
@@ -166,11 +190,6 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
       let cursor = piece.start;
       while (cursor < piece.end) {
         if (cursor >= periodEnd) break;
-        if (cursor < firstWeekStart) {
-          const jump = Math.min(piece.end, firstWeekStart);
-          cursor = jump;
-          continue;
-        }
 
         if (settings.dailyWindow === "rolling_24h") {
           if (windowEnd === null || cursor >= windowEnd) {

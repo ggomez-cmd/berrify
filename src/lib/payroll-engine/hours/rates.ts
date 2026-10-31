@@ -1,11 +1,24 @@
 import type { HourlyWeekInput } from "../types";
-import { addCalendarDays, instantSeconds, isYmd, secondsToHoursHundredths, ymdInTimeZone } from "./time";
-import type { HourlyWeeksResult, PositionRate, ShiftAllocation, WeekTips, WorkedShift } from "./types";
+import { addCalendarDays, instantSeconds, isYmd, secondsToHoursHundredths, workweekIdsForPeriod, ymdInTimeZone } from "./time";
+import type { HourlyWeeksResult, HoursSplitSettings, PositionRate, ShiftAllocation, WeekTips, WorkedShift } from "./types";
 
-function shiftById(shifts: readonly WorkedShift[]): Map<string, WorkedShift> {
+function shiftById(shifts: readonly WorkedShift[], duplicateIds: Set<string>): Map<string, WorkedShift> {
   const map = new Map<string, WorkedShift>();
-  for (const shift of shifts) map.set(shift.id, shift);
+  for (const shift of shifts) {
+    if (duplicateIds.has(shift.id)) continue;
+    map.set(shift.id, shift);
+  }
   return map;
+}
+
+function duplicateShiftIds(shifts: readonly WorkedShift[]): Set<string> {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const shift of shifts) {
+    if (seen.has(shift.id)) duplicates.add(shift.id);
+    seen.add(shift.id);
+  }
+  return duplicates;
 }
 
 function rateFor(
@@ -73,15 +86,30 @@ export function buildHourlyWeeks(input: {
   rates: readonly PositionRate[];
   tips?: readonly WeekTips[];
   timeZone: string;
+  allowedWorkweekIds?: readonly string[];
+  period?: Pick<
+    HoursSplitSettings,
+    "periodStart" | "periodEnd" | "timeZone" | "workweekStartDow" | "workweekStartTime"
+  >;
 }): HourlyWeeksResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const shifts = shiftById(input.shifts);
+  const duplicateIds = duplicateShiftIds(input.shifts);
+  for (const id of [...duplicateIds].sort()) {
+    errors.push(`Duplicate shift id ${id}`);
+  }
+  const shifts = shiftById(input.shifts, duplicateIds);
   const buckets = new Map<string, RatedBucket>();
   const missingRateShifts = new Set<string>();
+  const allowedWorkweeks = input.allowedWorkweekIds
+    ? new Set(input.allowedWorkweekIds)
+    : input.period
+      ? new Set(workweekIdsForPeriod(input.period))
+      : null;
 
   for (const allocation of input.allocations) {
     if (!allocation.payable) continue;
+    if (duplicateIds.has(allocation.shiftId)) continue;
     const shift = shifts.get(allocation.shiftId);
     if (!shift) {
       errors.push(`Allocation refers to unknown shift ${allocation.shiftId}`);
@@ -127,7 +155,7 @@ export function buildHourlyWeeks(input: {
       errors.push(`Employee ${tip.employeeId} has negative tips on workweek ${tip.workweekId}`);
       continue;
     }
-    if (!isYmd(tip.workweekId)) {
+    if (!isYmd(tip.workweekId) || (allowedWorkweeks && !allowedWorkweeks.has(tip.workweekId))) {
       errors.push(`Employee ${tip.employeeId} has an unknown workweek ${tip.workweekId}`);
       continue;
     }

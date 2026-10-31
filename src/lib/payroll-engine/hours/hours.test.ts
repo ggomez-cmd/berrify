@@ -382,6 +382,121 @@ describe("mealBreakFlags", () => {
   });
 });
 
+describe("review regressions", () => {
+  it("rolling daily OT keeps Saturday lookback across the first workweek start", () => {
+    const lookback = shift({ id: "sat", ymd: "2026-10-03", start: "16:00", end: "23:00" });
+    const sunday = shift({ id: "sun", ymd: "2026-10-04", start: "08:00", end: "16:00" });
+    const result = splitHours(
+      [lookback, sunday],
+      settings({ periodStart: "2026-10-04", periodEnd: "2026-10-04" }),
+    );
+    expect(hoursOf(sumAlloc(result.allocations.filter((row) => row.shiftId === "sun")))).toEqual({
+      regular: 1,
+      daily: 7,
+      weekly: 0,
+    });
+    expect(result.allocations.filter((row) => row.shiftId === "sat").every((row) => !row.payable)).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("daily OT at the period start may be understated"))).toBe(
+      true,
+    );
+  });
+
+  it("duplicate shift ids are errors and excluded from splitHours and buildHourlyWeeks", () => {
+    const cook = shift({ id: "same", positionKey: "cook", ymd: "2026-10-05", start: "08:00", end: "12:00" });
+    const server = shift({ id: "same", positionKey: "server", ymd: "2026-10-05", start: "13:00", end: "17:00" });
+    const split = splitHours([cook, server], settings());
+    expect(split.errors).toContain("Duplicate shift id same");
+    expect(split.allocations).toEqual([]);
+    const weeks = buildHourlyWeeks({
+      shifts: [cook, server],
+      allocations: split.allocations,
+      timeZone: TZ,
+      rates: [
+        { employeeId: "E1", positionKey: "cook", rateCents: 2000, effectiveFrom: "2026-01-01" },
+        { employeeId: "E1", positionKey: "server", rateCents: 1000, effectiveFrom: "2026-01-01" },
+      ],
+    });
+    expect(weeks.errors).toContain("Duplicate shift id same");
+    expect(weeks.weeks.size).toBe(0);
+  });
+
+  it("fall-back DST keeps later EST work in the Sunday 01:30 workweek", () => {
+    const ny = "America/New_York";
+    const edt: WorkedShift = {
+      id: "edt",
+      employeeId: "E1",
+      positionKey: "main",
+      classId: "r1",
+      startedAt: "2026-11-01T05:30:00.000Z",
+      endedAt: "2026-11-01T05:45:00.000Z",
+      breaks: [],
+      source: "time_clock",
+    };
+    const est: WorkedShift = {
+      id: "est",
+      employeeId: "E1",
+      positionKey: "main",
+      classId: "r1",
+      startedAt: "2026-11-01T06:00:00.000Z",
+      endedAt: "2026-11-01T06:15:00.000Z",
+      breaks: [],
+      source: "time_clock",
+    };
+    const result = splitHours(
+      [edt, est],
+      settings({
+        timeZone: ny,
+        workweekStartTime: "01:30",
+        periodStart: "2026-11-01",
+        periodEnd: "2026-11-01",
+        weeklyLimitSeconds: 900,
+      }),
+    );
+    expect(result.allocations.map((row) => row.workweekId)).toEqual(["2026-11-01", "2026-11-01"]);
+    expect(hoursOf(sumAlloc(result.allocations))).toEqual({ regular: 0.25, daily: 0, weekly: 0.25 });
+  });
+
+  it("rejects tips for a workweek outside the run", () => {
+    const outside = buildHourlyWeeks({
+      shifts: [],
+      allocations: [],
+      timeZone: TZ,
+      rates: [{ employeeId: "E1", positionKey: "main", rateCents: 1000, effectiveFrom: "2026-01-01" }],
+      tips: [{ employeeId: "E1", workweekId: "2030-01-01", tipsCents: 12345 }],
+      period: {
+        timeZone: TZ,
+        workweekStartDow: 0,
+        workweekStartTime: "00:00",
+        periodStart: "2026-01-04",
+        periodEnd: "2026-01-10",
+      },
+    });
+    expect(outside.errors).toContain("Employee E1 has an unknown workweek 2030-01-01");
+    expect(outside.weeks.size).toBe(0);
+
+    const inside = buildHourlyWeeks({
+      shifts: [],
+      allocations: [],
+      timeZone: TZ,
+      rates: [{ employeeId: "E1", positionKey: "main", rateCents: 1000, effectiveFrom: "2026-01-01" }],
+      tips: [{ employeeId: "E1", workweekId: "2026-01-04", tipsCents: 12345 }],
+      period: {
+        timeZone: TZ,
+        workweekStartDow: 0,
+        workweekStartTime: "00:00",
+        periodStart: "2026-01-04",
+        periodEnd: "2026-01-10",
+      },
+    });
+    expect(inside.errors).toEqual([]);
+    expect(inside.weeks.get("E1")?.[0]).toMatchObject({
+      workweekId: "2026-01-04",
+      regularHoursHundredths: 0,
+      tipsCents: 12345,
+    });
+  });
+});
+
 describe("DST", () => {
   it("DST zone (America/New_York) shift across the spring-forward night counts real elapsed seconds", () => {
     const ny = "America/New_York";

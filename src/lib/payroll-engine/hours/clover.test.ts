@@ -198,5 +198,94 @@ describe("Clover parsing details", () => {
       Math.floor(Date.parse(result.shifts[0]?.endedAt ?? "") / 1000) -
         Math.floor(Date.parse(result.shifts[0]?.startedAt ?? "") / 1000),
     )).toBe(800);
+    expect(result.shifts[0]?.id).toBe("clover:P1:Pat:2026-10-01T09:00");
+  });
+
+  it("errors when a header candidate is missing Clock in time", () => {
+    const csv = [
+      "Cafe",
+      "Payroll Period,2026-10-01 To 2026-10-02",
+      "Name,Clock in date,Clock out date,Clock out time,Total paid hours",
+      "Pat,2026-10-01,2026-10-01,17:00,8.00",
+    ].join("\n");
+    const result = parseCloverShifts({
+      csv,
+      timeZone: TZ,
+      mapping: { Pat: { employeeId: "P1", positionKey: "cook", classId: "r1" } },
+      ignore: [],
+    });
+    expect(result.shifts).toEqual([]);
+    expect(result.report.errors.some((error) => error.includes('missing "clock in time"'))).toBe(true);
+  });
+
+  it("errors when break length is present without start, end, and type", () => {
+    const csv = [
+      "Cafe",
+      "Payroll Period,2026-10-01 To 2026-10-02",
+      "Name,Clock in date,Clock in time,Clock out date,Clock out time,Break length,Total paid hours",
+      "Pat,2026-10-01,09:00,2026-10-01,17:00,30,8.00",
+    ].join("\n");
+    const result = parseCloverShifts({
+      csv,
+      timeZone: TZ,
+      mapping: { Pat: { employeeId: "P1", positionKey: "cook", classId: "r1" } },
+      ignore: [],
+    });
+    expect(result.shifts).toEqual([]);
+    expect(result.report.errors.some((error) => error.includes("break start"))).toBe(true);
+  });
+
+  it("errors when a row has break length that cannot be placed", () => {
+    const csv = [
+      "Cafe",
+      "Payroll Period,2026-10-01 To 2026-10-02",
+      "Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break type,Break length,Total paid hours",
+      "Pat,2026-10-01,09:00,2026-10-01,17:00,,,,30,8.00",
+    ].join("\n");
+    const result = parseCloverShifts({
+      csv,
+      timeZone: TZ,
+      mapping: { Pat: { employeeId: "P1", positionKey: "cook", classId: "r1" } },
+      ignore: [],
+    });
+    expect(result.shifts).toEqual([]);
+    expect(result.report.errors.some((error) => error.includes("incomplete break"))).toBe(true);
+  });
+
+  it("errors on a nonexistent spring-forward clock-out and warns on an ambiguous fall-back punch", () => {
+    const ny = "America/New_York";
+    const spring = [
+      "Cafe",
+      "Payroll Period,2026-03-08 To 2026-03-08",
+      "Name,Clock in date,Clock in time,Clock out date,Clock out time,Total paid hours",
+      "Pat,2026-03-08,01:30,2026-03-08,02:30,1.00",
+    ].join("\n");
+    const missing = parseCloverShifts({
+      csv: spring,
+      timeZone: ny,
+      mapping: { Pat: { employeeId: "P1", positionKey: "cook", classId: "r1" } },
+      ignore: [],
+    });
+    expect(missing.shifts).toEqual([]);
+    expect(missing.report.errors.some((error) => error.includes("nonexistent local time"))).toBe(true);
+
+    const fall = [
+      "Cafe",
+      "Payroll Period,2026-11-01 To 2026-11-01",
+      "Name,Clock in date,Clock in time,Clock out date,Clock out time,Total paid hours",
+      "Pat,2026-11-01,01:30,2026-11-01,01:45,0.25",
+    ].join("\n");
+    const ambiguous = parseCloverShifts({
+      csv: fall,
+      timeZone: ny,
+      mapping: { Pat: { employeeId: "P1", positionKey: "cook", classId: "r1" } },
+      ignore: [],
+    });
+    expect(ambiguous.report.errors).toEqual([]);
+    expect(ambiguous.shifts).toHaveLength(1);
+    expect(ambiguous.shifts[0]?.startedAt).toBe("2026-11-01T05:30:00.000Z");
+    expect(ambiguous.report.warnings.some((warning) => warning.includes("Pat") && warning.includes("ambiguous"))).toBe(
+      true,
+    );
   });
 });

@@ -100,7 +100,7 @@ export function ymdInTimeZone(seconds: number, timeZone: string): string {
   return ymdString(local.year, local.month, local.day);
 }
 
-export function utcSecondsFromZoned(input: {
+export type ResolveZonedInput = {
   year: number;
   month: number;
   day: number;
@@ -108,23 +108,114 @@ export function utcSecondsFromZoned(input: {
   minute: number;
   second: number;
   timeZone: string;
-}): number {
-  let guess = Math.floor(
+};
+
+export type ResolvedZonedInstant = {
+  seconds: number | null;
+  ambiguous: boolean;
+  nonexistent: boolean;
+};
+
+function sameLocal(shown: ZonedParts, input: ResolveZonedInput): boolean {
+  return (
+    shown.year === input.year &&
+    shown.month === input.month &&
+    shown.day === input.day &&
+    shown.hour === input.hour &&
+    shown.minute === input.minute &&
+    shown.second === input.second
+  );
+}
+
+function compareLocal(shown: ZonedParts, input: ResolveZonedInput): number {
+  if (shown.year !== input.year) return shown.year - input.year;
+  if (shown.month !== input.month) return shown.month - input.month;
+  if (shown.day !== input.day) return shown.day - input.day;
+  if (shown.hour !== input.hour) return shown.hour - input.hour;
+  if (shown.minute !== input.minute) return shown.minute - input.minute;
+  return shown.second - input.second;
+}
+
+function matchingZonedInstants(input: ResolveZonedInput): number[] {
+  const targetUtc = Math.floor(
     Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, input.second) / 1000,
   );
-  for (let i = 0; i < 3; i += 1) {
-    const shown = zonedParts(guess, input.timeZone);
-    const shownUtc = Math.floor(
-      Date.UTC(shown.year, shown.month - 1, shown.day, shown.hour, shown.minute, shown.second) / 1000,
-    );
-    const targetUtc = Math.floor(
-      Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, input.second) / 1000,
-    );
-    const next = guess + (targetUtc - shownUtc);
-    if (next === guess) return guess;
-    guess = next;
+  const found = new Set<number>();
+  for (let offset = -14 * 3600; offset <= 14 * 3600; offset += 1800) {
+    const guess = targetUtc - offset;
+    if (sameLocal(zonedParts(guess, input.timeZone), input)) found.add(guess);
   }
-  return guess;
+  return [...found].sort((a, b) => a - b);
+}
+
+function firstInstantAfterGap(input: ResolveZonedInput): number {
+  const ymd = ymdString(input.year, input.month, input.day);
+  const dayStart = utcSecondsFromZoned({
+    year: input.year,
+    month: input.month,
+    day: input.day,
+    hour: 0,
+    minute: 0,
+    second: 0,
+    timeZone: input.timeZone,
+  });
+  const nextDay = localMidnightSeconds(addCalendarDays(ymd, 1), input.timeZone);
+  let lo = dayStart;
+  let hi = nextDay;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (compareLocal(zonedParts(mid, input.timeZone), input) >= 0) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+export function resolveZonedInstant(
+  input: ResolveZonedInput,
+  options: { onNonexistent: "reject" | "after_gap" } = { onNonexistent: "reject" },
+): ResolvedZonedInstant {
+  const matches = matchingZonedInstants(input);
+  if (matches.length > 0) {
+    return { seconds: matches[0] ?? null, ambiguous: matches.length > 1, nonexistent: false };
+  }
+  if (options.onNonexistent === "after_gap") {
+    return { seconds: firstInstantAfterGap(input), ambiguous: false, nonexistent: true };
+  }
+  return { seconds: null, ambiguous: false, nonexistent: true };
+}
+
+export function utcSecondsFromZoned(input: ResolveZonedInput): number {
+  const resolved = resolveZonedInstant(input, { onNonexistent: "reject" });
+  if (resolved.seconds === null) {
+    throw new Error(
+      `Local time ${ymdString(input.year, input.month, input.day)} ${pad2(input.hour)}:${pad2(input.minute)}:${pad2(input.second)} does not exist in ${input.timeZone}`,
+    );
+  }
+  return resolved.seconds;
+}
+
+function workweekBoundarySeconds(
+  ymd: string,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): number {
+  const resolved = resolveZonedInstant(
+    {
+      year: Number(ymd.slice(0, 4)),
+      month: Number(ymd.slice(5, 7)),
+      day: Number(ymd.slice(8, 10)),
+      hour,
+      minute,
+      second: 0,
+      timeZone,
+    },
+    { onNonexistent: "after_gap" },
+  );
+  if (resolved.seconds === null) {
+    throw new Error(`Unable to resolve workweek boundary ${ymd} ${pad2(hour)}:${pad2(minute)} in ${timeZone}`);
+  }
+  return resolved.seconds;
 }
 
 export function localMidnightSeconds(ymd: string, timeZone: string): number {
@@ -154,20 +245,13 @@ export function startOfWorkweekSeconds(
     throw new Error(`Invalid workweek start time: ${startTime}`);
   }
   const local = zonedParts(seconds, timeZone);
-  let daysBack = (local.dow - startDow + 7) % 7;
-  const minutesNow = local.hour * 60 + local.minute;
-  const minutesStart = hm.hour * 60 + hm.minute;
-  if (daysBack === 0 && minutesNow < minutesStart) daysBack = 7;
+  const daysBack = (local.dow - startDow + 7) % 7;
   const startYmd = addCalendarDays(ymdString(local.year, local.month, local.day), -daysBack);
-  return utcSecondsFromZoned({
-    year: Number(startYmd.slice(0, 4)),
-    month: Number(startYmd.slice(5, 7)),
-    day: Number(startYmd.slice(8, 10)),
-    hour: hm.hour,
-    minute: hm.minute,
-    second: 0,
-    timeZone,
-  });
+  const candidate = workweekBoundarySeconds(startYmd, hm.hour, hm.minute, timeZone);
+  if (seconds < candidate) {
+    return workweekBoundarySeconds(addCalendarDays(startYmd, -7), hm.hour, hm.minute, timeZone);
+  }
+  return candidate;
 }
 
 export function nextWorkweekStartSeconds(
@@ -183,15 +267,35 @@ export function nextWorkweekStartSeconds(
     throw new Error(`Invalid workweek start time: ${startTime}`);
   }
   const nextYmd = addCalendarDays(currentYmd, 7);
-  return utcSecondsFromZoned({
-    year: Number(nextYmd.slice(0, 4)),
-    month: Number(nextYmd.slice(5, 7)),
-    day: Number(nextYmd.slice(8, 10)),
-    hour: hm.hour,
-    minute: hm.minute,
-    second: 0,
-    timeZone,
-  });
+  return workweekBoundarySeconds(nextYmd, hm.hour, hm.minute, timeZone);
+}
+
+export function workweekIdsForPeriod(input: {
+  timeZone: string;
+  workweekStartDow: number;
+  workweekStartTime: string;
+  periodStart: string;
+  periodEnd: string;
+}): string[] {
+  const periodStart = localMidnightSeconds(input.periodStart, input.timeZone);
+  const periodEnd = localMidnightSeconds(addCalendarDays(input.periodEnd, 1), input.timeZone);
+  const ids: string[] = [];
+  let cursor = startOfWorkweekSeconds(
+    periodStart,
+    input.timeZone,
+    input.workweekStartDow,
+    input.workweekStartTime,
+  );
+  while (cursor < periodEnd) {
+    ids.push(ymdInTimeZone(cursor, input.timeZone));
+    cursor = nextWorkweekStartSeconds(
+      cursor,
+      input.timeZone,
+      input.workweekStartDow,
+      input.workweekStartTime,
+    );
+  }
+  return ids;
 }
 
 export function secondsToHoursHundredths(seconds: number): number {

@@ -2,8 +2,9 @@ import { collectOverlapErrors, validateShift, workedIntervals } from "./shifts";
 import {
   hoursNumberToHundredths,
   isoFromSeconds,
+  pad2,
+  resolveZonedInstant,
   secondsToHoursHundredths,
-  utcSecondsFromZoned,
 } from "./time";
 import type {
   BreakKind,
@@ -23,7 +24,20 @@ const CLOCK_OUT_TIME = "clock out time";
 const BREAK_START = "break start";
 const BREAK_END = "break end";
 const BREAK_TYPE = "break type";
+const BREAK_LENGTH = "break length";
 const TOTAL_PAID_HOURS = "total paid hours";
+const KNOWN_HEADERS = new Set([
+  HEADER_NAME,
+  CLOCK_IN_DATE,
+  CLOCK_IN_TIME,
+  CLOCK_OUT_DATE,
+  CLOCK_OUT_TIME,
+  BREAK_START,
+  BREAK_END,
+  BREAK_TYPE,
+  BREAK_LENGTH,
+  TOTAL_PAID_HOURS,
+]);
 
 function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
@@ -88,9 +102,14 @@ function isSeparatorRow(row: string[]): boolean {
   return row.length > 0 && row.every((value) => value.trim() === "" || /^-+$/.test(value.trim()));
 }
 
-function isHeaderRow(row: string[]): boolean {
-  const headers = new Set(row.map((value) => normalizeHeader(value)));
-  return headers.has(HEADER_NAME) && headers.has(CLOCK_IN_DATE) && headers.has(CLOCK_IN_TIME);
+function isHeaderCandidate(row: string[]): boolean {
+  const headers = row.map((value) => normalizeHeader(value));
+  if (headers[0] === HEADER_NAME) return true;
+  let hits = 0;
+  for (const header of headers) {
+    if (KNOWN_HEADERS.has(header)) hits += 1;
+  }
+  return hits >= 2;
 }
 
 function parsePeriodLine(row: string[]): CloverPeriod | null {
@@ -139,8 +158,17 @@ export function parseTimeToHms(value: string): { hour: number; minute: number; s
   return { hour, minute, second };
 }
 
-function localSeconds(ymd: string, hms: { hour: number; minute: number; second: number }, timeZone: string): number {
-  return utcSecondsFromZoned({
+function formatHms(hms: { hour: number; minute: number; second: number }): string {
+  const base = `${pad2(hms.hour)}:${pad2(hms.minute)}`;
+  return hms.second === 0 ? base : `${base}:${pad2(hms.second)}`;
+}
+
+function resolveLocalSeconds(
+  ymd: string,
+  hms: { hour: number; minute: number; second: number },
+  timeZone: string,
+): { seconds: number | null; ambiguous: boolean; nonexistent: boolean } {
+  return resolveZonedInstant({
     year: Number(ymd.slice(0, 4)),
     month: Number(ymd.slice(5, 7)),
     day: Number(ymd.slice(8, 10)),
@@ -180,14 +208,17 @@ function placeTimeOnShift(
   start: number,
   end: number,
   timeZone: string,
-): number {
-  const onIn = localSeconds(inYmd, time, timeZone);
-  if (onIn >= start && onIn <= end) return onIn;
+): number | null {
+  const onIn = resolveLocalSeconds(inYmd, time, timeZone);
+  if (onIn.seconds === null) return null;
+  if (onIn.seconds >= start && onIn.seconds <= end) return onIn.seconds;
   if (inYmd !== outYmd) {
-    const onOut = localSeconds(outYmd, time, timeZone);
-    if (onOut >= start && onOut <= end) return onOut;
+    const onOut = resolveLocalSeconds(outYmd, time, timeZone);
+    if (onOut.seconds === null) return null;
+    if (onOut.seconds >= start && onOut.seconds <= end) return onOut.seconds;
   }
-  return onIn >= start ? onIn : localSeconds(outYmd, time, timeZone);
+  if (onIn.seconds >= start) return onIn.seconds;
+  return resolveLocalSeconds(outYmd, time, timeZone).seconds;
 }
 
 type ColumnMap = {
@@ -199,6 +230,7 @@ type ColumnMap = {
   breakStart?: number;
   breakEnd?: number;
   breakType?: number;
+  breakLength?: number;
   paidHours?: number;
 };
 
@@ -219,8 +251,22 @@ function mapColumns(header: string[], errors: string[]): ColumnMap | null {
     breakStart: index.get(BREAK_START),
     breakEnd: index.get(BREAK_END),
     breakType: index.get(BREAK_TYPE),
+    breakLength: index.get(BREAK_LENGTH),
     paidHours: index.get(TOTAL_PAID_HOURS),
   };
+  const hasAnyBreakColumn =
+    mapped.breakStart !== undefined ||
+    mapped.breakEnd !== undefined ||
+    mapped.breakType !== undefined ||
+    mapped.breakLength !== undefined;
+  if (hasAnyBreakColumn) {
+    for (const headerName of [BREAK_START, BREAK_END, BREAK_TYPE]) {
+      if (index.get(headerName) === undefined) {
+        errors.push(`Clover header is missing "${headerName}"`);
+        return null;
+      }
+    }
+  }
   for (const [field, headerName] of required) {
     const found = index.get(headerName);
     if (found === undefined) {
@@ -257,7 +303,7 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
   const names = new Map<string, ParsedName>();
   let columns: ColumnMap | null = null;
   let grandCloverHours: number | null = null;
-  let shiftIndex = 0;
+  const usedShiftIds = new Map<string, number>();
 
   const ensureName = (name: string): ParsedName => {
     const existing = names.get(name);
@@ -273,7 +319,7 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
       continue;
     }
     const first = (row[0] ?? "").trim();
-    if (isHeaderRow(row)) {
+    if (isHeaderCandidate(row)) {
       columns = mapColumns(row, errors);
       continue;
     }
@@ -302,8 +348,24 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
       errors.push(`Clover row for ${name} has an invalid clock-in or clock-out`);
       continue;
     }
-    const start = localSeconds(inDate, inTime, input.timeZone);
-    const end = localSeconds(outDate, outTime, input.timeZone);
+    const startResolved = resolveLocalSeconds(inDate, inTime, input.timeZone);
+    const endResolved = resolveLocalSeconds(outDate, outTime, input.timeZone);
+    if (startResolved.nonexistent || endResolved.nonexistent || startResolved.seconds === null || endResolved.seconds === null) {
+      errors.push(`Clover row for ${name} has a nonexistent local time`);
+      continue;
+    }
+    if (startResolved.ambiguous) {
+      warnings.push(
+        `Clover row for ${name} uses the first occurrence of ambiguous local time ${inDate} ${formatHms(inTime)}`,
+      );
+    }
+    if (endResolved.ambiguous) {
+      warnings.push(
+        `Clover row for ${name} uses the first occurrence of ambiguous local time ${outDate} ${formatHms(outTime)}`,
+      );
+    }
+    const start = startResolved.seconds;
+    const end = endResolved.seconds;
     if (end < start) {
       errors.push(`Clover row for ${name} ends before it starts`);
       continue;
@@ -313,39 +375,54 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
     const breakStartText = cell(row, columns.breakStart);
     const breakEndText = cell(row, columns.breakEnd);
     const breakTypeText = cell(row, columns.breakType);
-    if (breakStartText || breakEndText || breakTypeText) {
-      if (!breakStartText || !breakEndText) {
+    const breakLengthText = cell(row, columns.breakLength);
+    let breakError = false;
+    if (breakStartText || breakEndText || breakTypeText || breakLengthText) {
+      if (!breakStartText || !breakEndText || !breakTypeText) {
         errors.push(`Clover row for ${name} has an incomplete break`);
+        breakError = true;
       } else {
         const breakStartHms = parseTimeToHms(breakStartText);
         const breakEndHms = parseTimeToHms(breakEndText);
         if (!breakStartHms || !breakEndHms) {
           errors.push(`Clover row for ${name} has an invalid break time`);
+          breakError = true;
         } else {
           const paid = breakPaid(breakTypeText);
           if (paid === null) {
             errors.push(`Clover row for ${name} has a break without Paid/Unpaid`);
+            breakError = true;
           }
           const breakStart = placeTimeOnShift(breakStartHms, inDate, outDate, start, end, input.timeZone);
           let breakEnd = placeTimeOnShift(breakEndHms, inDate, outDate, start, end, input.timeZone);
-          if (breakEnd < breakStart) {
-            breakEnd += 24 * 3600;
+          if (breakStart === null || breakEnd === null) {
+            errors.push(`Clover row for ${name} has a nonexistent local break time`);
+            breakError = true;
+          } else if (paid !== null && !breakError) {
+            if (breakEnd < breakStart) {
+              breakEnd += 24 * 3600;
+            }
+            breaks.push({
+              startedAt: isoFromSeconds(breakStart),
+              endedAt: isoFromSeconds(breakEnd),
+              type: breakKind(breakTypeText),
+              paid,
+            });
           }
-          breaks.push({
-            startedAt: isoFromSeconds(breakStart),
-            endedAt: isoFromSeconds(breakEnd),
-            type: breakKind(breakTypeText),
-            paid: paid ?? false,
-          });
         }
       }
     }
+    if (breakError) continue;
 
-    shiftIndex += 1;
     const mapping = input.mapping[name];
+    const employeeId = mapping?.employeeId ?? name;
+    const inTimeText = cell(row, columns.inTime);
+    const baseId = `clover:${employeeId}:${name}:${inDate}T${inTimeText}`;
+    const used = (usedShiftIds.get(baseId) ?? 0) + 1;
+    usedShiftIds.set(baseId, used);
     const shift: WorkedShift = {
-      id: `clover:${name}:${inDate}T${cell(row, columns.inTime)}:${shiftIndex}`,
-      employeeId: mapping?.employeeId ?? name,
+      id: used === 1 ? baseId : `${baseId}:${used}`,
+      employeeId,
       positionKey: mapping?.positionKey ?? "unmapped",
       classId: mapping?.classId ?? "unmapped",
       startedAt: isoFromSeconds(start),
