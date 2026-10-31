@@ -1,0 +1,178 @@
+Restaurant
+Payroll Period,10/01/2026 To 10/11/2026
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L02,10/01/2026,9:22 AM,10/01/2026,3:35 PM,,,,,,Server,0.00,6.22,6.22,0,0.00,0,139.19,,,
+L02,10/02/2026,9:33 AM,10/02/2026,3:37 PM,,,,,,Server,0.00,6.07,6.07,0,0.00,0,140.86,,,
+L02,10/03/2026,9:59 AM,10/03/2026,4:38 PM,,,,,,Server,0.00,6.65,6.65,0,0.00,0,86.62,,,
+L02,10/04/2026,7:46 AM,10/04/2026,4:16 PM,,,,,,Server,0.00,8.5,8.5,0,0.00,0,146,,,
+L02,10/07/2026,9:44 AM,10/07/2026,3:25 PM,,,,,,Server,0.00,5.68,5.68,0,0.00,0,66.9,,,
+L02,10/08/2026,10:26 AM,10/08/2026,3:23 PM,,,,,,Server,0.00,4.95,4.95,0,0.00,0,74.7,,,
+L02,10/09/2026,9:20 AM,10/09/2026,3:35 PM,,,,,,Server,0.00,6.25,6.25,0,0.00,0,119.15,,,
+L02,10/10/2026,9:41 AM,10/10/2026,5:17 PM,,,,,,Server,0.00,7.6,7.6,0,0.00,0,220.44,,,
+L02,10/11/2026,9:40 AM,10/11/2026,4:32 PM,,,,,,Server,0.00,6.87,6.87,0,0.00,0,175.4,,,
+Totals for L02,,,,,,,,,,,,58.79,58.79,0,0.00,0,1169.26,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L01,10/01/2026,6:45 AM,10/01/2026,3:33 PM,,,,,,Cook,0.00,8.8,8.8,0,0.00,0,0,,,
+L01,10/05/2026,6:09 AM,10/05/2026,3:16 PM,,,,,,Cook,0.00,9.12,9.12,0,0.00,0,0,,,
+L01,10/06/2026,6:19 AM,10/06/2026,3:30 PM,,,,,,Cook,0.00,9.18,9.18,0,0.00,0,0,,,
+L01,10/07/2026,6:20 AM,10/07/2026,3:26 PM,,,,,,Cook,0.00,9.1,9.1,0,0.00,0,0,,,
+L01,10/08/2026,6:15 AM,10/08/2026,3:35 PM,,,,,,Cook,0.00,9.33,9.33,0,0.00,0,0,,,
+L01,10/10/2026,7:00 AM,10/10/2026,4:44 PM,,,,,,Cook,0.00,9.73,3.27,6.46,0.00,0,0,,,
+L01,10/11/2026,8:55 AM,10/11/2026,1:37 PM,,,,,,Cook,0.00,4.7,4.7,0,0.00,0,0,,,
+Totals for L01,,,,,,,,,,,,59.96,53.5,6.46,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+C02,10/01/2026,9:04 AM,10/01/2026,3:33 PM,,,,,,,0.00,6.48,6.48,0,0.00,0,0,,,
+C02,10/02/2026,9:05 AM,10/02/2026,3:18 PM,,,,,,,0.00,6.22,6.22,0,0.00,0,0,,,
+C02,10/03/2026,9:06 AM,10/03/2026,2:02 PM,,,,,,,0.00,4.93,4.93,0,0.00,0,0,,,
+C02,10/04/2026,9:03 AM,10/04/2026,1:55 PM,,,,,,,0.00,4.87,4.87,0,0.00,0,0,,,
+C02,10/10/2026,9:12 AM,10/10/2026,2:21 PM,,,,,,,0.00,5.15,5.15,0,0.00,0,0,,,
+C02,10/11/2026,9:04 AM,10/11/2026,2:39 PM,,,,,,,0.00,5.58,5.58,0,0.00,0,0,,,
+Totals for C02,,,,,,,,,,,,33.23,33.23,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L03,10/02/2026,8:19 AM,10/02/2026,3:19 PM,,,,,,Dishwasher,0.00,7,7,0,0.00,0,0,,,
+L03,10/03/2026,8:24 AM,10/03/2026,4:13 PM,,,,,,Dishwasher,0.00,7.82,7.82,0,0.00,0,0,,,
+L03,10/04/2026,8:28 AM,10/04/2026,4:20 PM,,,,,,Dishwasher,0.00,7.87,7.87,0,0.00,0,0,,,
+L03,10/05/2026,9:10 AM,10/05/2026,11:08 AM,,,,,,Dishwasher,0.00,1.97,1.97,0,0.00,0,0,,,
+L03,10/09/2026,8:02 AM,10/09/2026,3:22 PM,,,,,,Dishwasher,0.00,7.33,7.33,0,0.00,0,0,,,
+L03,10/10/2026,9:00 AM,10/10/2026,4:53 PM,,,,,,Dishwasher,0.00,7.88,7.88,0,0.00,0,0,,,
+Totals for L03,,,,,,,,,,,,39.87,39.87,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L12,10/03/2026,8:41 AM,10/03/2026,4:22 PM,,,,,,Host/Hostess,0.00,7.68,7.68,0,0.00,0,152.11,,,
+L12,10/04/2026,8:30 AM,10/04/2026,4:02 PM,,,,,,Host/Hostess,0.00,7.53,7.53,0,0.00,0,125.96,,,
+L12,10/06/2026,8:09 AM,10/06/2026,3:01 PM,,,,,,Host/Hostess,0.00,6.87,6.87,0,0.00,0,34.4,,,
+L12,10/09/2026,8:55 AM,10/09/2026,2:58 PM,,,,,,Host/Hostess,0.00,6.05,6.05,0,0.00,0,26.69,,,
+L12,10/10/2026,9:06 AM,10/10/2026,3:04 PM,,,,,,Host/Hostess,0.00,5.97,5.97,0,0.00,0,0,,,
+L12,10/11/2026,8:29 AM,10/11/2026,4:31 PM,,,,,,Host/Hostess,0.00,8.03,8.03,0,0.00,0,200.38,,,
+Totals for L12,,,,,,,,,,,,42.13,42.13,0,0.00,0,539.54,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+X01,10/08/2026,10:31 AM,10/08/2026,1:42 PM,,,,,,,0.00,3.18,3.18,0,0.00,0,0,,,
+X01,10/09/2026,10:00 AM,10/09/2026,4:03 PM,,,,,,,0.00,6.05,6.05,0,0.00,0,0,,,
+X01,10/10/2026,11:06 AM,10/10/2026,2:43 PM,,,,,,,0.00,3.62,3.62,0,0.00,0,0,,,
+Totals for X01,,,,,,,,,,,,12.85,12.85,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+C03,10/02/2026,8:05 AM,10/02/2026,2:39 PM,,,,,,Food Runner,0.00,6.57,6.57,0,0.00,0,6.08,,,
+Totals for C03,,,,,,,,,,,,6.57,6.57,0,0.00,0,6.08,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L04,10/02/2026,7:51 AM,10/02/2026,3:14 PM,,,,,,Bartender,0.00,7.38,7.38,0,0.00,0,164.17,,,
+L04,10/03/2026,8:04 AM,10/03/2026,1:59 PM,,,,,,Bartender,0.00,5.92,5.92,0,0.00,0,198.42,,,
+L04,10/05/2026,8:29 AM,10/05/2026,3:00 PM,,,,,,Bartender,0.00,6.52,6.52,0,0.00,0,41.12,,,
+L04,10/07/2026,6:55 AM,10/07/2026,3:13 PM,,,,,,Bartender,0.00,8.3,8.3,0,0.00,0,103.91,,,
+L04,10/10/2026,8:27 AM,10/10/2026,4:39 PM,,,,,,Bartender,0.00,8.2,8.2,0,0.00,0,214.03,,,
+Totals for L04,,,,,,,,,,,,36.32,36.32,0,0.00,0,721.65,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+C01,10/01/2026,6:58 AM,10/01/2026,8:51 AM,,,,,,,0.00,1.88,1.88,0,0.00,0,0,,,
+C01,10/02/2026,10:35 AM,10/02/2026,3:18 PM,,,,,,,0.00,4.72,4.72,0,0.00,0,0,,,
+C01,10/07/2026,6:58 AM,10/07/2026,3:21 PM,,,,,,,0.00,8.38,8.38,0,0.00,0,0,,,
+C01,10/08/2026,7:12 AM,10/08/2026,3:05 PM,,,,,,,0.00,7.88,7.88,0,0.00,0,0,,,
+Totals for C01,,,,,,,,,,,,22.86,22.86,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L04 bar,10/11/2026,8:02 AM,10/11/2026,2:04 PM,,,,,,,0.00,6.03,6.03,0,0.00,0,0,,,
+Totals for L04 bar,,,,,,,,,,,,6.03,6.03,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+C04,10/03/2026,9:03 AM,10/03/2026,4:31 PM,,,,,,,0.00,7.47,7.47,0,0.00,0,35.1,,,
+C04,10/04/2026,8:45 AM,10/04/2026,4:20 PM,,,,,,,0.00,7.58,7.58,0,0.00,0,0,,,
+C04,10/05/2026,8:20 AM,10/05/2026,1:13 PM,,,,,,,0.00,4.88,4.88,0,0.00,0,11.16,,,
+C04,10/07/2026,8:56 AM,10/07/2026,3:25 PM,,,,,,,0.00,6.48,6.48,0,0.00,0,20.52,,,
+C04,10/11/2026,9:11 AM,10/11/2026,1:40 PM,,,,,,,0.00,4.48,4.48,0,0.00,0,10.02,,,
+Totals for C04,,,,,,,,,,,,30.89,30.89,0,0.00,0,76.8,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L05,10/03/2026,7:08 AM,10/03/2026,1:56 PM,,,,,,Server,0.00,6.8,6.8,0,0.00,0,149.99,,,
+L05,10/04/2026,7:58 AM,10/04/2026,4:30 PM,,,,,,Server,0.00,8.53,8.53,0,0.00,0,154.78,,,
+L05,10/05/2026,8:03 AM,10/05/2026,3:14 PM,,,,,,Server,0.00,7.18,7.18,0,0.00,0,47,,,
+L05,10/06/2026,6:56 AM,10/06/2026,3:14 PM,,,,,,Server,0.00,8.3,8.3,0,0.00,0,90.4,,,
+L05,10/11/2026,6:51 AM,10/11/2026,2:16 PM,,,,,,Server,0.00,7.42,7.42,0,0.00,0,116.25,,,
+Totals for L05,,,,,,,,,,,,38.23,38.23,0,0.00,0,558.42,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L06 bar,10/09/2026,8:16 AM,10/09/2026,2:20 PM,,,,,,Barista,0.00,6.07,6.07,0,0.00,0,0,,,
+Totals for L06 bar,,,,,,,,,,,,6.07,6.07,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L06,10/04/2026,9:14 AM,10/04/2026,4:09 PM,,,,,,Server,0.00,6.92,6.92,0,0.00,0,130.26,,,
+L06,10/05/2026,9:52 AM,10/05/2026,2:44 PM,,,,,,Server,0.00,4.87,4.87,0,0.00,0,49.66,,,
+L06,10/06/2026,9:02 AM,10/06/2026,2:41 PM,,,,,,Server,0.00,5.65,5.65,0,0.00,0,61.26,,,
+L06,10/09/2026,8:16 AM,10/09/2026,8:17 AM,,,,,,Server,0.00,0.02,0.02,0,0.00,0,0,,,
+L06,10/10/2026,8:14 AM,10/10/2026,1:37 PM,,,,,,Server,0.00,5.38,5.38,0,0.00,0,130.66,,,
+L06,10/11/2026,8:19 AM,10/11/2026,2:20 PM,,,,,,Server,0.00,6.02,6.02,0,0.00,0,163.15,,,
+Totals for L06,,,,,,,,,,,,28.86,28.86,0,0.00,0,534.99,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L07,10/09/2026,8:04 AM,10/09/2026,3:53 PM,,,,,,Prep Cook,0.00,7.82,7.82,0,0.00,0,0,,,
+Totals for L07,,,,,,,,,,,,7.82,7.82,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L08,10/01/2026,8:27 AM,10/01/2026,3:33 PM,,,,,,Barista,0.00,7.1,7.1,0,0.00,0,0,,,
+L08,10/03/2026,8:23 AM,10/03/2026,2:33 PM,,,,,,Barista,0.00,6.17,6.17,0,0.00,0,0,,,
+L08,10/08/2026,8:27 AM,10/08/2026,3:24 PM,,,,,,Barista,0.00,6.95,6.95,0,0.00,0,0,,,
+L08,10/10/2026,8:36 AM,10/10/2026,3:12 PM,,,,,,Barista,0.00,6.6,6.6,0,0.00,0,0,,,
+Totals for L08,,,,,,,,,,,,26.82,26.82,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L10,10/01/2026,7:18 AM,10/01/2026,2:15 PM,,,,,,Server,0.00,6.95,6.95,0,0.00,0,109.28,,,
+L10,10/02/2026,7:15 AM,10/02/2026,2:08 PM,,,,,,Server,0.00,6.88,6.88,0,0.00,0,183.15,,,
+L10,10/05/2026,7:15 AM,10/05/2026,11:58 AM,,,,,,Server,0.00,4.72,4.72,0,0.00,0,34.11,,,
+L10,10/08/2026,7:25 AM,10/08/2026,3:22 PM,,,,,,Server,0.00,7.95,7.95,0,0.00,0,129.06,,,
+L10,10/09/2026,7:17 AM,10/09/2026,2:55 PM,,,,,,Server,0.00,7.63,7.63,0,0.00,0,136.02,,,
+L10,10/10/2026,7:24 AM,10/10/2026,4:27 PM,,,,,,Server,0.00,9.05,9.05,0,0.00,0,294.23,,,
+Totals for L10,,,,,,,,,,,,43.18,43.18,0,0.00,0,885.85,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L15,10/01/2026,8:15 AM,10/01/2026,3:34 PM,,,,,,Server,0.00,7.32,7.32,0,0.00,0,114.41,,,
+L15,10/02/2026,8:50 AM,10/02/2026,3:14 PM,,,,,,Server,0.00,6.4,6.4,0,0.00,0,222.35,,,
+L15,10/06/2026,9:38 AM,10/06/2026,3:13 PM,,,,,,Server,0.00,5.58,5.58,0,0.00,0,69.24,,,
+L15,10/08/2026,8:21 AM,10/08/2026,11:00 AM,,,,,,Server,0.00,2.65,2.65,0,0.00,0,26.2,,,
+L15,10/09/2026,8:40 AM,10/09/2026,3:35 PM,,,,,,Server,0.00,6.92,6.92,0,0.00,0,118,,,
+Totals for L15,,,,,,,,,,,,28.87,28.87,0,0.00,0,550.2,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+C05,10/03/2026,9:04 AM,10/03/2026,1:09 PM,,,,,,,0.00,4.08,4.08,0,0.00,0,0,,,
+Totals for C05,,,,,,,,,,,,4.08,4.08,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L11,10/07/2026,8:21 AM,10/07/2026,3:05 PM,,,,,,Server - Patio,0.00,6.73,6.73,0,0.00,0,32.98,,,
+L11,10/09/2026,8:25 AM,10/09/2026,3:34 PM,,,,,,Server - Patio,0.00,7.15,7.15,0,0.00,0,109.5,,,
+Totals for L11,,,,,,,,,,,,13.88,13.88,0,0.00,0,142.48,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+X02,10/03/2026,10:01 AM,10/03/2026,4:42 PM,,,,,,,0.00,6.68,6.68,0,0.00,0,0,,,
+X02,10/04/2026,10:03 AM,10/04/2026,4:29 PM,,,,,,,0.00,6.43,6.43,0,0.00,0,0,,,
+X02,10/05/2026,10:01 AM,10/05/2026,3:38 PM,1:13 PM,1:27 PM,14 min,60 min - Unpaid,,,0.00,5.39,5.39,0,0.00,0,0,,,
+X02,10/11/2026,10:00 AM,10/11/2026,4:31 PM,2:14 PM,2:23 PM,9 min,60 min - Unpaid,,,0.00,6.37,6.37,0,0.00,0,0,,,
+Totals for X02,,,,,,,,,,,,24.87,24.87,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L13,10/04/2026,8:45 AM,10/04/2026,2:02 PM,,,,,,Food Runner,0.00,5.28,5.28,0,0.00,0,0,,,
+L13,10/10/2026,9:30 AM,10/10/2026,2:12 PM,,,,,,Food Runner,0.00,4.7,4.7,0,0.00,0,0,,,
+L13,10/11/2026,8:49 AM,10/11/2026,2:04 PM,,,,,,Food Runner,0.00,5.25,5.25,0,0.00,0,0,,,
+Totals for L13,,,,,,,,,,,,15.23,15.23,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L14,10/03/2026,7:21 AM,10/03/2026,4:13 PM,,,,,,Prep Cook,0.00,8.87,8.87,0,0.00,0,0,,,
+L14,10/04/2026,10:38 AM,10/04/2026,4:28 PM,,,,,,Prep Cook,0.00,5.83,5.83,0,0.00,0,0,,,
+L14,10/11/2026,7:37 AM,10/11/2026,4:27 PM,,,,,,Prep Cook,0.00,8.83,8.83,0,0.00,0,0,,,
+Totals for L14,,,,,,,,,,,,23.53,23.53,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+X03,10/03/2026,12:42 PM,10/03/2026,12:43 PM,,,,,,,0.00,0.02,0.02,0,0.00,0,0,,,
+Totals for X03,,,,,,,,,,,,0.02,0.02,0,0.00,0,0,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Name,Clock in date,Clock in time,Clock out date,Clock out time,Break start,Break end,Break length,Break type,Payroll ID,Role,Wage rate,Total paid hours,Regular hours,OT hours,Estimated wages,Cash tips,Credit tips,No show reason,Employee note,Manager note
+L16,10/02/2026,9:13 AM,10/02/2026,3:38 PM,,,,,,Food Runner,0.00,6.42,6.42,0,0.00,0,30.08,,,
+L16,10/04/2026,9:38 AM,10/04/2026,4:19 PM,,,,,,Food Runner,0.00,6.68,6.68,0,0.00,0,9.38,,,
+L16,10/05/2026,9:28 AM,10/05/2026,2:38 PM,,,,,,Food Runner,0.00,5.17,5.17,0,0.00,0,5,,,
+L16,10/10/2026,9:26 AM,10/10/2026,5:15 PM,,,,,,Food Runner,0.00,7.82,7.82,0,0.00,0,27.47,,,
+L16,10/11/2026,9:31 AM,10/11/2026,4:32 PM,,,,,,Food Runner,0.00,7.02,7.02,0,0.00,0,26.92,,,
+Totals for L16,,,,,,,,,,,,33.11,33.11,0,0.00,0,98.85,,,
+-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+Totals,,,,,,,,,,,,644.07,637.61,6.46,,,,,,
