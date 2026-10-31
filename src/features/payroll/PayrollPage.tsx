@@ -170,7 +170,11 @@ export function PayrollPage() {
             <Link className="font-medium text-wine underline" to="/payroll/setup">
               Payroll setup
             </Link>{" "}
-            is where admins set SUT, withholding, opening balances, and Clover names.
+            and{" "}
+            <Link className="font-medium text-wine underline" to="/payroll/runs">
+              payroll runs
+            </Link>{" "}
+            are where admins set withholding and calculate, approve, and print Puerto Rico paychecks.
           </>
         ) : null}
       </p>
