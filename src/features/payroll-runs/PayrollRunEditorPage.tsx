@@ -113,7 +113,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
 
-  const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd);
+  const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd, checkDate);
   const taxYear = checkDate ? taxYearFromCheckDate(checkDate) : null;
   const ytdBasisQuery = usePayrollYtdBasis(taxYear, checkDate);
 

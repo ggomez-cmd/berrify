@@ -597,6 +597,8 @@ export type PayrollRunRow = {
   voided_at: string | null;
   void_reason: string | null;
   notes: string | null;
+  time_clock_from: string | null;
+  time_clock_until: string | null;
   saved_at: string;
   ytd_basis_revision: string;
   created_at: string;

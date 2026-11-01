@@ -140,6 +140,28 @@ function placeClock(ymd: string, hm: string, notBefore: number | null, timeZone:
   return zonedInstant(addCalendarDays(ymd, 1), hm, timeZone);
 }
 
+function resolveFormInstant(
+  originalIso: string | undefined,
+  formDate: string,
+  hm: string,
+  notBefore: number,
+  timeZone: string,
+): string | null {
+  const sameDay = reuseOriginalInstant(originalIso, formDate, hm, timeZone);
+  if (sameDay) {
+    const seconds = instantSeconds(sameDay);
+    if (seconds !== null && seconds >= notBefore) return sameDay;
+  }
+  const nextDate = addCalendarDays(formDate, 1);
+  const nextDay = reuseOriginalInstant(originalIso, nextDate, hm, timeZone);
+  if (nextDay) {
+    const seconds = instantSeconds(nextDay);
+    if (seconds !== null && seconds >= notBefore) return nextDay;
+  }
+  const placed = placeClock(formDate, hm, notBefore, timeZone);
+  return placed === null ? null : isoFromUtcSeconds(placed);
+}
+
 export function workedSecondsFromRange(
   startedAt: string,
   endedAt: string,
@@ -178,22 +200,36 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
 
   const startedRebuilt = zonedInstant(input.date, input.start, input.timeZone);
   if (startedRebuilt === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
-  const endedSameDay = zonedInstant(input.date, input.end, input.timeZone);
-  const overnight = endedSameDay !== null && endedSameDay <= startedRebuilt;
-  const endedDate = overnight ? addCalendarDays(input.date, 1) : input.date;
-  const endedRebuilt = overnight
-    ? zonedInstant(endedDate, input.end, input.timeZone)
-    : endedSameDay;
-  if (endedRebuilt === null) return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
   const startedAt =
     reuseOriginalInstant(input.originalStartedAt, input.date, input.start, input.timeZone) ??
     isoFromUtcSeconds(startedRebuilt);
-  const endedAt =
-    reuseOriginalInstant(input.originalEndedAt, endedDate, input.end, input.timeZone) ??
-    isoFromUtcSeconds(endedRebuilt);
   const started = instantSeconds(startedAt);
+  if (started === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
+
+  const endedUnchangedSameDay = reuseOriginalInstant(
+    input.originalEndedAt,
+    input.date,
+    input.end,
+    input.timeZone,
+  );
+  let endedAt = endedUnchangedSameDay;
+  if (endedAt === null) {
+    const endedSameDay = zonedInstant(input.date, input.end, input.timeZone);
+    if (endedSameDay !== null && endedSameDay > started) {
+      endedAt = isoFromUtcSeconds(endedSameDay);
+    } else {
+      const endedDate = addCalendarDays(input.date, 1);
+      const endedNext =
+        reuseOriginalInstant(input.originalEndedAt, endedDate, input.end, input.timeZone) ??
+        zonedInstant(endedDate, input.end, input.timeZone);
+      if (endedNext === null) {
+        return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
+      }
+      endedAt = typeof endedNext === "string" ? endedNext : isoFromUtcSeconds(endedNext);
+    }
+  }
   const ended = instantSeconds(endedAt);
-  if (started === null || ended === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
+  if (ended === null) return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
   if (ended <= started) return { ok: false, error: "Out must be after in" };
   if (ended - started > TIME_ENTRY_MAX_SECONDS) return { ok: false, error: "Shift cannot exceed 24 hours" };
   if (ended > Math.floor(Date.now() / 1000) + 5 * 60) {
@@ -219,24 +255,24 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
         return { ok: false, error: `${label}: type is invalid (${exhaustive})` };
       }
     }
-    const breakStartRebuilt = placeClock(input.date, row.startedAt, started, input.timeZone);
-    if (breakStartRebuilt === null) return { ok: false, error: `${label}: start is not a valid local time` };
-    const breakEndRebuilt = placeClock(input.date, row.endedAt, breakStartRebuilt + 1, input.timeZone);
-    if (breakEndRebuilt === null) return { ok: false, error: `${label}: end is not a valid local time` };
-    const breakStartedAt =
-      reuseOriginalInstant(
-        row.originalStartedAt,
-        ymdInTimeZone(breakStartRebuilt, input.timeZone),
-        row.startedAt,
-        input.timeZone,
-      ) ?? isoFromUtcSeconds(breakStartRebuilt);
-    const breakEndedAt =
-      reuseOriginalInstant(
-        row.originalEndedAt,
-        ymdInTimeZone(breakEndRebuilt, input.timeZone),
-        row.endedAt,
-        input.timeZone,
-      ) ?? isoFromUtcSeconds(breakEndRebuilt);
+    const breakStartedAt = resolveFormInstant(
+      row.originalStartedAt,
+      input.date,
+      row.startedAt,
+      started,
+      input.timeZone,
+    );
+    if (breakStartedAt === null) return { ok: false, error: `${label}: start is not a valid local time` };
+    const breakStartSeconds = instantSeconds(breakStartedAt);
+    if (breakStartSeconds === null) return { ok: false, error: `${label}: start is not a valid local time` };
+    const breakEndedAt = resolveFormInstant(
+      row.originalEndedAt,
+      input.date,
+      row.endedAt,
+      breakStartSeconds + 1,
+      input.timeZone,
+    );
+    if (breakEndedAt === null) return { ok: false, error: `${label}: end is not a valid local time` };
     const breakStart = instantSeconds(breakStartedAt);
     const breakEnd = instantSeconds(breakEndedAt);
     if (breakStart === null || breakEnd === null) return { ok: false, error: `${label}: start is not a valid local time` };

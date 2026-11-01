@@ -295,6 +295,95 @@ describe("formFromTimeEntry seconds", () => {
     expect(result.payload.new_breaks[0]?.ended_at).toBe(breakEnd);
   });
 
+  it("round-trips a same-minute shift without moving the out to the next day", () => {
+    const startedAt = "2026-10-02T17:00:05.000Z";
+    const endedAt = "2026-10-02T17:00:20.000Z";
+    const form = formFromTimeEntry(
+      entry({
+        id: "e-same-minute",
+        employee_id: "emp-1",
+        started_at: startedAt,
+        ended_at: endedAt,
+      }),
+      [],
+      zone,
+    );
+    const result = buildTimeEntryRpcPayload({
+      ...form,
+      reason: "keep seconds",
+      timeZone: zone,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.new_started_at).toBe(startedAt);
+    expect(result.payload.new_ended_at).toBe(endedAt);
+  });
+
+  it("round-trips a same-minute break without moving the end to the next day", () => {
+    const startedAt = localIso("2026-10-02", "09:00");
+    const endedAt = localIso("2026-10-02", "17:00");
+    const breakStart = "2026-10-02T17:00:05.000Z";
+    const breakEnd = "2026-10-02T17:00:20.000Z";
+    const form = formFromTimeEntry(
+      entry({
+        id: "e-same-minute-break",
+        employee_id: "emp-1",
+        started_at: startedAt,
+        ended_at: endedAt,
+      }),
+      [
+        {
+          id: "b-same-minute",
+          org_id: "org-1",
+          time_entry_id: "e-same-minute-break",
+          break_start_event_id: null,
+          break_end_event_id: null,
+          started_at: breakStart,
+          ended_at: breakEnd,
+          duration_seconds: 15,
+          break_type: "other",
+          paid: true,
+          created_at: "2026-10-02T00:00:00.000Z",
+        },
+      ],
+      zone,
+    );
+    const result = buildTimeEntryRpcPayload({
+      ...form,
+      reason: "keep break seconds",
+      timeZone: zone,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.new_breaks[0]?.started_at).toBe(breakStart);
+    expect(result.payload.new_breaks[0]?.ended_at).toBe(breakEnd);
+  });
+
+  it("still infers overnight when the user changes the end to an earlier HH:MM", () => {
+    const startedAt = localIso("2026-10-02", "22:00");
+    const endedAt = localIso("2026-10-03", "06:00");
+    const form = formFromTimeEntry(
+      entry({
+        id: "e-overnight",
+        employee_id: "emp-1",
+        started_at: startedAt,
+        ended_at: endedAt,
+      }),
+      [],
+      zone,
+    );
+    const result = buildTimeEntryRpcPayload({
+      ...form,
+      end: "05:00",
+      reason: "left early",
+      timeZone: zone,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.new_started_at).toBe(startedAt);
+    expect(result.payload.new_ended_at).toBe(localIso("2026-10-03", "05:00"));
+  });
+
   it("rebuilds only a changed end time from HH:MM", () => {
     const form = seeded();
     const result = buildTimeEntryRpcPayload({

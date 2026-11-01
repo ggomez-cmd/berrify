@@ -96,16 +96,17 @@ function asPayrollShiftRevision(value: unknown): PayrollShiftRevision | null {
   return { revision: row.revision, from: row.from, until: row.until };
 }
 
-export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string) {
+export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string, checkDate: string) {
   const { org, role } = useAuth();
   return useQuery({
-    queryKey: ["payroll_run_time_entries", org?.id, periodStart, periodEnd],
-    enabled: Boolean(org?.id && periodStart && periodEnd) && isAdmin(role),
+    queryKey: ["payroll_run_time_entries", org?.id, periodStart, periodEnd, checkDate],
+    enabled: Boolean(org?.id && periodStart && periodEnd && checkDate) && isAdmin(role),
     queryFn: async () => {
       const { data: revisionPayload, error: revisionError } = await supabase.rpc("payroll_shift_revision", {
         target_org_id: org!.id,
         period_start: periodStart,
         period_end: periodEnd,
+        check_date: checkDate,
       });
       const revision = asPayrollShiftRevision(revisionPayload);
       if (revisionError || !revision) {

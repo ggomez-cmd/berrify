@@ -662,6 +662,8 @@ function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithC
     voided_at: null,
     void_reason: null,
     notes: null,
+    time_clock_from: null,
+    time_clock_until: null,
     saved_at: timestamps.updated_at,
     ytd_basis_revision: "rev-0",
     created_at: timestamps.created_at,
