@@ -75,6 +75,21 @@ describe("buildTimeEntryRpcPayload", () => {
     expect(result.workedSeconds).toBe(8 * 3600 - 30 * 60);
   });
 
+  it("rejects an out time skipped by a DST change instead of rolling it to tomorrow", () => {
+    const result = buildTimeEntryRpcPayload({
+      employeeId: "emp-1",
+      restaurantId: "rest-1",
+      position: "Server",
+      date: "2026-03-08",
+      start: "01:45",
+      end: "02:15",
+      breaks: [],
+      reason: "fix",
+      timeZone: "America/New_York",
+    });
+    expect(result).toEqual({ ok: false, error: "Out time is not a valid local time in the organization time zone" });
+  });
+
   it("rejects empty reason, missing restaurant, overlapping breaks, and a 25-hour span", () => {
     expect(
       buildTimeEntryRpcPayload({

@@ -215,7 +215,11 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
   let endedAt = endedUnchangedSameDay;
   if (endedAt === null) {
     const endedSameDay = zonedInstant(input.date, input.end, input.timeZone);
-    if (endedSameDay !== null && endedSameDay > started) {
+    // A time skipped by a DST change is invalid, not a reason to roll to tomorrow.
+    if (endedSameDay === null) {
+      return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
+    }
+    if (endedSameDay > started) {
       endedAt = isoFromUtcSeconds(endedSameDay);
     } else {
       const endedDate = addCalendarDays(input.date, 1);

@@ -350,6 +350,10 @@ begin
       select extract(year from d)::integer + 1
       from unnest(time_entry_lock_payroll_years.local_dates) as d
       where d is not null
+      union
+      select extract(year from d)::integer - 1
+      from unnest(time_entry_lock_payroll_years.local_dates) as d
+      where d is not null
     ) years
     order by yr
   loop
@@ -1084,8 +1088,10 @@ begin
     return NEW;
   end if;
 
-  perform public.time_entry_lock_started_at(NEW.org_id, computed_from);
-  perform public.time_entry_lock_started_at(NEW.org_id, computed_until - interval '1 millisecond');
+  -- No extra locks here: approve already holds the check-date year lock, and every
+  -- shift/punch writer locks year-1..year+1 of its date in ascending order, which
+  -- always includes that year. Locking the window's years here as well would take
+  -- them out of order and can deadlock across a year boundary.
 
   if
     NEW.time_clock_from is distinct from computed_from
@@ -1131,3 +1137,43 @@ grant execute on function public.payroll_shift_revision(uuid, date, date, date) 
 grant execute on function public.manager_save_time_entry(uuid, uuid, uuid, text, timestamptz, timestamptz, jsonb, text) to authenticated;
 grant execute on function public.manager_void_time_entry(uuid, text) to authenticated;
 grant execute on function public.list_approved_time_clock_windows(uuid) to authenticated;
+
+-- Runs approved before this migration have no stored window, and protection only
+-- reads stored windows, so fill them in from each run's frozen settings snapshot
+-- (falling back to the check-date hours zone) before the constraint below makes a
+-- missing window impossible. The immutability guard forbids changing these
+-- columns on approved runs, so it is disabled for this one statement.
+alter table public.payroll_runs disable trigger payroll_runs_guard_immutable;
+
+update public.payroll_runs r
+set
+  time_clock_from = ((r.period_start - 8) + time '00:00') at time zone z.zone,
+  time_clock_until = ((r.period_end + 1) + time '00:00') at time zone z.zone
+from (
+  select
+    run.id,
+    coalesce(
+      nullif(run.settings->>'timeZone', ''),
+      public.payroll_hours_time_zone(run.org_id, run.check_date)
+    ) as zone
+  from public.payroll_runs run
+  where run.status = 'approved'
+    and run.hours_source = 'time_clock'
+    and (run.time_clock_from is null or run.time_clock_until is null)
+) z
+where r.id = z.id;
+
+alter table public.payroll_runs enable trigger payroll_runs_guard_immutable;
+
+alter table public.payroll_runs
+  drop constraint if exists payroll_runs_time_clock_window_check;
+alter table public.payroll_runs
+  add constraint payroll_runs_time_clock_window_check check (
+    hours_source is distinct from 'time_clock'
+    or status is distinct from 'approved'
+    or (
+      time_clock_from is not null
+      and time_clock_until is not null
+      and time_clock_from < time_clock_until
+    )
+  );
