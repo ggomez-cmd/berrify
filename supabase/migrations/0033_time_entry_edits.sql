@@ -1037,6 +1037,17 @@ begin
     return NEW;
   end if;
 
+  -- Punch and shift writers lock their employee row FOR UPDATE and then wait for
+  -- the org lock, while a save's payroll_checks foreign keys need FOR KEY SHARE
+  -- on those same employees. Taking the key-share locks before the org lock
+  -- means a save never holds the org lock while waiting on an employee row, so
+  -- the two can't deadlock.
+  perform 1
+  from public.employees e
+  where e.org_id = NEW.org_id
+  order by e.id
+  for key share;
+
   -- Held until commit, so no shift or punch can change between this revision
   -- check and the save/approve becoming visible.
   perform public.time_clock_payroll_lock(NEW.org_id);
