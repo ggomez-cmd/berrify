@@ -158,6 +158,8 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
     for (const row of restaurantsQuery.data ?? []) map[row.id] = row.name;
     return map;
   }, [restaurantsQuery.data]);
+  // Postgres returns time columns as HH:MM:SS; the hours engine takes HH:MM.
+  const workweekStartTime = (org?.workweek_start_time ?? "00:00").slice(0, 5);
 
   const workweekIds = useMemo(() => {
     if (!periodStart || !periodEnd) return [];
@@ -167,14 +169,14 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       return workweekIdsForPeriod({
         timeZone: latest?.time_zone ?? org?.timezone ?? "America/Puerto_Rico",
         workweekStartDow: latest?.workweek_start_day ?? org?.workweek_start_dow ?? 0,
-        workweekStartTime: org?.workweek_start_time ?? "00:00",
+        workweekStartTime,
         periodStart,
         periodEnd,
       });
     } catch {
       return [];
     }
-  }, [org, periodEnd, periodStart, settingsQuery.data]);
+  }, [org, periodEnd, periodStart, settingsQuery.data, workweekStartTime]);
 
   const tippedProfiles = (profilesQuery.data ?? []).filter((row) => row.is_tipped);
 
@@ -331,24 +333,32 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       ytdBasisQuery.data.prior_gross,
       year,
     );
-    const built = buildRunInput({
-      checkDate,
-      periodStart,
-      periodEnd,
-      hoursSource,
-      workweekStartTime: org?.workweek_start_time ?? "00:00",
-      employerSettingsRows: settingsQuery.data,
-      profiles: profilesQuery.data,
-      payRates: ratesQuery.data,
-      cloverNames,
-      timeEntries: clockHours?.timeEntries,
-      timeBreaks: clockHours?.timeBreaks,
-      cloverCsv: hoursSource === "clover" ? cloverCsv : undefined,
-      tips: tipLines,
-      adjustments: adjustmentLines,
-      ytdByEmployee: ytd,
-    });
-    const preview = previewPayrollRun(built);
+    let built: ReturnType<typeof buildRunInput>;
+    let preview: ReturnType<typeof previewPayrollRun>;
+    try {
+      built = buildRunInput({
+        checkDate,
+        periodStart,
+        periodEnd,
+        hoursSource,
+        workweekStartTime,
+        employerSettingsRows: settingsQuery.data,
+        profiles: profilesQuery.data,
+        payRates: ratesQuery.data,
+        cloverNames,
+        timeEntries: clockHours?.timeEntries,
+        timeBreaks: clockHours?.timeBreaks,
+        cloverCsv: hoursSource === "clover" ? cloverCsv : undefined,
+        tips: tipLines,
+        adjustments: adjustmentLines,
+        ytdByEmployee: ytd,
+      });
+      preview = previewPayrollRun(built);
+    } catch (error) {
+      // A throw here would otherwise vanish in the click handler and leave the page unchanged.
+      setFormError(error instanceof Error ? error.message : "Could not calculate the run");
+      return;
+    }
     setResult(preview);
     setSettingsSnapshot(built.settingsSnapshot);
     setComputedFrom(calculationSource);
