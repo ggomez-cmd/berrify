@@ -55,6 +55,8 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMPLOYER_ONLY_CODES = new Set<TaxCode>(["FED-FUT", "FSE", "SUT"]);
+// Salaried employees who don't punch show the standard 80 biweekly hours, as on Alchavo checks.
+const BIWEEKLY_SALARY_HOURS_HUNDREDTHS = 8000;
 
 export function asUuidOrNull(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -730,14 +732,15 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
         salary: {
           amountCents: salaryCents,
           classId: profile.default_restaurant_id,
-          hoursHundredths: weeks.reduce(
-            (sum, week) =>
-              sum +
-              week.regularHoursHundredths +
-              (week.dailyOtHoursHundredths ?? 0) +
-              (week.weeklyOtHoursHundredths ?? 0),
-            0,
-          ),
+          hoursHundredths:
+            weeks.reduce(
+              (sum, week) =>
+                sum +
+                week.regularHoursHundredths +
+                (week.dailyOtHoursHundredths ?? 0) +
+                (week.weeklyOtHoursHundredths ?? 0),
+              0,
+            ) || BIWEEKLY_SALARY_HOURS_HUNDREDTHS,
         },
         earnings: [...tipEarnings, ...employeeAdjustments],
       });

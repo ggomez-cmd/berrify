@@ -257,6 +257,20 @@ describe("buildRunInput", () => {
     expect(built.warnings.some((row) => row.includes("meal break"))).toBe(true);
   });
 
+  it("gives salaried employees with no punches 80 hours", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1", salary_cents: 190_000 })],
+      payRates: [],
+      shifts: [],
+    });
+    expect(built.input.employees[0]?.salary?.hoursHundredths).toBe(8_000);
+  });
+
   it("keeps restaurant-specific rates for the same position ($140.00)", () => {
     const restaurantA = "11111111-1111-4111-8111-111111111111";
     const restaurantB = "22222222-2222-4222-8222-222222222222";
