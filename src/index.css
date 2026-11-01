@@ -47,7 +47,8 @@ body {
     background: var(--color-white);
   }
 
-  .pay-stub {
+  .pay-stub,
+  .report-page {
     break-after: page;
   }
 }

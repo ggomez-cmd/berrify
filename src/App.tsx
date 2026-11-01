@@ -20,6 +20,7 @@ import { ReviewShiftsPage } from "./features/time-clock/ReviewShiftsPage";
 import { TimeClockPage } from "./features/time-clock/TimeClockPage";
 import { PayrollPage } from "./features/payroll/PayrollPage";
 import { PayrollSetupPage } from "./features/payroll-setup/PayrollSetupPage";
+import { CheckHistoryReportPage } from "./features/payroll-runs/CheckHistoryReportPage";
 import { PayStubsPage } from "./features/payroll-runs/PayStubsPage";
 import { PayrollRunDetailPage } from "./features/payroll-runs/PayrollRunDetailPage";
 import { PayrollRunEditorPage } from "./features/payroll-runs/PayrollRunEditorPage";
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="payroll/runs/:runId/edit" element={<PayrollRunEditRoute />} />
               <Route path="payroll/runs/:runId/stubs/:employeeId" element={<PayStubsPage />} />
               <Route path="payroll/runs/:runId/stubs" element={<PayStubsPage />} />
+              <Route path="payroll/runs/:runId/report" element={<CheckHistoryReportPage />} />
               <Route path="payroll/runs/:runId" element={<PayrollRunDetailRoute />} />
               <Route path="employees" element={<EmployeesPage />} />
               <Route path="inventory" element={<InventoryPage />} />

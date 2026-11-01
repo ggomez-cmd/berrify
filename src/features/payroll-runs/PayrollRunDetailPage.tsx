@@ -92,6 +92,11 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
               Print stubs
             </Link>
           ) : null}
+          {canExport ? (
+            <Link className="inline-flex items-center text-sm font-medium text-wine" to={`/payroll/runs/${run.id}/report`}>
+              Check history report
+            </Link>
+          ) : null}
           <Button
             variant="outline"
             disabled={!canExport}
