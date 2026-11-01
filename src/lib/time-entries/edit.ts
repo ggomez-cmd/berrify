@@ -20,6 +20,8 @@ export type TimeEntryFormBreak = {
   endedAt: string;
   breakType: BreakType;
   paid: boolean;
+  originalStartedAt?: string;
+  originalEndedAt?: string;
 };
 
 export type TimeEntryFormInput = {
@@ -33,6 +35,8 @@ export type TimeEntryFormInput = {
   breaks: readonly TimeEntryFormBreak[];
   reason: string;
   timeZone: string;
+  originalStartedAt?: string;
+  originalEndedAt?: string;
 };
 
 export type TimeEntryRpcBreak = {
@@ -62,6 +66,8 @@ export type ApprovedTimeClockWindow = {
   period_end: string;
   check_date: string;
   time_zone: string;
+  from: string;
+  until: string;
 };
 
 export type ReviewShiftRow = {
@@ -83,6 +89,30 @@ export type ReviewEmployeeGroup = {
 
 function isoFromUtcSeconds(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
+}
+
+function hmInTimeZone(seconds: number, timeZone: string): string {
+  const parts = zonedParts(seconds, timeZone);
+  return `${pad2(parts.hour)}:${pad2(parts.minute)}`;
+}
+
+function localDateAndHm(iso: string, timeZone: string): { date: string; hm: string } | null {
+  const seconds = instantSeconds(iso);
+  if (seconds === null) return null;
+  return { date: ymdInTimeZone(seconds, timeZone), hm: hmInTimeZone(seconds, timeZone) };
+}
+
+function reuseOriginalInstant(
+  originalIso: string | undefined,
+  displayedDate: string,
+  displayedHm: string,
+  timeZone: string,
+): string | null {
+  if (!originalIso) return null;
+  const shown = localDateAndHm(originalIso, timeZone);
+  if (!shown) return null;
+  if (shown.date === displayedDate && shown.hm === displayedHm) return originalIso;
+  return null;
 }
 
 function zonedInstant(ymd: string, hm: string, timeZone: string): number | null {
@@ -146,14 +176,24 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
   if (!isHm(input.start) || !parseHm(input.start)) return { ok: false, error: "In time must be HH:MM" };
   if (!isHm(input.end) || !parseHm(input.end)) return { ok: false, error: "Out time must be HH:MM" };
 
-  const started = zonedInstant(input.date, input.start, input.timeZone);
-  if (started === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
+  const startedRebuilt = zonedInstant(input.date, input.start, input.timeZone);
+  if (startedRebuilt === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
   const endedSameDay = zonedInstant(input.date, input.end, input.timeZone);
-  const overnight = endedSameDay !== null && endedSameDay <= started;
-  const ended = overnight
-    ? zonedInstant(addCalendarDays(input.date, 1), input.end, input.timeZone)
+  const overnight = endedSameDay !== null && endedSameDay <= startedRebuilt;
+  const endedDate = overnight ? addCalendarDays(input.date, 1) : input.date;
+  const endedRebuilt = overnight
+    ? zonedInstant(endedDate, input.end, input.timeZone)
     : endedSameDay;
-  if (ended === null) return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
+  if (endedRebuilt === null) return { ok: false, error: "Out time is not a valid local time in the organization time zone" };
+  const startedAt =
+    reuseOriginalInstant(input.originalStartedAt, input.date, input.start, input.timeZone) ??
+    isoFromUtcSeconds(startedRebuilt);
+  const endedAt =
+    reuseOriginalInstant(input.originalEndedAt, endedDate, input.end, input.timeZone) ??
+    isoFromUtcSeconds(endedRebuilt);
+  const started = instantSeconds(startedAt);
+  const ended = instantSeconds(endedAt);
+  if (started === null || ended === null) return { ok: false, error: "In time is not a valid local time in the organization time zone" };
   if (ended <= started) return { ok: false, error: "Out must be after in" };
   if (ended - started > TIME_ENTRY_MAX_SECONDS) return { ok: false, error: "Shift cannot exceed 24 hours" };
   if (ended > Math.floor(Date.now() / 1000) + 5 * 60) {
@@ -179,17 +219,34 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
         return { ok: false, error: `${label}: type is invalid (${exhaustive})` };
       }
     }
-    const breakStart = placeClock(input.date, row.startedAt, started, input.timeZone);
-    if (breakStart === null) return { ok: false, error: `${label}: start is not a valid local time` };
-    const breakEnd = placeClock(input.date, row.endedAt, breakStart + 1, input.timeZone);
-    if (breakEnd === null) return { ok: false, error: `${label}: end is not a valid local time` };
+    const breakStartRebuilt = placeClock(input.date, row.startedAt, started, input.timeZone);
+    if (breakStartRebuilt === null) return { ok: false, error: `${label}: start is not a valid local time` };
+    const breakEndRebuilt = placeClock(input.date, row.endedAt, breakStartRebuilt + 1, input.timeZone);
+    if (breakEndRebuilt === null) return { ok: false, error: `${label}: end is not a valid local time` };
+    const breakStartedAt =
+      reuseOriginalInstant(
+        row.originalStartedAt,
+        ymdInTimeZone(breakStartRebuilt, input.timeZone),
+        row.startedAt,
+        input.timeZone,
+      ) ?? isoFromUtcSeconds(breakStartRebuilt);
+    const breakEndedAt =
+      reuseOriginalInstant(
+        row.originalEndedAt,
+        ymdInTimeZone(breakEndRebuilt, input.timeZone),
+        row.endedAt,
+        input.timeZone,
+      ) ?? isoFromUtcSeconds(breakEndRebuilt);
+    const breakStart = instantSeconds(breakStartedAt);
+    const breakEnd = instantSeconds(breakEndedAt);
+    if (breakStart === null || breakEnd === null) return { ok: false, error: `${label}: start is not a valid local time` };
     if (breakEnd <= breakStart) return { ok: false, error: `${label}: end must be after start` };
     if (breakStart < started || breakEnd > ended) {
       return { ok: false, error: `${label}: must stay inside the shift` };
     }
     rpcBreaks.push({
-      started_at: isoFromUtcSeconds(breakStart),
-      ended_at: isoFromUtcSeconds(breakEnd),
+      started_at: breakStartedAt,
+      ended_at: breakEndedAt,
       break_type: row.breakType,
       paid: row.paid,
     });
@@ -221,8 +278,8 @@ export function buildTimeEntryRpcPayload(input: TimeEntryFormInput): TimeEntryFo
     target_employee_id: input.employeeId,
     target_restaurant_id: input.restaurantId,
     target_position: position,
-    new_started_at: isoFromUtcSeconds(started),
-    new_ended_at: isoFromUtcSeconds(ended),
+    new_started_at: startedAt,
+    new_ended_at: endedAt,
     new_breaks: rpcBreaks,
     reason,
   };
@@ -241,8 +298,10 @@ export function approvedCheckDateForShift(
   const started = instantSeconds(startedAt);
   if (started === null) return null;
   for (const window of windows) {
-    const local = ymdInTimeZone(started, window.time_zone);
-    if (local >= window.period_start.slice(0, 10) && local <= window.period_end.slice(0, 10)) {
+    const from = instantSeconds(window.from);
+    const until = instantSeconds(window.until);
+    if (from === null || until === null) continue;
+    if (started >= from && started < until) {
       return window.check_date.slice(0, 10);
     }
   }
@@ -312,7 +371,18 @@ export function formFromTimeEntry(
   entry: TimeEntry,
   breaks: readonly TimeBreak[],
   timeZone: string,
-): Pick<TimeEntryFormInput, "date" | "start" | "end" | "breaks" | "restaurantId" | "position" | "employeeId"> {
+): Pick<
+  TimeEntryFormInput,
+  | "date"
+  | "start"
+  | "end"
+  | "breaks"
+  | "restaurantId"
+  | "position"
+  | "employeeId"
+  | "originalStartedAt"
+  | "originalEndedAt"
+> {
   const started = instantSeconds(entry.started_at) ?? 0;
   const ended = instantSeconds(entry.ended_at) ?? started;
   const startParts = {
@@ -326,6 +396,8 @@ export function formFromTimeEntry(
     date: startParts.date,
     start: startParts.hm,
     end: hmInTimeZone(ended, timeZone),
+    originalStartedAt: entry.started_at,
+    originalEndedAt: entry.ended_at ?? undefined,
     breaks: [...breaks]
       .sort((a, b) => a.started_at.localeCompare(b.started_at))
       .map((row) => ({
@@ -333,11 +405,8 @@ export function formFromTimeEntry(
         endedAt: hmInTimeZone(instantSeconds(row.ended_at) ?? started, timeZone),
         breakType: row.break_type,
         paid: row.paid,
+        originalStartedAt: row.started_at,
+        originalEndedAt: row.ended_at,
       })),
   };
-}
-
-function hmInTimeZone(seconds: number, timeZone: string): string {
-  const parts = zonedParts(seconds, timeZone);
-  return `${pad2(parts.hour)}:${pad2(parts.minute)}`;
 }

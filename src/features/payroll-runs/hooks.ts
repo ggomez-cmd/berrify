@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addCalendarDays } from "../../lib/payroll-engine/hours/time";
 import type { TimeBreakRow, TimeEntryRow } from "../../lib/payroll-engine/hours/types";
 import {
   payrollYtdBasisFromRpc,
@@ -82,20 +81,34 @@ export function usePayrollYtdBasis(taxYear: number | null, beforeCheckDate: stri
   });
 }
 
+type PayrollShiftRevision = {
+  revision: string;
+  from: string;
+  until: string;
+};
+
+function asPayrollShiftRevision(value: unknown): PayrollShiftRevision | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.revision !== "string" || typeof row.from !== "string" || typeof row.until !== "string") {
+    return null;
+  }
+  return { revision: row.revision, from: row.from, until: row.until };
+}
+
 export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string) {
   const { org, role } = useAuth();
-  const lookback = periodStart ? addCalendarDays(periodStart, -8) : "";
-  const until = periodEnd ? addCalendarDays(periodEnd, 2) : "";
   return useQuery({
-    queryKey: ["payroll_run_time_entries", org?.id, lookback, until],
+    queryKey: ["payroll_run_time_entries", org?.id, periodStart, periodEnd],
     enabled: Boolean(org?.id && periodStart && periodEnd) && isAdmin(role),
     queryFn: async () => {
-      const { data: revision, error: revisionError } = await supabase.rpc("payroll_shift_revision", {
+      const { data: revisionPayload, error: revisionError } = await supabase.rpc("payroll_shift_revision", {
         target_org_id: org!.id,
         period_start: periodStart,
         period_end: periodEnd,
       });
-      if (revisionError || typeof revision !== "string") {
+      const revision = asPayrollShiftRevision(revisionPayload);
+      if (revisionError || !revision) {
         throw toThrownError(revisionError, "Could not load shift revision");
       }
       const { data: entries, error } = await supabase
@@ -103,8 +116,8 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string)
         .select("*")
         .eq("org_id", org!.id)
         .not("ended_at", "is", null)
-        .gte("started_at", `${lookback}T00:00:00.000Z`)
-        .lt("started_at", `${until}T00:00:00.000Z`)
+        .gte("started_at", revision.from)
+        .lt("started_at", revision.until)
         .order("started_at", { ascending: true });
       if (error) throw toThrownError(error, "Could not load time entries");
       const rows = (entries ?? []) as TimeEntry[];
@@ -139,7 +152,7 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string)
         break_type: row.break_type,
         paid: row.paid,
       }));
-      return { timeEntries, timeBreaks, shiftRevision: revision };
+      return { timeEntries, timeBreaks, shiftRevision: revision.revision };
     },
   });
 }

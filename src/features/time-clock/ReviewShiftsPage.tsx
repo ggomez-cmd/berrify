@@ -300,6 +300,8 @@ function ShiftEditorDialog({
       breaks,
       reason,
       timeZone,
+      originalStartedAt: seeded?.originalStartedAt,
+      originalEndedAt: seeded?.originalEndedAt,
     });
     if (!built.ok) {
       setFormError(built.error);

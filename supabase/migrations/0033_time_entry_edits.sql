@@ -3,9 +3,10 @@
 -- `npm run db:apply`, not db:push.
 -- Does not alter clock_events. Edits stay because reconcile_attendance()
 -- does not rebuild time_entries.
--- payroll_runs.inputs.shiftRevision is the md5 from payroll_shift_revision;
--- a BEFORE trigger rejects time_clock draft saves and approvals when it is
--- missing or stale. Parameter references are qualified with the function name.
+-- payroll_runs.inputs.shiftRevision is the md5 from payroll_shift_revision_unchecked
+-- (also returned as payroll_shift_revision.revision). A BEFORE trigger rejects
+-- time_clock draft saves and approvals when it is missing or stale.
+-- Parameter references are qualified with the function name.
 
 create table if not exists public.time_entry_edits (
   id uuid primary key default gen_random_uuid(),
@@ -70,6 +71,37 @@ $$;
 revoke all on function public.payroll_hours_time_zone(uuid, date)
   from public, anon, authenticated;
 
+create or replace function public.payroll_time_clock_window(
+  target_org_id uuid,
+  period_start date,
+  period_end date
+)
+returns table (
+  window_from timestamptz,
+  window_until timestamptz
+)
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select
+    (
+      (payroll_time_clock_window.period_start - 8) + time '00:00'
+    ) at time zone public.payroll_hours_time_zone(
+      payroll_time_clock_window.target_org_id,
+      payroll_time_clock_window.period_end
+    ),
+    (
+      (payroll_time_clock_window.period_end + 1) + time '00:00'
+    ) at time zone public.payroll_hours_time_zone(
+      payroll_time_clock_window.target_org_id,
+      payroll_time_clock_window.period_end
+    );
+$$;
+
+revoke all on function public.payroll_time_clock_window(uuid, date, date)
+  from public, anon, authenticated;
+
 create or replace function public.payroll_shift_revision_unchecked(
   target_org_id uuid,
   period_start date,
@@ -81,20 +113,16 @@ stable
 set search_path = public, pg_temp
 as $$
 declare
-  zone text;
   window_start timestamptz;
   window_end timestamptz;
 begin
-  zone := public.payroll_hours_time_zone(
+  select w.window_from, w.window_until
+    into window_start, window_end
+  from public.payroll_time_clock_window(
     payroll_shift_revision_unchecked.target_org_id,
+    payroll_shift_revision_unchecked.period_start,
     payroll_shift_revision_unchecked.period_end
-  );
-  window_start := (
-    (payroll_shift_revision_unchecked.period_start - 8) + time '00:00'
-  ) at time zone zone;
-  window_end := (
-    (payroll_shift_revision_unchecked.period_end + 1) + time '00:00'
-  ) at time zone zone;
+  ) w;
 
   return md5(
     coalesce(
@@ -142,36 +170,57 @@ $$;
 revoke all on function public.payroll_shift_revision_unchecked(uuid, date, date)
   from public, anon, authenticated;
 
+drop function if exists public.payroll_shift_revision(uuid, date, date);
+
 create or replace function public.payroll_shift_revision(
   target_org_id uuid,
   period_start date,
   period_end date
 )
-returns text
+returns jsonb
 language plpgsql
 security definer
 stable
 set search_path = public, pg_temp
 as $$
+declare
+  window_start timestamptz;
+  window_end timestamptz;
 begin
   if not public.has_org_role(payroll_shift_revision.target_org_id, array['admin']) then
     raise exception 'not authorized';
   end if;
 
-  return public.payroll_shift_revision_unchecked(
+  select w.window_from, w.window_until
+    into window_start, window_end
+  from public.payroll_time_clock_window(
     payroll_shift_revision.target_org_id,
     payroll_shift_revision.period_start,
     payroll_shift_revision.period_end
+  ) w;
+
+  return jsonb_build_object(
+    'revision', public.payroll_shift_revision_unchecked(
+      payroll_shift_revision.target_org_id,
+      payroll_shift_revision.period_start,
+      payroll_shift_revision.period_end
+    ),
+    'from', window_start,
+    'until', window_end
   );
 end;
 $$;
+
+drop function if exists public.list_approved_time_clock_windows(uuid);
 
 create or replace function public.list_approved_time_clock_windows(target_org_id uuid)
 returns table (
   period_start date,
   period_end date,
   check_date date,
-  time_zone text
+  time_zone text,
+  "from" timestamptz,
+  "until" timestamptz
 )
 language plpgsql
 security definer
@@ -191,8 +240,11 @@ begin
     r.period_start,
     r.period_end,
     r.check_date,
-    public.payroll_hours_time_zone(r.org_id, r.period_end)
+    public.payroll_hours_time_zone(r.org_id, r.period_end),
+    w.window_from,
+    w.window_until
   from public.payroll_runs r
+  cross join lateral public.payroll_time_clock_window(r.org_id, r.period_start, r.period_end) w
   where r.org_id = list_approved_time_clock_windows.target_org_id
     and r.status = 'approved'
     and r.hours_source = 'time_clock'
@@ -298,13 +350,12 @@ begin
   select r.check_date
     into locked_check
   from public.payroll_runs r
+  cross join lateral public.payroll_time_clock_window(r.org_id, r.period_start, r.period_end) w
   where r.org_id = time_entry_reject_if_approved_run.target_org_id
     and r.status = 'approved'
     and r.hours_source = 'time_clock'
-    and (
-      time_entry_reject_if_approved_run.started_at
-      at time zone public.payroll_hours_time_zone(r.org_id, r.period_end)
-    )::date between r.period_start and r.period_end
+    and time_entry_reject_if_approved_run.started_at >= w.window_from
+    and time_entry_reject_if_approved_run.started_at < w.window_until
   order by r.check_date, r.id
   limit 1;
 
@@ -316,6 +367,125 @@ $$;
 
 revoke all on function public.time_entry_reject_if_approved_run(uuid, timestamptz)
   from public, anon, authenticated;
+
+create or replace function public.time_entry_lock_started_at(
+  target_org_id uuid,
+  started_at timestamptz
+)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  zone text;
+begin
+  if time_entry_lock_started_at.started_at is null then
+    return;
+  end if;
+
+  zone := public.payroll_hours_time_zone(
+    time_entry_lock_started_at.target_org_id,
+    (time_entry_lock_started_at.started_at at time zone 'UTC')::date
+  );
+  perform public.time_entry_lock_payroll_years(
+    time_entry_lock_started_at.target_org_id,
+    array[(time_entry_lock_started_at.started_at at time zone zone)::date]
+  );
+end;
+$$;
+
+revoke all on function public.time_entry_lock_started_at(uuid, timestamptz)
+  from public, anon, authenticated;
+
+create or replace function public.time_entries_guard_payroll_window()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  org uuid;
+  old_start timestamptz;
+  new_start timestamptz;
+begin
+  if TG_OP = 'DELETE' then
+    org := OLD.org_id;
+    old_start := OLD.started_at;
+  elsif TG_OP = 'UPDATE' then
+    org := coalesce(NEW.org_id, OLD.org_id);
+    old_start := OLD.started_at;
+    new_start := NEW.started_at;
+  else
+    org := NEW.org_id;
+    new_start := NEW.started_at;
+  end if;
+
+  if old_start is not null then
+    perform public.time_entry_lock_started_at(org, old_start);
+    perform public.time_entry_reject_if_approved_run(org, old_start);
+  end if;
+  if new_start is not null and new_start is distinct from old_start then
+    perform public.time_entry_lock_started_at(org, new_start);
+    perform public.time_entry_reject_if_approved_run(org, new_start);
+  end if;
+
+  if TG_OP = 'DELETE' then
+    return OLD;
+  end if;
+  return NEW;
+end;
+$$;
+
+revoke all on function public.time_entries_guard_payroll_window()
+  from public, anon, authenticated;
+
+drop trigger if exists time_entries_guard_payroll_window on public.time_entries;
+create trigger time_entries_guard_payroll_window
+  before insert or update or delete on public.time_entries
+  for each row execute function public.time_entries_guard_payroll_window();
+
+create or replace function public.time_breaks_guard_payroll_window()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  entry public.time_entries%rowtype;
+  entry_id uuid;
+begin
+  if TG_OP = 'DELETE' then
+    entry_id := OLD.time_entry_id;
+  else
+    entry_id := NEW.time_entry_id;
+  end if;
+
+  select * into entry
+  from public.time_entries
+  where id = entry_id;
+
+  if not found then
+    if TG_OP = 'DELETE' then
+      return OLD;
+    end if;
+    return NEW;
+  end if;
+
+  perform public.time_entry_lock_started_at(entry.org_id, entry.started_at);
+  perform public.time_entry_reject_if_approved_run(entry.org_id, entry.started_at);
+
+  if TG_OP = 'DELETE' then
+    return OLD;
+  end if;
+  return NEW;
+end;
+$$;
+
+revoke all on function public.time_breaks_guard_payroll_window()
+  from public, anon, authenticated;
+
+drop trigger if exists time_breaks_guard_payroll_window on public.time_breaks;
+create trigger time_breaks_guard_payroll_window
+  before insert or update or delete on public.time_breaks
+  for each row execute function public.time_breaks_guard_payroll_window();
 
 create or replace function public.manager_save_time_entry(
   target_entry_id uuid,
@@ -728,6 +898,7 @@ as $$
 declare
   expected text;
   provided text;
+  window_end timestamptz;
 begin
   if NEW.hours_source is distinct from 'time_clock' then
     return NEW;
@@ -753,6 +924,25 @@ begin
 
   if provided is null or provided is distinct from expected then
     raise exception 'shifts changed since this run was calculated: stale, recalculate';
+  end if;
+
+  if TG_OP = 'UPDATE' and OLD.status = 'draft' and NEW.status = 'approved' then
+    select w.window_until
+      into window_end
+    from public.payroll_time_clock_window(NEW.org_id, NEW.period_start, NEW.period_end) w;
+
+    if now() < window_end then
+      raise exception 'the pay period has not ended yet';
+    end if;
+
+    if exists (
+      select 1
+      from public.clock_sessions s
+      where s.org_id = NEW.org_id
+        and s.clocked_in_at < window_end
+    ) then
+      raise exception 'employees are still clocked in from this period: clock them out first';
+    end if;
   end if;
 
   return NEW;

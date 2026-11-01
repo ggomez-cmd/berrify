@@ -4,12 +4,21 @@ import type { TimeBreak, TimeEntry, TimeEntryEdit, TimeException } from "../type
 import {
   approvedCheckDateForShift,
   buildTimeEntryRpcPayload,
+  formFromTimeEntry,
   formatWorkedHours,
   groupTimeEntriesForReview,
   workedSecondsFromRange,
 } from "./edit";
 
 const zone = "America/Puerto_Rico";
+const approvedWindow = {
+  period_start: "2026-10-01",
+  period_end: "2026-10-08",
+  check_date: "2026-10-09",
+  time_zone: zone,
+  from: "2026-09-23T04:00:00.000Z",
+  until: "2026-10-09T04:00:00.000Z",
+};
 
 function localIso(ymd: string, hm: string): string {
   const [hour, minute] = hm.split(":");
@@ -212,7 +221,7 @@ describe("groupTimeEntriesForReview", () => {
       breaks,
       exceptions,
       edits,
-      windows: [{ period_start: "2026-10-01", period_end: "2026-10-08", check_date: "2026-10-09", time_zone: zone }],
+      windows: [approvedWindow],
       names: { "emp-1": "Ada Clerk", "emp-2": "Bea Host" },
       timeZone: zone,
       periodStart: "2026-10-01",
@@ -229,11 +238,75 @@ describe("groupTimeEntriesForReview", () => {
 });
 
 describe("approvedCheckDateForShift", () => {
-  it("uses the run's zone, not the browser zone", () => {
-    expect(
-      approvedCheckDateForShift(localIso("2026-10-01", "22:00"), [
-        { period_start: "2026-10-01", period_end: "2026-10-08", check_date: "2026-10-09", time_zone: zone },
-      ]),
-    ).toBe("2026-10-09");
+  it("uses the shared from/until window, including overnight starts before period_start", () => {
+    expect(approvedCheckDateForShift(localIso("2026-10-01", "22:00"), [approvedWindow])).toBe("2026-10-09");
+    expect(approvedCheckDateForShift(localIso("2026-09-30", "22:00"), [approvedWindow])).toBe("2026-10-09");
+    expect(approvedCheckDateForShift(localIso("2026-09-22", "22:00"), [approvedWindow])).toBeNull();
+    expect(approvedCheckDateForShift("2026-10-09T04:00:00.000Z", [approvedWindow])).toBeNull();
+  });
+});
+
+describe("formFromTimeEntry seconds", () => {
+  const startWithSeconds = "2026-10-02T13:00:59.000Z";
+  const endOnTheMinute = "2026-10-02T21:00:00.000Z";
+  const breakStart = "2026-10-02T16:00:17.000Z";
+  const breakEnd = "2026-10-02T16:30:04.000Z";
+
+  function seeded() {
+    return formFromTimeEntry(
+      entry({
+        id: "e-seconds",
+        employee_id: "emp-1",
+        started_at: startWithSeconds,
+        ended_at: endOnTheMinute,
+      }),
+      [
+        {
+          id: "b-seconds",
+          org_id: "org-1",
+          time_entry_id: "e-seconds",
+          break_start_event_id: null,
+          break_end_event_id: null,
+          started_at: breakStart,
+          ended_at: breakEnd,
+          duration_seconds: 1787,
+          break_type: "meal",
+          paid: false,
+          created_at: "2026-10-02T00:00:00.000Z",
+        },
+      ],
+      zone,
+    );
+  }
+
+  it("keeps original instants when only the restaurant changes", () => {
+    const form = seeded();
+    const result = buildTimeEntryRpcPayload({
+      ...form,
+      restaurantId: "rest-2",
+      reason: "wrong restaurant",
+      timeZone: zone,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.new_started_at).toBe(startWithSeconds);
+    expect(result.payload.new_ended_at).toBe(endOnTheMinute);
+    expect(result.payload.new_breaks[0]?.started_at).toBe(breakStart);
+    expect(result.payload.new_breaks[0]?.ended_at).toBe(breakEnd);
+  });
+
+  it("rebuilds only a changed end time from HH:MM", () => {
+    const form = seeded();
+    const result = buildTimeEntryRpcPayload({
+      ...form,
+      end: "17:30",
+      reason: "adjust out",
+      timeZone: zone,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.new_started_at).toBe(startWithSeconds);
+    expect(result.payload.new_ended_at).toBe(localIso("2026-10-02", "17:30"));
+    expect(result.payload.new_breaks[0]?.started_at).toBe(breakStart);
   });
 });
