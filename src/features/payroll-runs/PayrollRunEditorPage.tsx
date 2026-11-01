@@ -595,7 +595,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       {discardDraft.error ? <p className="text-sm text-danger">{discardDraft.error.message}</p> : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={calculate} disabled={!prerequisitesReady}>
+        <Button onClick={calculate} disabled={!prerequisitesReady || timeQuery.isFetching}>
           Calculate
         </Button>
         <Button

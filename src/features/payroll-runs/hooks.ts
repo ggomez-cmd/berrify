@@ -175,6 +175,9 @@ export function useSavePayrollRunDraft() {
       return data as string;
     },
     onSettled: () => {
+      // A shift-stale rejection means the cached shifts are old; reload them so
+      // Recalculate uses the current ones.
+      void qc.invalidateQueries({ queryKey: ["payroll_run_time_entries"] });
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });
@@ -191,6 +194,7 @@ export function useApprovePayrollRun() {
       if (error) throw toThrownError(error, "Could not approve payroll run");
     },
     onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["payroll_run_time_entries"] });
       void qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run"] });
       void qc.invalidateQueries({ queryKey: ["payroll_run_history"] });

@@ -593,10 +593,11 @@ begin
   end if;
 
   if manager_save_time_entry.target_entry_id is not null then
+    -- Lock the employee before the entry, the same order an employee delete
+    -- cascades in, so the two can't deadlock.
     select * into entry_row
     from public.time_entries
-    where id = manager_save_time_entry.target_entry_id
-    for update;
+    where id = manager_save_time_entry.target_entry_id;
 
     if not found then
       raise exception 'time entry not found';
@@ -613,6 +614,15 @@ begin
     from public.employees
     where id = entry_row.employee_id
     for update;
+
+    select * into entry_row
+    from public.time_entries
+    where id = manager_save_time_entry.target_entry_id
+    for update;
+
+    if not found then
+      raise exception 'time entry not found';
+    end if;
 
     action := 'update';
     before_snap := public.time_entry_snapshot(entry_row.id);
@@ -1046,6 +1056,13 @@ begin
   from public.employees e
   where e.org_id = NEW.org_id
   order by e.id
+  for key share;
+  -- Same for restaurants (earnings lines reference them): a restaurant delete
+  -- holds its row and then waits for the org lock via time_entries' set null.
+  perform 1
+  from public.restaurants r
+  where r.org_id = NEW.org_id
+  order by r.id
   for key share;
 
   -- Held until commit, so no shift or punch can change between this revision
