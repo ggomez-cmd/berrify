@@ -51,4 +51,10 @@ body {
   .report-page {
     break-after: page;
   }
+
+  /* Keep the wordmark and wine section bars when printing. */
+  .report-page {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }

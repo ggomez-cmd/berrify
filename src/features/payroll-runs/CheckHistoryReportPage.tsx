@@ -1,7 +1,9 @@
 import { useMemo, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { BrandMark } from "../../components/ui/brand-mark";
 import { Button } from "../../components/ui/button";
+import { cn } from "../../lib/cn";
 import { checkHistoryReport, type CheckHistoryEarning, type CheckHistoryTax } from "../../lib/payroll/check-history";
 import { resultFromStoredRun } from "../../lib/payroll/runs";
 import { isAdmin } from "../../lib/schedule";
@@ -51,14 +53,14 @@ export function CheckHistoryReportPage() {
   }
 
   const report = checkHistoryReport(result);
-  const header = (
-    <ReportHeader
-      employerName={org?.name ?? "Employer"}
-      checkDate={run.check_date.slice(0, 10)}
-      periodStart={run.period_start.slice(0, 10)}
-      periodEnd={run.period_end.slice(0, 10)}
-    />
-  );
+  const meta: ReportMeta = {
+    employerName: org?.name ?? "Employer",
+    checkDate: run.check_date.slice(0, 10),
+    periodStart: run.period_start.slice(0, 10),
+    periodEnd: run.period_end.slice(0, 10),
+    pageCount: report.employees.length + 2,
+    printedOn: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+  };
   const employees = [...report.employees].sort((a, b) =>
     (numbers[a.employeeId] ?? names[a.employeeId] ?? a.employeeId).localeCompare(
       numbers[b.employeeId] ?? names[b.employeeId] ?? b.employeeId,
@@ -76,8 +78,8 @@ export function CheckHistoryReportPage() {
         <Button onClick={() => window.print()}>Print report</Button>
       </div>
 
-      {employees.map((employee) => (
-        <ReportPage key={employee.employeeId} header={header}>
+      {employees.map((employee, index) => (
+        <ReportPage key={employee.employeeId} meta={meta} page={index + 1}>
           <div className="grid gap-6 md:grid-cols-2 print:grid-cols-2">
             <div>
               <SectionBar>Employee salary information</SectionBar>
@@ -93,7 +95,7 @@ export function CheckHistoryReportPage() {
               </dl>
               <EarningsTable rows={employee.earnings} />
               <TotalLine label="Total gross earnings" cents={employee.grossCents} />
-              <TotalLine label="Total net earnings" cents={employee.netCents} />
+              <TotalLine label="Total net earnings" cents={employee.netCents} accent />
             </div>
             <div className="grid content-start gap-4">
               <TaxTable title="Employer withholdings" rows={employee.employerTaxes} totalCents={employee.employerTaxCents} />
@@ -107,7 +109,7 @@ export function CheckHistoryReportPage() {
         </ReportPage>
       ))}
 
-      <ReportPage header={header}>
+      <ReportPage meta={meta} page={meta.pageCount - 1}>
         <SectionBar>Earnings summary</SectionBar>
         <EarningsTable rows={report.earnings} />
         <TotalLine label="Total earnings" cents={report.grossCents} />
@@ -120,7 +122,7 @@ export function CheckHistoryReportPage() {
         </div>
       </ReportPage>
 
-      <ReportPage header={header}>
+      <ReportPage meta={meta} page={meta.pageCount}>
         <TaxTable title="Employer withholding summary" rows={report.employerTaxes} totalCents={report.employerTaxCents} />
         <div className="mt-6">
           <SectionBar>Total payroll liabilities to be paid or debited</SectionBar>
@@ -139,55 +141,63 @@ export function CheckHistoryReportPage() {
         <div className="mt-6">
           <TotalLine label="Gross wages" cents={report.grossCents} />
           <TotalLine label="Total deductions" cents={report.employeeDeductionCents} />
-          <TotalLine label="Net pay" cents={report.netPayCents} />
+          <TotalLine label="Net pay" cents={report.netPayCents} accent />
         </div>
         <div className="mt-6">
           <SectionBar>Total payroll liabilities employer cost</SectionBar>
-          <TotalLine label="Total" cents={report.employerCostCents} />
+          <TotalLine label="Total" cents={report.employerCostCents} accent />
         </div>
       </ReportPage>
     </div>
   );
 }
 
-function ReportHeader({
-  employerName,
-  checkDate,
-  periodStart,
-  periodEnd,
-}: {
+type ReportMeta = {
   employerName: string;
   checkDate: string;
   periodStart: string;
   periodEnd: string;
-}) {
-  return (
-    <header className="mb-5 text-center">
-      <h2 className="text-lg font-semibold tracking-tight text-ink">{employerName}</h2>
-      <p className="text-sm font-semibold text-ink">Payroll check history report</p>
-      <p className="text-sm text-muted">
-        Check date {checkDate} · Period {periodStart} – {periodEnd}
-      </p>
-    </header>
-  );
-}
+  pageCount: number;
+  printedOn: string;
+};
 
-function ReportPage({ header, children }: { header: ReactNode; children: ReactNode }) {
+function ReportPage({ meta, page, children }: { meta: ReportMeta; page: number; children: ReactNode }) {
   return (
-    <article className="report-page mb-8 rounded-2xl border border-line bg-white p-6 print:mb-0 print:rounded-none print:border-0 print:p-0">
-      {header}
-      {children}
+    <article className="report-page mb-8 flex flex-col rounded-2xl border border-line bg-white p-6 shadow-sm print:mb-0 print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      <header className="mb-5 flex items-start justify-between gap-4 border-b-2 border-wine pb-4">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Payroll check history</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-ink">{meta.employerName}</h2>
+          <p className="text-sm text-muted">
+            Check date {meta.checkDate} · Period {meta.periodStart} – {meta.periodEnd}
+          </p>
+        </div>
+        <BrandMark className="text-wine" />
+      </header>
+      <div className="flex-1">{children}</div>
+      <footer className="mt-6 flex flex-wrap justify-between gap-2 border-t border-line pt-3 text-xs text-muted">
+        <span>Generated by Berrify</span>
+        <span>
+          Page {page} of {meta.pageCount}
+        </span>
+        <span>Printed {meta.printedOn}</span>
+      </footer>
     </article>
   );
 }
 
 function SectionBar({ children }: { children: ReactNode }) {
-  return <h3 className="rounded-lg bg-paper px-3 py-1.5 text-sm font-semibold text-ink">{children}</h3>;
+  return <h3 className="rounded-lg bg-wine/10 px-3 py-1.5 text-sm font-semibold text-wine">{children}</h3>;
 }
 
-function TotalLine({ label, cents }: { label: string; cents: number }) {
+function TotalLine({ label, cents, accent = false }: { label: string; cents: number; accent?: boolean }) {
   return (
-    <div className="mt-2 flex justify-between gap-4 text-sm font-semibold text-ink">
+    <div
+      className={cn(
+        "mt-2 flex justify-between gap-4 border-t border-line pt-2 text-sm font-semibold",
+        accent ? "text-wine" : "text-ink",
+      )}
+    >
       <span>{label}</span>
       <span className="tabular-nums">{formatCents(cents)}</span>
     </div>
