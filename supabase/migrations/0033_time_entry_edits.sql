@@ -610,6 +610,15 @@ begin
       raise exception 'employee cannot be changed';
     end if;
 
+    -- Restaurant deletes lock the restaurant, then (via set null) employees and
+    -- time_entries, then wait for the org lock. Key-share the restaurants first
+    -- so this RPC never holds an employee or entry while waiting on one.
+    perform 1
+    from public.restaurants r
+    where r.id in (manager_save_time_entry.target_restaurant_id, entry_row.restaurant_id)
+    order by r.id
+    for key share;
+
     select * into emp
     from public.employees
     where id = entry_row.employee_id
@@ -630,6 +639,15 @@ begin
     if manager_save_time_entry.target_employee_id is null then
       raise exception 'employee is required';
     end if;
+
+    -- Restaurant deletes lock the restaurant, then (via set null) employees and
+    -- time_entries, then wait for the org lock. Key-share the restaurants first
+    -- so this RPC never holds an employee or entry while waiting on one.
+    perform 1
+    from public.restaurants r
+    where r.id in (manager_save_time_entry.target_restaurant_id)
+    order by r.id
+    for key share;
 
     select * into emp
     from public.employees
