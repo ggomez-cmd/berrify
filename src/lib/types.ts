@@ -415,6 +415,21 @@ export type TimeBreak = {
   created_at: string;
 };
 
+export type TimeEntryEditAction = "create" | "update" | "void";
+
+export type TimeEntryEdit = {
+  id: string;
+  org_id: string;
+  time_entry_id: string;
+  employee_id: string;
+  action: TimeEntryEditAction;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string;
+  edited_by: string | null;
+  edited_at: string;
+};
+
 export type TimeException = {
   id: string;
   org_id: string;

@@ -206,6 +206,7 @@ export type PayrollRunInputsSnapshot = PayrollRunInput & {
   shifts: WorkedShift[];
   tips: WeekTips[];
   adjustments: ManualAdjustmentInput[];
+  shiftRevision?: string;
 };
 
 /** jsonb `run` for `save_payroll_run_draft`. Keys must match the SQL. */
@@ -424,6 +425,7 @@ export type PayrollCalculationSource = {
   historyFingerprint: string;
   openingBalancesFingerprint: string;
   ytdBasisRevision: string;
+  shiftRevision: string;
 };
 
 export function payrollYtdHistoryFingerprint(
@@ -514,6 +516,7 @@ export function payrollCalculationSourceKey(source: PayrollCalculationSource): s
     historyFingerprint: source.historyFingerprint,
     openingBalancesFingerprint: source.openingBalancesFingerprint,
     ytdBasisRevision: source.ytdBasisRevision,
+    shiftRevision: source.shiftRevision,
   });
 }
 

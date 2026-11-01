@@ -360,9 +360,11 @@ describe("canApprove and toDraftPayload", () => {
         shifts: [],
         tips: [],
         adjustments: [],
+        shiftRevision: "shift-1",
       },
       ytdBasisRevision: "rev-1",
     });
+    expect(payload.run.inputs.shiftRevision).toBe("shift-1");
     expect(payload.run.errors).toEqual(result.errors);
     expect(payload.run.warnings).toEqual(result.warnings);
     expect(payload.run.ytd_basis_revision).toBe("rev-1");
@@ -447,6 +449,7 @@ const source = (partial: Partial<PayrollCalculationSource> = {}): PayrollCalcula
   historyFingerprint: "history-0",
   openingBalancesFingerprint: "opening-0",
   ytdBasisRevision: "rev-0",
+  shiftRevision: "",
   ...partial,
 });
 
@@ -483,6 +486,7 @@ describe("payrollCalculationIsStale", () => {
       payrollCalculationIsStale(original, source({ ...original, openingBalancesFingerprint: "opening-1" })),
     ).toBe(true);
     expect(payrollCalculationIsStale(original, source({ ...original, ytdBasisRevision: "rev-1" }))).toBe(true);
+    expect(payrollCalculationIsStale(original, source({ ...original, shiftRevision: "shift-1" }))).toBe(true);
     expect(
       payrollYtdHistoryFingerprint([
         {

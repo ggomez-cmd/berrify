@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
-import type { ClockEventType } from "../../lib/time-clock";
+import { addCalendarDays } from "../../lib/payroll-engine/hours/time";
+import { isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
+import type { ClockEventType } from "../../lib/time-clock";
+import type { ApprovedTimeClockWindow, TimeEntryRpcPayload } from "../../lib/time-entries/edit";
+import { toThrownError } from "../../lib/thrown-error";
 import type {
   ClockEvent,
   ClockSession,
+  TimeBreak,
   TimeEntry,
+  TimeEntryEdit,
   TimeException,
   WhosWorkingRow,
 } from "../../lib/types";
@@ -238,6 +244,86 @@ export function useResolveException() {
       void qc.invalidateQueries({ queryKey: ["time_exceptions"] });
       void qc.invalidateQueries({ queryKey: ["time_entries"] });
     },
+  });
+}
+
+function invalidateTimeEntryQueries(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["time_entry_review"] });
+  void qc.invalidateQueries({ queryKey: ["payroll_run_time_entries"] });
+  void qc.invalidateQueries({ queryKey: ["time_entries"] });
+  void qc.invalidateQueries({ queryKey: ["time_exceptions"] });
+}
+
+export function useTimeEntryReview(periodStart: string, periodEnd: string) {
+  const { org, role } = useAuth();
+  const lookback = periodStart ? addCalendarDays(periodStart, -8) : "";
+  const until = periodEnd ? addCalendarDays(periodEnd, 2) : "";
+  return useQuery({
+    queryKey: ["time_entry_review", org?.id, periodStart, periodEnd],
+    enabled: Boolean(org?.id && periodStart && periodEnd) && isManager(role),
+    queryFn: async () => {
+      const { data: entries, error } = await supabase
+        .from("time_entries")
+        .select("*")
+        .eq("org_id", org!.id)
+        .not("ended_at", "is", null)
+        .gte("started_at", `${lookback}T00:00:00.000Z`)
+        .lt("started_at", `${until}T00:00:00.000Z`)
+        .order("started_at", { ascending: true });
+      if (error) throw toThrownError(error, "Could not load time entries");
+      const rows = (entries ?? []) as TimeEntry[];
+      const ids = rows.map((row) => row.id);
+      let breaks: TimeBreak[] = [];
+      let exceptions: TimeException[] = [];
+      let edits: TimeEntryEdit[] = [];
+      if (ids.length > 0) {
+        const [breakResult, exceptionResult, editResult] = await Promise.all([
+          supabase.from("time_breaks").select("*").eq("org_id", org!.id).in("time_entry_id", ids),
+          supabase.from("time_exceptions").select("*").eq("org_id", org!.id).in("time_entry_id", ids),
+          supabase.from("time_entry_edits").select("*").eq("org_id", org!.id).in("time_entry_id", ids).order("edited_at"),
+        ]);
+        if (breakResult.error) throw toThrownError(breakResult.error, "Could not load time breaks");
+        if (exceptionResult.error) throw toThrownError(exceptionResult.error, "Could not load time exceptions");
+        if (editResult.error) throw toThrownError(editResult.error, "Could not load shift edits");
+        breaks = (breakResult.data ?? []) as TimeBreak[];
+        exceptions = (exceptionResult.data ?? []) as TimeException[];
+        edits = (editResult.data ?? []) as TimeEntryEdit[];
+      }
+      const { data: windows, error: windowError } = await supabase.rpc("list_approved_time_clock_windows", {
+        target_org_id: org!.id,
+      });
+      if (windowError) throw toThrownError(windowError, "Could not load approved payroll windows");
+      return {
+        entries: rows,
+        breaks,
+        exceptions,
+        edits,
+        windows: (windows ?? []) as ApprovedTimeClockWindow[],
+      };
+    },
+  });
+}
+
+export function useSaveTimeEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: TimeEntryRpcPayload) => {
+      const { data, error } = await supabase.rpc("manager_save_time_entry", input);
+      if (error || !data) throw toThrownError(error, "Could not save shift");
+      return data as string;
+    },
+    onSettled: () => invalidateTimeEntryQueries(qc),
+  });
+}
+
+export function useVoidTimeEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { target_entry_id: string; reason: string }) => {
+      const { error } = await supabase.rpc("manager_void_time_entry", input);
+      if (error) throw toThrownError(error, "Could not void shift");
+    },
+    onSettled: () => invalidateTimeEntryQueries(qc),
   });
 }
 

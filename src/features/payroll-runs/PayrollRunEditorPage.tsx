@@ -46,9 +46,11 @@ import {
   useSavePayrollRunDraft,
 } from "./hooks";
 
-function isYtdStaleError(error: unknown): boolean {
+function payrollStaleMessage(error: unknown): string | null {
   const message = error instanceof Error ? error.message : "";
-  return /stale|recalculate/i.test(message);
+  if (!/stale|recalculate/i.test(message)) return null;
+  if (/shifts changed/i.test(message)) return "Recalculate: shifts changed";
+  return "Recalculate: year-to-date changed";
 }
 
 type AdjustmentDraft = {
@@ -197,6 +199,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       historyFingerprint: "",
       openingBalancesFingerprint: "",
       ytdBasisRevision: ytdBasisQuery.data?.revision ?? "",
+      shiftRevision: hoursSource === "time_clock" ? (timeQuery.data?.shiftRevision ?? "") : "",
     }),
     [
       adjustments,
@@ -205,6 +208,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       hoursSource,
       periodEnd,
       periodStart,
+      timeQuery.data?.shiftRevision,
       tips,
       ytdBasisQuery.data?.revision,
     ],
@@ -370,6 +374,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       shifts: built.shifts,
       tips: built.tips,
       adjustments: built.adjustments,
+      shiftRevision: hoursSource === "time_clock" ? (clockHours?.shiftRevision ?? "") : undefined,
     });
   };
 
@@ -402,12 +407,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         checks: payload.checks,
       });
     } catch (error) {
-      if (isYtdStaleError(error)) {
+      const stale = payrollStaleMessage(error);
+      if (stale) {
         setResult(null);
         setBuiltInputs(null);
         setSettingsSnapshot(null);
         setComputedFrom(null);
-        setFormError("Recalculate: year-to-date changed");
+        setFormError(stale);
         return null;
       }
       throw error;
@@ -450,7 +456,15 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
           <p className="text-sm text-muted sm:col-span-2 lg:col-span-4">
             Time Clock rows load for the period plus the prior 7 days for rolling overtime.
             {timeQuery.isLoading ? " Loading punches…" : null}
-            {timeQuery.data ? ` ${timeQuery.data.timeEntries.length} punches loaded.` : null}
+            {timeQuery.data ? ` ${timeQuery.data.timeEntries.length} punches loaded.` : null}{" "}
+            {periodStart && periodEnd ? (
+              <Link
+                className="font-medium text-wine"
+                to={`/time-clock/shifts?start=${periodStart}&end=${periodEnd}`}
+              >
+                Review shifts
+              </Link>
+            ) : null}
           </p>
         )}
         <Field label="Notes" htmlFor="run-notes">
@@ -659,12 +673,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                     navigate(`/payroll/runs/${id}`);
                   } catch (error) {
                     setConfirmApprove(false);
-                    if (isYtdStaleError(error)) {
+                    const stale = payrollStaleMessage(error);
+                    if (stale) {
                       setResult(null);
                       setBuiltInputs(null);
                       setSettingsSnapshot(null);
                       setComputedFrom(null);
-                      setFormError("Recalculate: year-to-date changed");
+                      setFormError(stale);
                       return;
                     }
                     setFormError(error instanceof Error ? error.message : "Could not approve payroll run");

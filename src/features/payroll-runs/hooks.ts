@@ -90,6 +90,14 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string)
     queryKey: ["payroll_run_time_entries", org?.id, lookback, until],
     enabled: Boolean(org?.id && periodStart && periodEnd) && isAdmin(role),
     queryFn: async () => {
+      const { data: revision, error: revisionError } = await supabase.rpc("payroll_shift_revision", {
+        target_org_id: org!.id,
+        period_start: periodStart,
+        period_end: periodEnd,
+      });
+      if (revisionError || typeof revision !== "string") {
+        throw toThrownError(revisionError, "Could not load shift revision");
+      }
       const { data: entries, error } = await supabase
         .from("time_entries")
         .select("*")
@@ -131,7 +139,7 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string)
         break_type: row.break_type,
         paid: row.paid,
       }));
-      return { timeEntries, timeBreaks };
+      return { timeEntries, timeBreaks, shiftRevision: revision };
     },
   });
 }

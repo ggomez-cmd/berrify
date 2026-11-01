@@ -16,6 +16,7 @@ import { KioskPage } from "./features/kiosk/KioskPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
+import { ReviewShiftsPage } from "./features/time-clock/ReviewShiftsPage";
 import { TimeClockPage } from "./features/time-clock/TimeClockPage";
 import { PayrollPage } from "./features/payroll/PayrollPage";
 import { PayrollSetupPage } from "./features/payroll-setup/PayrollSetupPage";
@@ -45,6 +46,7 @@ export default function App() {
               <Route index element={<DashboardPage />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="time-clock" element={<TimeClockPage />} />
+              <Route path="time-clock/shifts" element={<ReviewShiftsPage />} />
               <Route path="payroll" element={<PayrollPage />} />
               <Route path="payroll/setup" element={<PayrollSetupPage />} />
               <Route path="payroll/runs" element={<PayrollRunsPage />} />
