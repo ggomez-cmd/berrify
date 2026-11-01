@@ -329,42 +329,33 @@ $$;
 revoke all on function public.time_entry_snapshot(uuid)
   from public, anon, authenticated;
 
+-- One lock per organization serializes every shift/punch writer with time_clock
+-- draft saves and approvals. Writers take only this lock; save and approve take
+-- it after their tax-year lock (0030), so no wait cycle is possible, and coverage
+-- doesn't depend on how far a check date is from the shifts or on time zones.
+create or replace function public.time_clock_payroll_lock(target_org_id uuid)
+returns void
+language sql
+set search_path = public, pg_temp
+as $$
+  select pg_advisory_xact_lock(
+    hashtextextended(time_clock_payroll_lock.target_org_id::text || ':time_clock_payroll', 0)
+  );
+$$;
+
+revoke all on function public.time_clock_payroll_lock(uuid)
+  from public, anon, authenticated;
+
+-- Kept for its callers; the dates no longer matter.
 create or replace function public.time_entry_lock_payroll_years(
   target_org_id uuid,
   local_dates date[]
 )
 returns void
-language plpgsql
+language sql
 set search_path = public, pg_temp
 as $$
-declare
-  y integer;
-begin
-  for y in
-    select distinct yr
-    from (
-      select extract(year from d)::integer as yr
-      from unnest(time_entry_lock_payroll_years.local_dates) as d
-      where d is not null
-      union
-      select extract(year from d)::integer + 1
-      from unnest(time_entry_lock_payroll_years.local_dates) as d
-      where d is not null
-      union
-      select extract(year from d)::integer - 1
-      from unnest(time_entry_lock_payroll_years.local_dates) as d
-      where d is not null
-    ) years
-    order by yr
-  loop
-    perform pg_advisory_xact_lock(
-      hashtextextended(
-        time_entry_lock_payroll_years.target_org_id::text || ':' || y::text,
-        0
-      )
-    );
-  end loop;
-end;
+  select public.time_clock_payroll_lock(time_entry_lock_payroll_years.target_org_id);
 $$;
 
 revoke all on function public.time_entry_lock_payroll_years(uuid, date[])
@@ -408,25 +399,10 @@ create or replace function public.time_entry_lock_started_at(
   started_at timestamptz
 )
 returns void
-language plpgsql
+language sql
 set search_path = public, pg_temp
 as $$
-declare
-  zone text;
-begin
-  if time_entry_lock_started_at.started_at is null then
-    return;
-  end if;
-
-  zone := public.payroll_hours_time_zone(
-    time_entry_lock_started_at.target_org_id,
-    (time_entry_lock_started_at.started_at at time zone 'UTC')::date
-  );
-  perform public.time_entry_lock_payroll_years(
-    time_entry_lock_started_at.target_org_id,
-    array[(time_entry_lock_started_at.started_at at time zone zone)::date]
-  );
-end;
+  select public.time_clock_payroll_lock(time_entry_lock_started_at.target_org_id);
 $$;
 
 revoke all on function public.time_entry_lock_started_at(uuid, timestamptz)
@@ -1061,6 +1037,10 @@ begin
     return NEW;
   end if;
 
+  -- Held until commit, so no shift or punch can change between this revision
+  -- check and the save/approve becoming visible.
+  perform public.time_clock_payroll_lock(NEW.org_id);
+
   select w.window_from, w.window_until
     into computed_from, computed_until
   from public.payroll_time_clock_window(
@@ -1088,10 +1068,6 @@ begin
     return NEW;
   end if;
 
-  -- No extra locks here: approve already holds the check-date year lock, and every
-  -- shift/punch writer locks year-1..year+1 of its date in ascending order, which
-  -- always includes that year. Locking the window's years here as well would take
-  -- them out of order and can deadlock across a year boundary.
 
   if
     NEW.time_clock_from is distinct from computed_from
