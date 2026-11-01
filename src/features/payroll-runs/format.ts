@@ -16,3 +16,21 @@ export function parseSignedCents(raw: string): number | null {
   const cents = Number(match[2]) * 100 + Number((match[3] ?? "").padEnd(2, "0"));
   return match[1] ? -cents : cents;
 }
+
+const SCOPED_POSITION = /(\w+)::([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+const BARE_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+// Issues come from the engine and run builder with raw ids, and are stored that way.
+// Swap in names only for display; unknown ids stay as-is so nothing is hidden.
+export function readableIssue(
+  text: string,
+  employeeNames: Record<string, string>,
+  restaurantNames: Record<string, string>,
+): string {
+  return text
+    .replace(SCOPED_POSITION, (match, position: string, restaurantId: string) => {
+      const restaurant = restaurantNames[restaurantId.toLowerCase()];
+      return restaurant ? `${position} at ${restaurant}` : match;
+    })
+    .replace(BARE_ID, (id) => employeeNames[id.toLowerCase()] ?? restaurantNames[id.toLowerCase()] ?? id);
+}

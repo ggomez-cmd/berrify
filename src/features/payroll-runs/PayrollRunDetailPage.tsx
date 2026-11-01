@@ -116,7 +116,7 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
         </div>
       </div>
 
-      <IssuesPanel errors={result.errors} warnings={result.warnings} />
+      <IssuesPanel errors={result.errors} warnings={result.warnings} names={names} restaurantNames={restaurantNames} />
       <RunSummaryPanel result={result} restaurantNames={restaurantNames} />
       <ChecksTable checks={result.checks} names={names} numbers={numbers} />
       {result.checks.map((check) => (

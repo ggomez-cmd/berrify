@@ -460,8 +460,12 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
 
       <Card>
         <h2 className="text-base font-semibold tracking-tight">Tips by workweek</h2>
-        {tippedProfiles.length === 0 || workweekIds.length === 0 ? (
+        {workweekIds.length === 0 ? (
           <p className="mt-2 text-sm text-muted">Tipped employees and workweeks appear after you set a period.</p>
+        ) : tippedProfiles.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">
+            No employees are marked as tipped. Mark them in Payroll setup to enter tips.
+          </p>
         ) : (
           <Table className="mt-3">
             <THead>
@@ -619,7 +623,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
 
       {result ? (
         <div className="grid gap-4">
-          <IssuesPanel errors={result.errors} warnings={result.warnings} />
+          <IssuesPanel errors={result.errors} warnings={result.warnings} names={names} restaurantNames={restaurantNames} />
           <ChecksTable checks={result.checks} names={names} numbers={numbers} />
           <RunSummaryPanel result={result} restaurantNames={restaurantNames} />
           {result.checks.map((check) => (

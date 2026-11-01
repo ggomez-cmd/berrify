@@ -3,9 +3,19 @@ import { Card } from "../../components/ui/card";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { costPerBusiness, summarizeRun } from "../../lib/payroll/reports";
 import type { PayrollCheck, PayrollRunResult } from "../../lib/payroll-engine/types";
-import { formatCents, formatHoursHundredths } from "./format";
+import { formatCents, formatHoursHundredths, readableIssue } from "./format";
 
-export function IssuesPanel({ errors, warnings }: { errors: string[]; warnings: string[] }) {
+export function IssuesPanel({
+  errors,
+  warnings,
+  names,
+  restaurantNames,
+}: {
+  errors: string[];
+  warnings: string[];
+  names: Record<string, string>;
+  restaurantNames: Record<string, string>;
+}) {
   if (errors.length === 0 && warnings.length === 0) return null;
   return (
     <div className="grid gap-3">
@@ -16,7 +26,7 @@ export function IssuesPanel({ errors, warnings }: { errors: string[]; warnings: 
           </div>
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
             {errors.map((row) => (
-              <li key={row}>{row}</li>
+              <li key={row}>{readableIssue(row, names, restaurantNames)}</li>
             ))}
           </ul>
         </div>
@@ -28,7 +38,7 @@ export function IssuesPanel({ errors, warnings }: { errors: string[]; warnings: 
           </div>
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
             {warnings.map((row) => (
-              <li key={row}>{row}</li>
+              <li key={row}>{readableIssue(row, names, restaurantNames)}</li>
             ))}
           </ul>
         </div>
