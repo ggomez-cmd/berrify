@@ -40,6 +40,17 @@ export function amountFromHoursAndRate(hoursHundredths: number, rateCents: numbe
   );
 }
 
+export function amountFromHoursAndRateHalfEven(hoursHundredths: number, rateCents: number): number {
+  const numerator = BigInt(assertInteger(hoursHundredths, "hoursHundredths")) * BigInt(assertInteger(rateCents, "rateCents"));
+  const negative = numerator < 0n;
+  const n = negative ? -numerator : numerator;
+  const quotient = n / 100n;
+  const twiceRemainder = (n % 100n) * 2n;
+  const rounded =
+    twiceRemainder > 100n || (twiceRemainder === 100n && quotient % 2n === 1n) ? quotient + 1n : quotient;
+  return Number(negative ? -rounded : rounded);
+}
+
 export function applyMultiplierPpm(baseCents: number, multiplierPpm: number): number {
   return Number(
     roundHalfUpDiv(

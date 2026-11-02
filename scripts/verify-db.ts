@@ -50,6 +50,10 @@ const requiredTables = [
   "payroll_opening_balances",
   "payroll_opening_balance_taxes",
   "payroll_clover_names",
+  "payroll_runs",
+  "payroll_checks",
+  "payroll_check_earnings",
+  "payroll_check_taxes",
 ] as const;
 
 const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
@@ -100,6 +104,10 @@ const requiredPolicies: Record<(typeof requiredTables)[number], string[]> = {
   payroll_opening_balances: ["payroll_opening_balances_admin"],
   payroll_opening_balance_taxes: ["payroll_opening_balance_taxes_admin"],
   payroll_clover_names: ["payroll_clover_names_admin"],
+  payroll_runs: ["payroll_runs_admin"],
+  payroll_checks: ["payroll_checks_admin"],
+  payroll_check_earnings: ["payroll_check_earnings_admin"],
+  payroll_check_taxes: ["payroll_check_taxes_admin"],
 };
 
 const client = createPgClient();
@@ -188,6 +196,13 @@ try {
       "update_org_clock_settings",
       "confirm_empty_bottle",
       "cancel_empty_bottle",
+      "save_payroll_run_draft",
+      "approve_payroll_run",
+      "void_payroll_run",
+      "discard_payroll_run_draft",
+      "payroll_ytd_basis_revision",
+      "load_payroll_ytd_basis",
+      "delete_payroll_opening_balance",
     ]],
   );
   const foundFns = new Set(fns.rows.map((row) => row.proname));
@@ -217,6 +232,13 @@ try {
     "update_org_clock_settings",
     "confirm_empty_bottle",
     "cancel_empty_bottle",
+    "save_payroll_run_draft",
+    "approve_payroll_run",
+    "void_payroll_run",
+    "discard_payroll_run_draft",
+    "payroll_ytd_basis_revision",
+    "load_payroll_ytd_basis",
+    "delete_payroll_opening_balance",
   ]) {
     if (!foundFns.has(name)) {
       throw new Error(`Missing function: ${name}`);

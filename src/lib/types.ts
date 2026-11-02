@@ -1,5 +1,6 @@
 import type { DailyWindowMode } from "./payroll-engine/hours/types";
 import type {
+  EarningsKind,
   EmployeePayType,
   PayFrequency,
   PersonalExemptionStatus,
@@ -414,6 +415,21 @@ export type TimeBreak = {
   created_at: string;
 };
 
+export type TimeEntryEditAction = "create" | "update" | "void";
+
+export type TimeEntryEdit = {
+  id: string;
+  org_id: string;
+  time_entry_id: string;
+  employee_id: string;
+  action: TimeEntryEditAction;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string;
+  edited_by: string | null;
+  edited_at: string;
+};
+
 export type TimeException = {
   id: string;
   org_id: string;
@@ -551,6 +567,92 @@ export type PayrollCloverNameRow = {
   ignored: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type PayrollRunStatus = "draft" | "approved" | "void";
+
+export type PayrollHoursSource = "time_clock" | "clover";
+
+export type PayrollRunRow = {
+  id: string;
+  org_id: string;
+  period_start: string;
+  period_end: string;
+  check_date: string;
+  status: PayrollRunStatus;
+  hours_source: PayrollHoursSource;
+  schedule_id: string;
+  settings: unknown;
+  inputs: unknown;
+  gross_cents: number;
+  employee_withholdings_cents: number;
+  net_cents: number;
+  employer_taxes_cents: number;
+  employer_cost_cents: number;
+  cash_gross_cents: number;
+  errors: string[];
+  warnings: string[];
+  approved_by: string | null;
+  approved_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  notes: string | null;
+  time_clock_from: string | null;
+  time_clock_until: string | null;
+  saved_at: string;
+  ytd_basis_revision: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollCheckRow = {
+  id: string;
+  org_id: string;
+  run_id: string;
+  employee_id: string;
+  pay_type: EmployeePayType;
+  gross_cents: number;
+  deductions_cents: number;
+  net_cents: number;
+  employer_tax_cents: number;
+  closing_ytd: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollCheckEarningRow = {
+  id: string;
+  org_id: string;
+  check_id: string;
+  kind: EarningsKind;
+  restaurant_id: string | null;
+  position: string | null;
+  workweek_id: string | null;
+  hours_hundredths: number;
+  rate_cents: number | null;
+  amount_cents: number;
+  reason: string | null;
+  created_at: string;
+};
+
+export type PayrollCheckTaxRow = {
+  id: string;
+  org_id: string;
+  check_id: string;
+  side: "employee" | "employer";
+  tax_code: TaxCode;
+  taxable_cents: number;
+  amount_cents: number;
+  created_at: string;
+};
+
+export type PayrollCheckWithLines = PayrollCheckRow & {
+  payroll_check_earnings: PayrollCheckEarningRow[];
+  payroll_check_taxes: PayrollCheckTaxRow[];
+};
+
+export type PayrollRunWithChecks = PayrollRunRow & {
+  payroll_checks: PayrollCheckWithLines[];
 };
 
 export type QuickbooksOnlineConnection = {

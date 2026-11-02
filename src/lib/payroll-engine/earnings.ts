@@ -1,5 +1,5 @@
 import type { PrTaxSchedule } from "./data";
-import { amountFromHoursAndRate, applyMultiplierPpm, roundHalfUpDiv, sumCents } from "./money";
+import { amountFromHoursAndRate, amountFromHoursAndRateHalfEven, applyMultiplierPpm, roundHalfUpDiv, sumCents } from "./money";
 import type {
   EarningsKind,
   EarningsLine,
@@ -180,12 +180,8 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
     });
   };
 
-  pushHourly(
-    "regular",
-    week.regularHoursHundredths,
-    week.rateCents,
-    amountFromHoursAndRate(week.regularHoursHundredths, week.rateCents),
-  );
+  // Priced once per period in mergeRegularLines.
+  pushHourly("regular", week.regularHoursHundredths, week.rateCents, 0);
   for (const [hoursHundredths, multiplierPpm] of [
     [week.dailyOtHoursHundredths ?? 0, dailyMult],
     [week.weeklyOtHoursHundredths ?? 0, weeklyMult],
@@ -210,6 +206,33 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
     });
   }
   return lines;
+}
+
+// Alchavo prices regular hourly pay as rate x total period hours, rounded once half-to-even,
+// so the per-week regular lines for one rate, class and position become one priced line.
+function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
+  const merged = new Map<string, EarningsLine>();
+  const out: EarningsLine[] = [];
+  for (const line of lines) {
+    if (line.kind !== "regular") {
+      out.push(line);
+      continue;
+    }
+    const key = `${line.rateCents}\t${line.classId ?? ""}\t${line.positionId ?? ""}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.hoursHundredths += line.hoursHundredths;
+      existing.workweekId = null;
+      continue;
+    }
+    const copy = { ...line };
+    merged.set(key, copy);
+    out.push(copy);
+  }
+  for (const line of merged.values()) {
+    line.amountCents = amountFromHoursAndRateHalfEven(line.hoursHundredths, line.rateCents ?? 0);
+  }
+  return out;
 }
 
 function salaryLine(employee: EmployeePayInput, errors: string[]): EarningsLine | null {
@@ -356,6 +379,7 @@ export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSched
   if (multiplierError) errors.push(multiplierError);
 
   const weeks: HourlyWeekInput[] = [];
+  const weekLines: EarningsLine[] = [];
   for (const week of multiplierError ? [] : employee.hourlyWeeks ?? []) {
     const weekError = invalidWeek(week, employee, schedule);
     if (weekError) {
@@ -363,8 +387,9 @@ export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSched
       continue;
     }
     weeks.push(week);
-    lines.push(...hourlyWeekLines(week, employee, schedule));
+    weekLines.push(...hourlyWeekLines(week, employee, schedule));
   }
+  lines.push(...mergeRegularLines(weekLines));
 
   const salary = salaryLine(employee, errors);
   if (salary) lines.push(salary);

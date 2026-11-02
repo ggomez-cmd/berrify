@@ -21,4 +21,13 @@ describe("toThrownError", () => {
       "Could not save invoice",
     );
   });
+
+  it("surfaces the Postgres exception when PostgREST wraps it in details", () => {
+    expect(
+      toThrownError(
+        { message: "P0001", details: "payroll run is stale: recalculate" },
+        "Could not approve payroll run",
+      ).message,
+    ).toBe("payroll run is stale: recalculate");
+  });
 });

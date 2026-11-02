@@ -238,3 +238,44 @@ describe("review fixes", () => {
     expect(makeup.map((line) => line.amountCents)).toEqual([1_500]);
   });
 });
+
+describe("regular pay priced on period hours", () => {
+  const twoWeeks = (rateCents: number, first: number, second: number): EmployeePayInput => ({
+    ...payrollBase,
+    hourlyWeeks: [
+      { workweekId: "w1", rateCents, regularHoursHundredths: first },
+      { workweekId: "w2", rateCents, regularHoursHundredths: second },
+    ],
+  });
+
+  it("$12.50 × 57.57h is one line of $719.62 (half-cent rounds to even), not two weekly roundings", () => {
+    const earnings = computeEarnings(twoWeeks(1_250, 2_878, 2_879), PR_2026);
+    expect(earnings.lines).toHaveLength(1);
+    expect(earnings.lines[0]).toMatchObject({ kind: "regular", hoursHundredths: 5_757, amountCents: 71_962, workweekId: null });
+  });
+
+  it("$10.50 × 51.49h is $540.64", () => {
+    expect(computeEarnings(twoWeeks(1_050, 2_574, 2_575), PR_2026).lines[0]?.amountCents).toBe(54_064);
+  });
+
+  it("rounds an exact half up when the cent is odd ($0.50 × 0.03h = 1.5¢ → 2¢)", () => {
+    expect(computeEarnings(twoWeeks(50, 1, 2), PR_2026).lines[0]?.amountCents).toBe(2);
+  });
+
+  it("keeps different rates on separate lines", () => {
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 1_000, regularHoursHundredths: 100 },
+          { workweekId: "w2", rateCents: 1_100, regularHoursHundredths: 100 },
+        ],
+      },
+      PR_2026,
+    );
+    expect(earnings.lines.map((line) => [line.rateCents, line.amountCents, line.workweekId])).toEqual([
+      [1_000, 1_000, "w1"],
+      [1_100, 1_100, "w2"],
+    ]);
+  });
+});

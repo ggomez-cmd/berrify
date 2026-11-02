@@ -1,5 +1,6 @@
 import { Coffee, LogIn, LogOut, Pause } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
@@ -119,6 +120,13 @@ export function TimeClockPage() {
 
   return (
     <div className="space-y-4">
+      {manager ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Link className="text-sm font-medium text-wine" to="/time-clock/shifts">
+            Review shifts
+          </Link>
+        </div>
+      ) : null}
       <PageTabs items={tabs} value={tab} onChange={setTab} />
 
       {tab === "clock" ? <EmployeeClockPanel timeZone={timeZone} /> : null}

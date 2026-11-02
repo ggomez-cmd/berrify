@@ -15,6 +15,8 @@ function titleFor(path: string): string {
   if (path.startsWith("/schedule")) return "Schedule";
   if (path.startsWith("/time-clock")) return "Time Clock";
   if (path.startsWith("/payroll/setup")) return "Payroll setup";
+  if (path.includes("/stubs")) return "Pay stubs";
+  if (path.startsWith("/payroll/runs")) return "Payroll runs";
   if (path.startsWith("/payroll")) return "Payroll";
   if (path.startsWith("/invoices")) return "Invoices";
   if (path.startsWith("/quickbooks")) return "QuickBooks";
@@ -51,7 +53,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh bg-paper text-ink">
-      <Sidebar className="sticky top-0 hidden md:flex" />
+      <Sidebar className="sticky top-0 hidden print:hidden md:flex" />
 
       {navOpen ? (
         <button
@@ -69,13 +71,13 @@ export function AppShell() {
         onNavigate={closeNav}
         onClose={closeNav}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out md:hidden",
+          "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out print:hidden md:hidden",
           navOpen ? "translate-x-0" : "pointer-events-none -translate-x-full",
         )}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] print:hidden md:hidden">
           <button
             type="button"
             className="rounded-lg p-1.5 text-ink hover:bg-paper"
@@ -101,7 +103,7 @@ export function AppShell() {
 
         <main className="min-w-0 flex-1 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-8 md:py-6">
           {showPageTitle ? (
-            <div className="mb-5 hidden items-start justify-between gap-3 md:flex">
+            <div className="mb-5 hidden items-start justify-between gap-3 print:hidden md:flex">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold tracking-tight text-ink">{titleFor(pathname)}</h1>
                 <p className="mt-0.5 text-sm text-muted">{org?.name ?? "Workspace"}</p>
