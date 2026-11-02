@@ -96,10 +96,15 @@ function asPayrollShiftRevision(value: unknown): PayrollShiftRevision | null {
   return { revision: row.revision, from: row.from, until: row.until };
 }
 
-export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string, checkDate: string) {
+export function usePayrollRunTimeEntries(
+  periodStart: string,
+  periodEnd: string,
+  checkDate: string,
+  restaurantId?: string | null,
+) {
   const { org, role } = useAuth();
   return useQuery({
-    queryKey: ["payroll_run_time_entries", org?.id, periodStart, periodEnd, checkDate],
+    queryKey: ["payroll_run_time_entries", org?.id, periodStart, periodEnd, checkDate, restaurantId ?? null],
     enabled: Boolean(org?.id && periodStart && periodEnd && checkDate) && isAdmin(role),
     queryFn: async () => {
       const { data: revisionPayload, error: revisionError } = await supabase.rpc("payroll_shift_revision", {
@@ -107,6 +112,7 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string,
         period_start: periodStart,
         period_end: periodEnd,
         check_date: checkDate,
+        p_restaurant_id: restaurantId ?? null,
       });
       const revision = asPayrollShiftRevision(revisionPayload);
       if (revisionError || !revision) {
@@ -121,7 +127,9 @@ export function usePayrollRunTimeEntries(periodStart: string, periodEnd: string,
         .lt("started_at", revision.until)
         .order("started_at", { ascending: true });
       if (error) throw toThrownError(error, "Could not load time entries");
-      const rows = (entries ?? []) as TimeEntry[];
+      const rows = ((entries ?? []) as TimeEntry[]).filter((row) =>
+        restaurantId ? row.restaurant_id === restaurantId : true,
+      );
       const ids = rows.map((row) => row.id);
       let breaks: TimeBreak[] = [];
       if (ids.length > 0) {

@@ -167,6 +167,10 @@ function EmployerSettingsDialog({
           daily_ot_mode: values.daily_ot_mode,
           workweek_start_day: values.workweek_start_day,
           time_zone: values.time_zone.trim() || "America/Puerto_Rico",
+          punch_rounding: row?.punch_rounding ?? "none",
+          hourly_pay_rounding: row?.hourly_pay_rounding ?? "per_line",
+          meal_deduct_after_minutes: row?.meal_deduct_after_minutes ?? null,
+          meal_deduct_minutes: row?.meal_deduct_minutes ?? null,
           notes: values.notes.trim() || null,
         },
       });

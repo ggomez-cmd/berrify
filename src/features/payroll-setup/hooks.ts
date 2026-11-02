@@ -9,6 +9,7 @@ import type {
   PayrollEmployerSettingsRow,
   PayrollOpeningBalanceWithTaxes,
   PayrollPayRateRow,
+  PayrollPayScheduleRow,
 } from "../../lib/types";
 import {
   findDuplicatePayRateError,
@@ -181,6 +182,23 @@ export function useDeletePayrollOpeningBalance() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["payroll_opening_balances"] });
       void qc.invalidateQueries({ queryKey: ["payroll_ytd_basis"] });
+    },
+  });
+}
+
+export function usePayrollPaySchedules() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_pay_schedules", org?.id],
+    enabled: Boolean(org?.id) && isAdmin(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_pay_schedules")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("created_at", { ascending: true });
+      if (error) throw toThrownError(error, "Could not load pay schedules");
+      return (data ?? []) as PayrollPayScheduleRow[];
     },
   });
 }
