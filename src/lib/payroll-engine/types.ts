@@ -113,7 +113,11 @@ export type EmployerSettings = {
   sutRateBp: BasisPoints;
   swhMethod: SwhMethod;
   payFrequency: PayFrequency;
+  // "period" prices each rate's regular and overtime hours for the whole period and rounds once, as Alchavo does.
+  hourlyPayRounding?: HourlyPayRounding;
 };
+
+export type HourlyPayRounding = "per_line" | "period";
 
 export type PayrollRunInput = {
   checkDate: string;

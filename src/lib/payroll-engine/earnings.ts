@@ -222,7 +222,7 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
 
 // Alchavo prices regular hourly pay as rate x total period hours, rounded once half-to-even,
 // so the per-week regular lines for one rate, class and position become one priced line.
-function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
+function mergeRegularLines(lines: readonly EarningsLine[], periodRounding: boolean): EarningsLine[] {
   const merged = new Map<string, EarningsLine>();
   const out: EarningsLine[] = [];
   for (const line of lines) {
@@ -244,6 +244,7 @@ function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
   for (const line of merged.values()) {
     line.amountCents = amountFromHoursAndRateHalfEven(line.hoursHundredths, line.rateCents ?? 0);
   }
+  if (!periodRounding) return out;
   // Alchavo prices a rate's regular and overtime hours for the whole period and rounds once. The cent
   // that per-week overtime rounding adds or drops goes to the largest lines, never below zero.
   const groupKey = (rateCents: number | null, line: EarningsLine) =>
@@ -412,7 +413,11 @@ function underMinimumWarnings(employee: EmployeePayInput, lines: EarningsLine[],
   return warnings;
 }
 
-export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsResult {
+export function computeEarnings(
+  employee: EmployeePayInput,
+  schedule: PrTaxSchedule,
+  options: { periodRounding?: boolean } = {},
+): EarningsResult {
   const errors: string[] = [];
   const lines: EarningsLine[] = [];
 
@@ -438,7 +443,7 @@ export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSched
     weeks.push(week);
     weekLines.push(...hourlyWeekLines(week, employee, schedule));
   }
-  lines.push(...mergeRegularLines(weekLines));
+  lines.push(...mergeRegularLines(weekLines, options.periodRounding ?? false));
 
   const salary = salaryLine(employee, errors);
   if (salary) lines.push(salary);

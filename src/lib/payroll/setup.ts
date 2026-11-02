@@ -339,6 +339,7 @@ export function employerSettingsFor(
     workweekStartDow: latest.workweek_start_day,
     timeZone: latest.time_zone,
     ...(latest.punch_rounding != null ? { punchRounding: latest.punch_rounding } : {}),
+    ...(latest.hourly_pay_rounding != null ? { hourlyPayRounding: latest.hourly_pay_rounding } : {}),
     ...(afterMinutes != null && deductMinutes != null
       ? { mealDeduction: { afterSeconds: afterMinutes * 60, deductSeconds: deductMinutes * 60 } }
       : {}),

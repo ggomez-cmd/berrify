@@ -118,6 +118,7 @@ function employerRow(restaurant: string, period: FixturePeriod): PayrollEmployer
     workweek_start_day: 0,
     time_zone: TZ,
     punch_rounding: "hundredth_hour",
+    hourly_pay_rounding: "period",
     meal_deduct_after_minutes: 360,
     meal_deduct_minutes: 30,
     notes: null,

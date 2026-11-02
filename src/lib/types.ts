@@ -488,6 +488,7 @@ export type PayrollEmployerSettingsRow = {
   workweek_start_day: number;
   time_zone: string;
   punch_rounding?: "none" | "hundredth_hour";
+  hourly_pay_rounding?: "per_line" | "period";
   meal_deduct_after_minutes?: number | null;
   meal_deduct_minutes?: number | null;
   notes: string | null;

@@ -294,6 +294,7 @@ describe("period rounding of hourly pay", () => {
         ],
       },
       PR_2026,
+      { periodRounding: true },
     );
     expect(earnings.errors).toEqual([]);
     const total = earnings.lines.reduce((sum, line) => sum + line.amountCents, 0);
@@ -313,6 +314,7 @@ describe("period rounding of hourly pay", () => {
         ],
       },
       PR_2026,
+      { periodRounding: true },
     );
     expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1_774);
   });
@@ -334,8 +336,22 @@ describe("period rounding of hourly pay", () => {
         ],
       },
       PR_2026,
+      { periodRounding: true },
     );
     expect(earnings.lines.every((line) => line.amountCents >= 0)).toBe(true);
     expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1);
+  });
+
+  it("keeps per-line overtime rounding unless period rounding is turned on", () => {
+    // 40 regular + 1.10 daily overtime at $10.50 and 1.5x: $420.00 + $17.325 rounded on its own.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 4_000, dailyOtHoursHundredths: 110 }],
+      },
+      PR_2026,
+    );
+    expect(earnings.lines.find((line) => line.kind === "regular")?.amountCents).toBe(42_000);
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(43_733);
   });
 });

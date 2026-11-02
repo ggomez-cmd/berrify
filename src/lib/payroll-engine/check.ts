@@ -203,7 +203,9 @@ export function computeCheck(
   assertCheckDate(checkDate);
   assertEmployerSettings(settings);
   const taxSchedule = schedule ?? selectTaxSchedule(checkDate);
-  const earnings = computeEarnings(employee, taxSchedule);
+  const earnings = computeEarnings(employee, taxSchedule, {
+    periodRounding: settings.hourlyPayRounding === "period",
+  });
   const grossCents = earningsGrossCents(earnings.lines);
   const identity = {
     employeeId: employee.employeeId,
