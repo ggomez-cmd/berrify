@@ -3,7 +3,6 @@
 .env.*
 !.env.example
 harvis.json
-.netlify/
 .wrangler/
 .dev.vars
 
