@@ -105,6 +105,17 @@ describe("punch rounding", () => {
     expect(result.warnings).toEqual(["Shift a could not be rounded to 0.01 h without overlapping another punch"]);
   });
 
+  it("warns when rounding down would overlap a paid break", () => {
+    const punch = {
+      ...shift({ id: "covered", ymd: "2026-10-12", start: "08:00:00", end: "16:00:10" }),
+      breaks: [
+        { startedAt: localIso("2026-10-12", "08:00:05"), endedAt: localIso("2026-10-12", "16:00:10"), type: "rest" as const, paid: true },
+      ],
+    };
+    const result = applyHoursPolicy([punch], { timeZone: TZ, punchRounding: "hundredth_hour" });
+    expect(result.warnings).toEqual(["Shift covered could not be rounded to 0.01 h without overlapping one of its breaks"]);
+  });
+
   it("rounds down around a paid break at the end of the shift without overlapping it", () => {
     const punch = {
       ...shift({ id: "paid", ymd: "2026-10-12", start: "08:00:00", end: "16:00:10" }),
@@ -135,6 +146,20 @@ describe("punch rounding", () => {
     });
     expect(workedSeconds(result.shifts[0]!)).toBe(748 * 36);
     expect(result.lunchDeductions).toEqual([{ employeeId: "E1", ymd: "2026-10-12", seconds: 1_800 }]);
+  });
+
+  it("warns when the lunch deduction cannot be fully taken outside paid breaks", () => {
+    const punch = {
+      ...shift({ id: "p", ymd: "2026-10-12", start: "08:00:00", end: "16:00:00" }),
+      breaks: [
+        { startedAt: localIso("2026-10-12", "08:10:00"), endedAt: localIso("2026-10-12", "16:00:00"), type: "rest" as const, paid: true },
+      ],
+    };
+    const result = applyHoursPolicy([punch], { timeZone: TZ, mealDeduction: { afterSeconds: 21_600, deductSeconds: 1_800 } });
+    expect(result.lunchDeductions).toEqual([{ employeeId: "E1", ymd: "2026-10-12", seconds: 600 }]);
+    expect(result.warnings).toEqual([
+      "Employee E1 on 2026-10-12: only 0.17 h of the 0.50 h lunch could be deducted outside paid breaks",
+    ]);
   });
 
   it("leaves timestamps unchanged when rounding is off", () => {

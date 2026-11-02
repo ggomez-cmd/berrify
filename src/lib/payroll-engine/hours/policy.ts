@@ -42,7 +42,13 @@ function applyPunchRounding(shifts: readonly WorkedShift[], warnings: string[]):
     const worked = workedSecondsOf(shift);
     const delta = roundedTarget(shift, worked) - worked;
     if (delta === 0) return shift;
-    if (delta < 0) return deductFromShift(shift, -delta, "other").shift;
+    if (delta < 0) {
+      const applied = deductFromShift(shift, -delta, "other");
+      if (applied.remaining > 0) {
+        warnings.push(`Shift ${shift.id} could not be rounded to 0.01 h without overlapping one of its breaks`);
+      }
+      return applied.shift;
+    }
 
     let nextStart = Number.POSITIVE_INFINITY;
     bounds.forEach((row, other) => {
@@ -104,6 +110,10 @@ function deductFromShift(
   return { shift: { ...shift, breaks: [...shift.breaks, ...added.reverse()] }, remaining };
 }
 
+function hoursText(seconds: number): string {
+  return (Math.round(seconds / HUNDREDTH_HOUR_SECONDS) / 100).toFixed(2);
+}
+
 function dayKey(employeeId: string, classId: string, ymd: string): string {
   return `${employeeId}\t${classId}\t${ymd}`;
 }
@@ -114,6 +124,7 @@ function applyMealDeduction(
   policy: NonNullable<HoursPolicy["mealDeduction"]>,
   timeZone: string,
   lunchDeductions: LunchDeduction[],
+  warnings: string[],
   errors: string[],
 ): WorkedShift[] {
   if (!Number.isSafeInteger(policy.afterSeconds) || policy.afterSeconds < 0) {
@@ -199,6 +210,11 @@ function applyMealDeduction(
     }
 
     lunchDeductions.push({ employeeId, ymd, seconds: deduction - remaining });
+    if (remaining > 0) {
+      warnings.push(
+        `Employee ${employeeId} on ${ymd}: only ${hoursText(deduction - remaining)} h of the ${hoursText(deduction)} h lunch could be deducted outside paid breaks`,
+      );
+    }
   }
 
   return shifts.map((shift) => nextById.get(shift.id) ?? shift);
@@ -231,6 +247,7 @@ export function applyHoursPolicy(shifts: readonly WorkedShift[], policy: HoursPo
       policy.mealDeduction,
       policy.timeZone,
       lunchDeductions,
+      warnings,
       errors,
     );
   }
