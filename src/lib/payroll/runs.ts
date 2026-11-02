@@ -759,7 +759,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     const salaryCents = profile.salary_cents;
     if (salaryCents != null) {
       const tipEarnings: EarningsLineInput[] = tips
-        .filter((row) => row.employeeId === employeeId && row.tipsCents !== 0)
+        .filter((row) => row.employeeId === employeeId && row.tipsCents > 0 && runWorkweeks.has(row.workweekId))
         .map((row) => ({
           kind: "tips" as const,
           amountCents: row.tipsCents,
