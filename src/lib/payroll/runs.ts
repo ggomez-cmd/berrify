@@ -103,6 +103,8 @@ export type YtdPriorCheckTax = {
   employeeId: string;
   taxYear: number;
   checkDate: string;
+  checkId?: string;
+  runId?: string;
   status: PayrollRunStatus;
   side: "employee" | "employer";
   taxCode: TaxCode;
@@ -114,9 +116,15 @@ export type YtdPriorGross = {
   employeeId: string;
   taxYear: number;
   checkDate: string;
+  checkId?: string;
+  runId?: string;
   status: PayrollRunStatus;
   grossCents: number;
 };
+
+function ytdCheckIdentity(row: { checkId?: string; runId?: string; checkDate: string }): string {
+  return row.checkId || row.runId || row.checkDate;
+}
 
 export function openingBalancesForYtd(
   rows: readonly (Pick<PayrollOpeningBalanceWithTaxes, "employee_id" | "tax_year" | "gross_cents"> & {
@@ -185,7 +193,9 @@ export function ytdFromHistory(
       addCents(ytd.employerWithheldCents ?? {}, row.taxCode, row.amountCents);
     }
     const countTaxable = row.side === "employee" || EMPLOYER_ONLY_CODES.has(row.taxCode);
-    const key = `${row.employeeId}\t${row.checkDate}\t${row.taxCode}`;
+    // Employee and employer sides of the same tax share one taxable wage; two
+    // restaurant checks on the same date are different checks and must both count.
+    const key = `${row.employeeId}\t${ytdCheckIdentity(row)}\t${row.taxCode}`;
     if (countTaxable && !taxableSeen.has(key)) {
       addCents(ytd.taxableCents, row.taxCode, row.taxableCents);
       taxableSeen.add(key);
@@ -313,6 +323,8 @@ export function payrollYtdBasisFromRpc(value: unknown): PayrollYtdBasisSnapshot 
         employeeId: asString(tax.employee_id),
         taxYear: asNumber(tax.tax_year),
         checkDate: asString(tax.check_date).slice(0, 10),
+        checkId: asString(tax.check_id) || undefined,
+        runId: asString(tax.run_id) || undefined,
         status: tax.status as PayrollRunStatus,
         side: tax.side as "employee" | "employer",
         taxCode: tax.tax_code as TaxCode,
@@ -326,6 +338,8 @@ export function payrollYtdBasisFromRpc(value: unknown): PayrollYtdBasisSnapshot 
         employeeId: asString(line.employee_id),
         taxYear: asNumber(line.tax_year),
         checkDate: asString(line.check_date).slice(0, 10),
+        checkId: asString(line.check_id) || undefined,
+        runId: asString(line.run_id) || undefined,
         status: line.status as PayrollRunStatus,
         grossCents: asNumber(line.gross_cents),
       };
@@ -614,12 +628,12 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
       }
     : null;
 
-  const timeEntries = restaurantId
-    ? (args.timeEntries ?? []).filter((row) => row.restaurant_id === restaurantId)
-    : (args.timeEntries ?? []);
+  // Restaurant time-clock runs keep every org punch for hours policy and OT,
+  // then pay only this restaurant's allocations. Clover CSVs are per restaurant.
+  const timeEntries = args.timeEntries ?? [];
 
   let shifts: WorkedShift[] = [...(args.shifts ?? [])];
-  if (restaurantId && args.shifts) {
+  if (restaurantId && args.shifts && args.hoursSource === "clover") {
     shifts = shifts.filter((shift) => shift.classId === restaurantId);
   }
   if (args.hoursSource === "time_clock") {
@@ -668,7 +682,11 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   errors.push(...policy.errors);
   warnings.push(...policy.warnings);
   // One line for the run: the automatic lunch rule touches most long days.
-  const lunchInPeriod = policy.lunchDeductions.filter((row) => row.ymd >= args.periodStart && row.ymd <= args.periodEnd);
+  const lunchInPeriod = policy.lunchDeductions.filter((row) => {
+    if (row.ymd < args.periodStart || row.ymd > args.periodEnd) return false;
+    if (!restaurantId || args.hoursSource !== "time_clock") return true;
+    return shifts.some((shift) => shift.employeeId === row.employeeId && shift.classId === restaurantId);
+  });
   if (lunchInPeriod.length > 0) {
     const hours = secondsToHoursHundredths(lunchInPeriod.reduce((sum, row) => sum + row.seconds, 0)) / 100;
     warnings.push(
@@ -677,9 +695,18 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   }
   const sourceShifts = shifts;
   shifts = policy.shifts;
+  const payShiftIds =
+    restaurantId && args.hoursSource === "time_clock"
+      ? new Set(shifts.filter((shift) => shift.classId === restaurantId).map((shift) => shift.id))
+      : null;
+  const paysShift = (shiftId: string): boolean => payShiftIds === null || payShiftIds.has(shiftId);
 
   const lookbackStart = addCalendarDays(args.periodStart, -7);
+  const otEmployeeIds = payShiftIds
+    ? new Set(shifts.filter((shift) => payShiftIds.has(shift.id)).map((shift) => shift.employeeId))
+    : null;
   for (const shift of shifts) {
+    if (otEmployeeIds && !otEmployeeIds.has(shift.employeeId)) continue;
     const started = instantSeconds(shift.startedAt);
     if (started === null) continue;
     const localYmd = ymdInTimeZone(started, timeZone);
@@ -704,7 +731,9 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   // Shifts from the overtime lookback days are loaded but not paid in this run.
   const payableShiftIds = new Set(split.allocations.filter((row) => row.payable).map((row) => row.shiftId));
-  const meal = mealBreakFlags(sourceShifts.filter((shift) => payableShiftIds.has(shift.id)));
+  const meal = mealBreakFlags(
+    sourceShifts.filter((shift) => payableShiftIds.has(shift.id) && paysShift(shift.id)),
+  );
   errors.push(...meal.errors);
   warnings.push(...meal.warnings);
   for (const flag of meal.flags) {
@@ -755,7 +784,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   const salariedSeconds = new Map<string, number>();
   const shiftEmployee = new Map(shifts.map((shift) => [shift.id, shift.employeeId]));
   for (const allocation of split.allocations) {
-    if (!allocation.payable || !salariedShiftIds.has(allocation.shiftId)) continue;
+    if (!allocation.payable || !paysShift(allocation.shiftId) || !salariedShiftIds.has(allocation.shiftId)) continue;
     const employeeId = shiftEmployee.get(allocation.shiftId)!;
     salariedSeconds.set(
       employeeId,
@@ -781,7 +810,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   const engineShifts: WorkedShift[] = [];
   const missingRateKeys = new Set<string>();
   for (const shift of shifts) {
-    if (salariedShiftIds.has(shift.id)) continue;
+    if (salariedShiftIds.has(shift.id) || !paysShift(shift.id)) continue;
     const scopedKey = scopedEnginePositionKey(shift.positionKey, shift.classId);
     engineShifts.push({ ...shift, positionKey: scopedKey, classId: shift.classId });
     const started = instantSeconds(shift.startedAt);
@@ -811,7 +840,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   const hourly = buildHourlyWeeks({
     shifts: engineShifts,
-    allocations: split.allocations.filter((row) => !salariedShiftIds.has(row.shiftId)),
+    allocations: split.allocations.filter((row) => !salariedShiftIds.has(row.shiftId) && paysShift(row.shiftId)),
     rates: positionRates,
     tips: tips.filter((row) => !salariedIds.has(row.employeeId) && row.tipsCents !== 0),
     timeZone,
@@ -824,7 +853,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   const employeeIds = new Set<string>();
   for (const employeeId of salariedIds) employeeIds.add(employeeId);
   for (const shift of shifts) {
-    if (payableShiftIds.has(shift.id)) employeeIds.add(shift.employeeId);
+    if (payableShiftIds.has(shift.id) && paysShift(shift.id)) employeeIds.add(shift.employeeId);
   }
   for (const tip of tips) {
     if (tip.tipsCents !== 0) employeeIds.add(tip.employeeId);
@@ -892,7 +921,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     },
     settingsSnapshot,
     hoursSource: args.hoursSource,
-    shifts,
+    shifts: payShiftIds ? shifts.filter((shift) => payShiftIds.has(shift.id)) : shifts,
     tips,
     adjustments,
     workweekIds,
@@ -1005,9 +1034,11 @@ export function taxYearFromCheckDate(checkDate: string): number {
 
 export function historyFromStoredRuns(
   runs: ReadonlyArray<{
+    id?: string;
     check_date: string;
     status: PayrollRunStatus;
     payroll_checks: ReadonlyArray<{
+      id?: string;
       employee_id: string;
       gross_cents: number;
       payroll_check_taxes: ReadonlyArray<{
@@ -1033,6 +1064,8 @@ export function historyFromStoredRuns(
         employeeId: check.employee_id,
         taxYear,
         checkDate,
+        checkId: check.id,
+        runId: run.id,
         status: run.status,
         grossCents: check.gross_cents,
       });
@@ -1041,6 +1074,8 @@ export function historyFromStoredRuns(
           employeeId: check.employee_id,
           taxYear,
           checkDate,
+          checkId: check.id,
+          runId: run.id,
           status: run.status,
           side: tax.side,
           taxCode: tax.tax_code,

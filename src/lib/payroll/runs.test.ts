@@ -249,6 +249,100 @@ describe("ytdFromHistory", () => {
     expect(amountOn(check, "FED-FUT", "employer")).toBe(0);
     expect(amountOn(check, "DIE")).toBe(0);
   });
+
+  it("counts employee and employer sides of one check once, and two same-date restaurant checks separately", () => {
+    const oneCheck: YtdPriorCheckTax[] = [
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-kane",
+        runId: "run-kane",
+        status: "approved",
+        side: "employee",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-kane",
+        runId: "run-kane",
+        status: "approved",
+        side: "employer",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+    ];
+    expect(ytdFromHistory([], oneCheck, [], 2026).get("E1")?.taxableCents["FED-OASDI"]).toBe(100_000);
+
+    const twoRestaurantChecks: YtdPriorCheckTax[] = [
+      ...oneCheck,
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-semilla",
+        runId: "run-semilla",
+        status: "approved",
+        side: "employee",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-semilla",
+        runId: "run-semilla",
+        status: "approved",
+        side: "employer",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+    ];
+    const ytd = ytdFromHistory(
+      [
+        {
+          employeeId: "E1",
+          taxYear: 2026,
+          grossCents: 18_300_000,
+          taxes: [
+            {
+              taxCode: "FED-OASDI",
+              taxableCents: 18_300_000,
+              withheldCents: 1_134_600,
+              employerCents: 1_134_600,
+            },
+          ],
+        },
+      ],
+      twoRestaurantChecks,
+      [],
+      2026,
+    ).get("E1");
+    expect(ytd?.taxableCents["FED-OASDI"]).toBe(18_500_000);
+
+    const next = computeCheck(
+      explicitEmployee({
+        employeeId: "E1",
+        kind: "hourly",
+        amountCents: 100_000,
+        hoursHundredths: 1_000,
+        exemptionCents: 0,
+        openingYtd: ytd,
+      }),
+      FIXTURE_A_SETTINGS,
+      FIXTURE_A_CHECK_DATE,
+    );
+    expect(amountOn(next, "FED-OASDI")).toBe(0);
+    expect(amountOn(next, "FED-OASDI", "employer")).toBe(0);
+  });
 });
 
 describe("buildRunInput", () => {
@@ -658,6 +752,57 @@ describe("buildRunInput", () => {
     });
     expect(built.errors.some((row) => row.includes("No pay schedule"))).toBe(true);
   });
+
+  it("allocates weekly overtime across restaurants so restaurant runs sum to the org-wide check", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const days = [
+      { id: "s1", ymd: "2026-10-12", classId: restaurantA },
+      { id: "s2", ymd: "2026-10-13", classId: restaurantA },
+      { id: "s3", ymd: "2026-10-14", classId: restaurantA },
+      { id: "s4", ymd: "2026-10-15", classId: restaurantB },
+      { id: "s5", ymd: "2026-10-16", classId: restaurantB },
+      { id: "s6", ymd: "2026-10-17", classId: restaurantB },
+    ];
+    const shifts = days.map((row) => ({
+      ...shift({ id: row.id, employeeId: "E1", ymd: row.ymd, start: "09:00:00", end: "17:00:00" }),
+      classId: row.classId,
+    }));
+    const shared = {
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock" as const,
+      employerSettingsRows: [employer({ pay_frequency: "weekly" })],
+      profiles: [profile({ id: "p1", employee_id: "E1" })],
+      payRates: [rate({ id: "r1", employee_id: "E1", rate_cents: 1000, effective_from: "2026-01-01" })],
+      shifts,
+    };
+    const orgWide = previewPayrollRun(buildRunInput(shared));
+    const runA = buildRunInput({
+      ...shared,
+      restaurantId: restaurantA,
+      schedules: [schedule(restaurantA)],
+    });
+    const runB = buildRunInput({
+      ...shared,
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+    });
+    const previewA = previewPayrollRun(runA);
+    const previewB = previewPayrollRun(runB);
+    expect(orgWide.errors).toEqual([]);
+    expect(previewA.errors).toEqual([]);
+    expect(previewB.errors).toEqual([]);
+    expect(orgWide.checks[0]?.grossCents).toBe(52_000);
+    expect((previewA.checks[0]?.grossCents ?? 0) + (previewB.checks[0]?.grossCents ?? 0)).toBe(52_000);
+    expect(runA.shifts.every((row) => row.classId === restaurantA)).toBe(true);
+    expect(runB.shifts.every((row) => row.classId === restaurantB)).toBe(true);
+    expect(previewA.checks[0]?.earnings.every((line) => line.classId === restaurantA)).toBe(true);
+    expect(previewB.checks[0]?.earnings.every((line) => line.classId === restaurantB)).toBe(true);
+    expect(previewA.earningsByKind.find((row) => row.kind === "overtime")?.hoursHundredths ?? 0).toBe(0);
+    expect(previewB.earningsByKind.find((row) => row.kind === "overtime")?.hoursHundredths).toBe(800);
+  });
 });
 
 describe("canApprove and toDraftPayload", () => {
@@ -935,6 +1080,8 @@ describe("payrollYtdBasisFromRpc", () => {
           employee_id: "E1",
           tax_year: 2026,
           check_date: "2026-10-09",
+          check_id: "check-1",
+          run_id: "run-1",
           status: "approved",
           side: "employee",
           tax_code: "FED-OASDI",
@@ -947,12 +1094,17 @@ describe("payrollYtdBasisFromRpc", () => {
           employee_id: "E1",
           tax_year: 2026,
           check_date: "2026-10-09",
+          check_id: "check-1",
+          run_id: "run-1",
           status: "approved",
           gross_cents: 500,
         },
       ],
     });
     expect(snapshot.revision).toBe("abc");
+    expect(snapshot.prior_check_taxes[0]?.checkId).toBe("check-1");
+    expect(snapshot.prior_check_taxes[0]?.runId).toBe("run-1");
+    expect(snapshot.prior_gross[0]?.checkId).toBe("check-1");
     const ytd = ytdFromHistory(
       openingBalancesForYtd(snapshot.opening_balances),
       snapshot.prior_check_taxes,
