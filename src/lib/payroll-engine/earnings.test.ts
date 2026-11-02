@@ -300,4 +300,42 @@ describe("period rounding of hourly pay", () => {
     expect(total).toBe(71_568);
     expect(earnings.lines.filter((line) => line.kind === "regular")).toHaveLength(1);
   });
+
+  it("rounds overtime once for a rate with no regular hours", () => {
+    // 1.69 h at $10.50 and 1x is $17.745, which rounds half-even to $17.74 for the period.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 0, dailyOtHoursHundredths: 85 },
+          { workweekId: "w2", rateCents: 1_050, regularHoursHundredths: 0, dailyOtHoursHundredths: 84 },
+        ],
+      },
+      PR_2026,
+    );
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1_774);
+  });
+
+  it("never makes a line negative when it absorbs the period rounding", () => {
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        weeklyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          {
+            workweekId: "w1",
+            rateCents: 1,
+            regularHoursHundredths: 1,
+            dailyOtHoursHundredths: 50,
+            weeklyOtHoursHundredths: 50,
+          },
+        ],
+      },
+      PR_2026,
+    );
+    expect(earnings.lines.every((line) => line.amountCents >= 0)).toBe(true);
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1);
+  });
 });

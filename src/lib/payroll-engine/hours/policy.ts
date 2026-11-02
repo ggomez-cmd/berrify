@@ -21,50 +21,47 @@ export function roundSecondsToHundredthHour(seconds: number): number {
   return Number(roundHalfUpDiv(BigInt(seconds), BigInt(HUNDREDTH_HOUR_SECONDS))) * HUNDREDTH_HOUR_SECONDS;
 }
 
-function clampIso(iso: string, minSeconds: number, maxSeconds: number): string {
-  const seconds = instantSeconds(iso);
-  if (seconds === null) return iso;
-  return isoFromSeconds(Math.min(maxSeconds, Math.max(minSeconds, seconds)));
-}
-
-function applyPunchRounding(shift: WorkedShift): WorkedShift {
-  const start = instantSeconds(shift.startedAt);
-  const end = instantSeconds(shift.endedAt);
-  if (start === null || end === null || end < start) return shift;
-  const worked = workedSecondsOf(shift);
+function roundedTarget(shift: WorkedShift, worked: number): number {
   const reported = shift.reportedWorkedSeconds;
-  const rounded =
-    reported !== undefined && Math.abs(reported - worked) <= REPORTED_TOLERANCE_SECONDS
-      ? roundSecondsToHundredthHour(reported)
-      : roundSecondsToHundredthHour(worked);
-  const delta = rounded - worked;
-  if (delta === 0) return shift;
-  const nextEnd = end + delta;
-  const next: WorkedShift = {
-    ...shift,
-    endedAt: isoFromSeconds(nextEnd),
-    breaks: shift.breaks,
-  };
-  if (nextEnd >= end) return next;
-  next.breaks = shift.breaks
-    .map((row) => {
-      const breakStart = instantSeconds(row.startedAt);
-      const breakEnd = instantSeconds(row.endedAt);
-      if (breakStart === null || breakEnd === null) return row;
-      const clampedStart = Math.min(Math.max(breakStart, start), nextEnd);
-      const clampedEnd = Math.min(Math.max(breakEnd, start), nextEnd);
-      if (clampedEnd <= clampedStart) return null;
-      return {
-        ...row,
-        startedAt: clampIso(row.startedAt, start, nextEnd),
-        endedAt: clampIso(row.endedAt, start, nextEnd),
-      };
-    })
-    .filter((row): row is ShiftBreak => row !== null);
-  return next;
+  return reported !== undefined && Math.abs(reported - worked) <= REPORTED_TOLERANCE_SECONDS
+    ? roundSecondsToHundredthHour(reported)
+    : roundSecondsToHundredthHour(worked);
 }
 
-function deductFromShift(shift: WorkedShift, seconds: number): { shift: WorkedShift; remaining: number } {
+// Rounding never moves a punch into a neighbouring one: time comes off as an unpaid break at the end
+// of the worked time, and time goes on at the end only up to the employee's next punch.
+function applyPunchRounding(shifts: readonly WorkedShift[], warnings: string[]): WorkedShift[] {
+  const bounds = shifts.map((shift) => ({
+    employeeId: shift.employeeId,
+    start: instantSeconds(shift.startedAt),
+    end: instantSeconds(shift.endedAt),
+  }));
+  return shifts.map((shift, index) => {
+    const own = bounds[index];
+    if (!own || own.start === null || own.end === null || own.end < own.start) return shift;
+    const worked = workedSecondsOf(shift);
+    const delta = roundedTarget(shift, worked) - worked;
+    if (delta === 0) return shift;
+    if (delta < 0) return deductFromShift(shift, -delta, "other").shift;
+
+    let nextStart = Number.POSITIVE_INFINITY;
+    bounds.forEach((row, other) => {
+      if (other === index || row.employeeId !== shift.employeeId || row.start === null) return;
+      if (row.start >= own.end! && row.start < nextStart) nextStart = row.start;
+    });
+    const later = Math.min(delta, nextStart - own.end);
+    if (later < delta) {
+      warnings.push(`Shift ${shift.id} could not be rounded to 0.01 h without overlapping another punch`);
+    }
+    return { ...shift, endedAt: isoFromSeconds(own.end + later) };
+  });
+}
+
+function deductFromShift(
+  shift: WorkedShift,
+  seconds: number,
+  type: ShiftBreak["type"] = "meal",
+): { shift: WorkedShift; remaining: number } {
   if (seconds <= 0) return { shift, remaining: 0 };
   const intervals = workedIntervals(shift);
   if (intervals.length === 0) return { shift, remaining: seconds };
@@ -78,7 +75,7 @@ function deductFromShift(shift: WorkedShift, seconds: number): { shift: WorkedSh
     added.push({
       startedAt: isoFromSeconds(interval.end - take),
       endedAt: isoFromSeconds(interval.end),
-      type: "meal",
+      type,
       paid: false,
     });
     remaining -= take;
@@ -202,7 +199,7 @@ export function applyHoursPolicy(shifts: readonly WorkedShift[], policy: HoursPo
 
   let next = shifts.map(cloneShift);
   if (rounding === "hundredth_hour") {
-    next = next.map(applyPunchRounding);
+    next = applyPunchRounding(next, warnings);
   }
   if (policy.mealDeduction) {
     next = applyMealDeduction(next, policy.mealDeduction, policy.timeZone, lunchDeductions, errors);

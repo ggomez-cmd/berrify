@@ -244,24 +244,34 @@ function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
   for (const line of merged.values()) {
     line.amountCents = amountFromHoursAndRateHalfEven(line.hoursHundredths, line.rateCents ?? 0);
   }
-  // Alchavo prices a rate's regular and overtime hours for the whole period and rounds once, so the
-  // regular line absorbs the cent that per-week overtime rounding would otherwise add or drop.
-  for (const line of merged.values()) {
-    const overtime = out.filter((row) => {
-      const exact = overtimeExact.get(row);
-      return (
-        exact !== undefined &&
-        exact.baseRateCents === line.rateCents &&
-        (row.classId ?? "") === (line.classId ?? "") &&
-        (row.positionId ?? "") === (line.positionId ?? "")
-      );
-    });
-    if (overtime.length === 0) continue;
+  // Alchavo prices a rate's regular and overtime hours for the whole period and rounds once. The cent
+  // that per-week overtime rounding adds or drops goes to the largest lines, never below zero.
+  const groupKey = (rateCents: number | null, line: EarningsLine) =>
+    `${rateCents}	${line.classId ?? ""}	${line.positionId ?? ""}`;
+  const groups = new Map<string, { regular: EarningsLine | null; overtime: EarningsLine[] }>();
+  for (const line of merged.values()) groups.set(groupKey(line.rateCents, line), { regular: line, overtime: [] });
+  for (const line of out) {
+    const exact = overtimeExact.get(line);
+    if (!exact) continue;
+    const key = groupKey(exact.baseRateCents, line);
+    const group = groups.get(key) ?? { regular: null, overtime: [] };
+    group.overtime.push(line);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.overtime.length === 0) continue;
+    const regular = group.regular;
     const exact =
-      BigInt(line.hoursHundredths) * BigInt(line.rateCents ?? 0) * PPM +
-      overtime.reduce((sum, row) => sum + (overtimeExact.get(row)?.exact ?? 0n), 0n);
-    const totalCents = roundHalfEvenDiv(exact, 100n * PPM);
-    line.amountCents = totalCents - sumCents(overtime.map((row) => row.amountCents));
+      (regular ? BigInt(regular.hoursHundredths) * BigInt(regular.rateCents ?? 0) * PPM : 0n) +
+      group.overtime.reduce((sum, row) => sum + (overtimeExact.get(row)?.exact ?? 0n), 0n);
+    const targets = [...(regular ? [regular] : []), ...group.overtime].sort((x, y) => y.amountCents - x.amountCents);
+    let diff = roundHalfEvenDiv(exact, 100n * PPM) - sumCents(targets.map((row) => row.amountCents));
+    for (const target of targets) {
+      if (diff === 0) break;
+      const step = diff > 0 ? diff : Math.max(diff, -target.amountCents);
+      target.amountCents += step;
+      diff -= step;
+    }
   }
   return out;
 }

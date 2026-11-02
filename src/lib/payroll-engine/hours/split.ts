@@ -195,8 +195,10 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
 
     for (const piece of pieces) {
       let cursor = piece.start;
+      // By clock-in day, an overnight shift that starts in the period is paid in full, even after a break past its end.
+      const periodAnchor = settings.dailyWindow === "clock_in_day" ? instantSeconds(piece.shift.startedAt) : null;
       while (cursor < piece.end) {
-        if (cursor >= periodEnd) break;
+        if ((periodAnchor ?? cursor) >= periodEnd) break;
 
         if (settings.dailyWindow === "rolling_24h") {
           if (windowEnd === null || cursor >= windowEnd) {

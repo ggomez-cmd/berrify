@@ -273,6 +273,31 @@ describe("splitHours", () => {
     expect(hoursOf(sumAlloc(calendar.allocations, true))).toEqual({ regular: 4, daily: 0, weekly: 0 });
   });
 
+  it("clock_in_day pays an overnight shift that starts on the last day in full, past a break after midnight", () => {
+    const overnight = shift({
+      id: "last",
+      ymd: "2026-10-18",
+      start: "22:00",
+      endYmd: "2026-10-19",
+      end: "06:00",
+      breaks: [
+        {
+          startedAt: localIso("2026-10-19", "01:00"),
+          endedAt: localIso("2026-10-19", "01:30"),
+          type: "meal",
+          paid: false,
+        },
+      ],
+    });
+    const result = splitHours(
+      [overnight],
+      settings({ dailyWindow: "clock_in_day", periodStart: "2026-10-12", periodEnd: "2026-10-18" }),
+    );
+    expect(result.errors).toEqual([]);
+    const paid = hoursOf(sumAlloc(result.allocations));
+    expect(paid.regular + paid.daily + paid.weekly).toBe(7.5);
+  });
+
   it("overnight shift across midnight and across the workweek boundary", () => {
     const overnight = shift({
       id: "ow",

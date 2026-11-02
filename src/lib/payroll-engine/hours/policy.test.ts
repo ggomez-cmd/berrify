@@ -83,6 +83,27 @@ describe("punch rounding", () => {
     expect(workedSeconds(far.shifts[0]!)).toBe(667 * 36);
   });
 
+  it("rounds down a shift that ends in an unpaid break", () => {
+    const punch = {
+      ...shift({ id: "tail", ymd: "2026-10-01", start: "08:00:00", end: "16:00:00" }),
+      breaks: [
+        { startedAt: localIso("2026-10-01", "15:30:00"), endedAt: localIso("2026-10-01", "16:00:00"), type: "meal" as const, paid: false },
+      ],
+      reportedWorkedSeconds: 749 * 36,
+    };
+    const result = applyHoursPolicy([punch], { timeZone: TZ, punchRounding: "hundredth_hour" });
+    expect(workedSeconds(result.shifts[0]!)).toBe(749 * 36);
+  });
+
+  it("does not round a punch into the next one", () => {
+    const first = shift({ id: "a", ymd: "2026-10-01", start: "08:00:00", end: "12:00:20" });
+    const second = shift({ id: "b", ymd: "2026-10-01", start: "12:00:20", end: "16:00:20" });
+    const result = applyHoursPolicy([first, second], { timeZone: TZ, punchRounding: "hundredth_hour" });
+    const [roundedFirst, roundedSecond] = result.shifts;
+    expect(instantSeconds(roundedFirst!.endedAt)).toBeLessThanOrEqual(instantSeconds(roundedSecond!.startedAt)!);
+    expect(result.warnings).toEqual(["Shift a could not be rounded to 0.01 h without overlapping another punch"]);
+  });
+
   it("leaves timestamps unchanged when rounding is off", () => {
     const original = shift({ id: "s1", ymd: "2026-10-01", start: "08:00:00", end: "08:00:18" });
     const result = applyHoursPolicy([original], { timeZone: TZ });
