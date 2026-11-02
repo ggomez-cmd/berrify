@@ -680,6 +680,17 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
         allocation.weeklyOtSeconds,
     );
   }
+  // Salaried tips skip buildHourlyWeeks, so check them here the way it checks hourly tips.
+  const workweekIds = workweekIdsForPeriod(splitSettings);
+  const runWorkweeks = new Set(workweekIds);
+  for (const tip of tips) {
+    if (!salariedIds.has(tip.employeeId)) continue;
+    if (tip.tipsCents < 0) {
+      errors.push(`Employee ${tip.employeeId} has negative tips on workweek ${tip.workweekId}`);
+    } else if (!runWorkweeks.has(tip.workweekId)) {
+      errors.push(`Employee ${tip.employeeId} has an unknown workweek ${tip.workweekId}`);
+    }
+  }
 
   const positionRates: PositionRate[] = [];
   const engineShifts: WorkedShift[] = [];
@@ -776,7 +787,6 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     });
   }
 
-  const workweekIds = workweekIdsForPeriod(splitSettings);
   return {
     input: {
       checkDate: args.checkDate,

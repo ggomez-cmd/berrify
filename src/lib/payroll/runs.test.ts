@@ -292,6 +292,21 @@ describe("buildRunInput", () => {
     expect(employee?.earnings?.some((line) => line.kind === "tips" && line.amountCents === 5_000)).toBe(true);
   });
 
+  it("rejects salaried tips on a workweek outside the run", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1", salary_cents: 190_000 })],
+      payRates: [],
+      shifts: [],
+      tips: [{ employeeId: "E1", workweekId: "2026-09-27", tipsCents: 5_000 }],
+    });
+    expect(built.errors).toContain("Employee E1 has an unknown workweek 2026-09-27");
+  });
+
   it("keeps restaurant-specific rates for the same position ($140.00)", () => {
     const restaurantA = "11111111-1111-4111-8111-111111111111";
     const restaurantB = "22222222-2222-4222-8222-222222222222";
