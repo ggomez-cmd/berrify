@@ -50,6 +50,7 @@ import type {
   PayrollOpeningBalanceWithTaxes,
   PayrollPayRateRow,
   PayrollPayScheduleRow,
+  PayrollRestaurantSalaryRow,
   PayrollRunStatus,
   PayrollRunWithChecks,
 } from "../types";
@@ -374,6 +375,7 @@ export type BuildRunInputArgs = {
   employerSettingsRows: readonly PayrollEmployerSettingsRow[];
   profiles: readonly PayrollEmployeeProfileRow[];
   payRates: readonly PayrollPayRateRow[];
+  restaurantSalaries?: readonly PayrollRestaurantSalaryRow[];
   cloverNames?: readonly PayrollCloverNameRow[];
   restaurantId?: string | null;
   schedules?: readonly PayrollPayScheduleRow[];
@@ -710,15 +712,45 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   }
 
   // Salary pays salaried employees; their punches only set the hours shown, so they need no hourly rate.
-  const salariedIds = new Set(
-    args.profiles
-      .filter((row) => {
-        if (row.salary_cents == null) return false;
-        if (restaurantId && row.default_restaurant_id !== restaurantId) return false;
-        return true;
-      })
-      .map((row) => row.employee_id),
-  );
+  // Restaurant runs: a payroll_restaurant_salaries row wins; otherwise the profile salary pays only at the default restaurant.
+  // Org-wide runs ignore restaurant salaries and keep the profile salary.
+  const restaurantSalaries = args.restaurantSalaries ?? [];
+  const salaryByEmployee = new Map<string, { amountCents: number; classId: string | null }>();
+  if (restaurantId) {
+    for (const profile of args.profiles) {
+      const restaurantSalary = restaurantSalaries.find(
+        (row) => row.employee_id === profile.employee_id && row.restaurant_id === restaurantId,
+      );
+      if (restaurantSalary) {
+        salaryByEmployee.set(profile.employee_id, {
+          amountCents: restaurantSalary.salary_cents,
+          classId: restaurantId,
+        });
+        continue;
+      }
+      if (profile.salary_cents != null && profile.default_restaurant_id === restaurantId) {
+        salaryByEmployee.set(profile.employee_id, {
+          amountCents: profile.salary_cents,
+          classId: restaurantId,
+        });
+      }
+    }
+  } else {
+    for (const profile of args.profiles) {
+      if (profile.salary_cents == null) continue;
+      salaryByEmployee.set(profile.employee_id, {
+        amountCents: profile.salary_cents,
+        classId: profile.default_restaurant_id,
+      });
+    }
+    const restaurantSalaryIds = [...new Set(restaurantSalaries.map((row) => row.employee_id))].sort();
+    if (restaurantSalaryIds.length > 0) {
+      warnings.push(
+        `Restaurant salaries for ${restaurantSalaryIds.join(", ")} are only paid in restaurant runs`,
+      );
+    }
+  }
+  const salariedIds = new Set(salaryByEmployee.keys());
   const salariedShiftIds = new Set(shifts.filter((shift) => salariedIds.has(shift.employeeId)).map((shift) => shift.id));
   const salariedSeconds = new Map<string, number>();
   const shiftEmployee = new Map(shifts.map((shift) => [shift.id, shift.employeeId]));
@@ -790,11 +822,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   const profileById = new Map(args.profiles.map((row) => [row.employee_id, row]));
   const employeeIds = new Set<string>();
-  for (const profile of args.profiles) {
-    if (profile.salary_cents == null) continue;
-    if (restaurantId && profile.default_restaurant_id !== restaurantId) continue;
-    employeeIds.add(profile.employee_id);
-  }
+  for (const employeeId of salariedIds) employeeIds.add(employeeId);
   for (const shift of shifts) {
     if (payableShiftIds.has(shift.id)) employeeIds.add(shift.employeeId);
   }
@@ -822,23 +850,23 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
       .filter((row) => row.employeeId === employeeId)
       .map(adjustmentEarnings)
       .map((line) => (line.classId ? line : { ...line, classId: defaultClassId }));
-    const salaryCents = profile.salary_cents;
+    const salary = salaryByEmployee.get(employeeId);
     // A salary is paid only in its own restaurant's run; elsewhere the employee is paid by the hour.
-    if (salaryCents != null && salariedIds.has(employeeId)) {
+    if (salary && salariedIds.has(employeeId)) {
       const tipEarnings: EarningsLineInput[] = tips
         .filter((row) => row.employeeId === employeeId && row.tipsCents > 0 && runWorkweeks.has(row.workweekId))
         .map((row) => ({
           kind: "tips" as const,
           amountCents: row.tipsCents,
           workweekId: row.workweekId,
-          classId: profile.default_restaurant_id,
+          classId: salary.classId ?? profile.default_restaurant_id,
         }));
       employees.push({
         ...base,
         openingYtd,
         salary: {
-          amountCents: salaryCents,
-          classId: profile.default_restaurant_id,
+          amountCents: salary.amountCents,
+          classId: salary.classId,
           hoursHundredths:
             secondsToHoursHundredths(salariedSeconds.get(employeeId) ?? 0) ||
             (setup?.payFrequency === "weekly" ? WEEKLY_SALARY_HOURS_HUNDREDTHS : BIWEEKLY_SALARY_HOURS_HUNDREDTHS),

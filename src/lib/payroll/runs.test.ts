@@ -14,6 +14,8 @@ import type {
   PayrollEmployeeProfileRow,
   PayrollEmployerSettingsRow,
   PayrollPayRateRow,
+  PayrollPayScheduleRow,
+  PayrollRestaurantSalaryRow,
 } from "../types";
 import type { PayrollRunWithChecks } from "../types";
 import { summarizeRun } from "./reports";
@@ -116,6 +118,33 @@ function rate(
     position: null,
     ...timestamps,
     ...partial,
+  };
+}
+
+function restaurantSalary(
+  partial: Partial<PayrollRestaurantSalaryRow> &
+    Pick<PayrollRestaurantSalaryRow, "id" | "employee_id" | "restaurant_id" | "salary_cents">,
+): PayrollRestaurantSalaryRow {
+  return {
+    org_id: "org-1",
+    ...timestamps,
+    ...partial,
+  };
+}
+
+function schedule(
+  restaurantId: string,
+  frequency: PayrollPayScheduleRow["frequency"] = "weekly",
+): PayrollPayScheduleRow {
+  return {
+    id: `sched-${restaurantId}`,
+    org_id: "org-1",
+    restaurant_id: restaurantId,
+    frequency,
+    anchor_period_start: "2026-10-12",
+    check_lag_days: 5,
+    taxes_via_provider: true,
+    ...timestamps,
   };
 }
 
@@ -495,6 +524,123 @@ describe("buildRunInput", () => {
     expect(built.settingsSnapshot?.restaurantId).toBe(restaurantA);
     expect(built.input.employees.map((row) => row.employeeId).sort()).toEqual(["E1", "E2", "E3"]);
     expect(built.shifts.every((shift) => shift.classId === restaurantA)).toBe(true);
+  });
+
+  it("pays the profile salary at A and the restaurant salary at B without double counting", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const shared = {
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock" as const,
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({
+          id: "p1",
+          employee_id: "E1",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [
+        { ...shift({ id: "s-a", employeeId: "E1", ymd: "2026-10-13", start: "09:00:00", end: "13:00:00" }), classId: restaurantA },
+        { ...shift({ id: "s-b", employeeId: "E1", ymd: "2026-10-14", start: "09:00:00", end: "13:00:00" }), classId: restaurantB },
+      ],
+    };
+    const runA = buildRunInput({
+      ...shared,
+      restaurantId: restaurantA,
+      schedules: [schedule(restaurantA)],
+    });
+    const runB = buildRunInput({
+      ...shared,
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+    });
+    expect(runA.errors).toEqual([]);
+    expect(runB.errors).toEqual([]);
+    expect(runA.input.employees).toHaveLength(1);
+    expect(runB.input.employees).toHaveLength(1);
+    expect(runA.input.employees[0]?.salary).toMatchObject({ amountCents: 190_000, classId: restaurantA });
+    expect(runB.input.employees[0]?.salary).toMatchObject({ amountCents: 80_000, classId: restaurantB });
+    expect(runA.input.employees[0]?.hourlyWeeks).toBeUndefined();
+    expect(runB.input.employees[0]?.hourlyWeeks).toBeUndefined();
+  });
+
+  it("includes a restaurant-salary employee with no shifts", () => {
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1", salary_cents: null })],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.employees).toHaveLength(1);
+    expect(built.input.employees[0]?.salary).toMatchObject({ amountCents: 80_000, classId: restaurantB });
+    expect(built.input.employees[0]?.salary?.hoursHundredths).toBe(4_000);
+  });
+
+  it("leaves org-wide salary behaviour unchanged and warns about restaurant salaries", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({
+          id: "p1",
+          employee_id: "E1",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.employees).toHaveLength(1);
+    expect(built.input.employees[0]?.salary).toMatchObject({
+      amountCents: 190_000,
+      classId: restaurantA,
+      hoursHundredths: 8_000,
+    });
+    expect(built.warnings).toContain("Restaurant salaries for E1 are only paid in restaurant runs");
   });
 
   it("errors when a restaurant run has no pay schedule", () => {
