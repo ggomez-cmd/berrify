@@ -625,13 +625,15 @@ begin
           'employee_id', c.employee_id,
           'tax_year', load_payroll_ytd_basis.tax_year,
           'check_date', r.check_date,
+          'check_id', c.id,
+          'run_id', r.id,
           'status', r.status,
           'side', t.side,
           'tax_code', t.tax_code,
           'taxable_cents', t.taxable_cents,
           'amount_cents', t.amount_cents
         )
-        order by r.check_date, c.employee_id, t.side, t.tax_code, t.id
+        order by r.check_date, c.employee_id, c.id, t.side, t.tax_code, t.id
       )
       from public.payroll_runs r
       join public.payroll_checks c
@@ -651,6 +653,8 @@ begin
           'employee_id', c.employee_id,
           'tax_year', load_payroll_ytd_basis.tax_year,
           'check_date', r.check_date,
+          'check_id', c.id,
+          'run_id', r.id,
           'status', r.status,
           'gross_cents', c.gross_cents
         )
@@ -1079,7 +1083,17 @@ begin
           and e.started_at < window_end
           and (
             payroll_shift_revision_unchecked.p_restaurant_id is null
+            or e.restaurant_id is null
             or e.restaurant_id is not distinct from payroll_shift_revision_unchecked.p_restaurant_id
+            or exists (
+              select 1
+              from public.time_entries scoped
+              where scoped.org_id = payroll_shift_revision_unchecked.target_org_id
+                and scoped.started_at >= window_start
+                and scoped.started_at < window_end
+                and scoped.restaurant_id is not distinct from payroll_shift_revision_unchecked.p_restaurant_id
+                and scoped.employee_id = e.employee_id
+            )
           )
       ),
       ''
@@ -1233,6 +1247,13 @@ begin
         NEW.restaurant_id is null
         or s.restaurant_id is not distinct from NEW.restaurant_id
         or s.restaurant_id is null
+        or exists (
+          select 1
+          from public.payroll_checks c
+          where c.run_id = NEW.id
+            and c.org_id = NEW.org_id
+            and c.employee_id = s.employee_id
+        )
       )
   ) then
     raise exception 'employees are still clocked in from this period: clock them out first';
@@ -1246,11 +1267,14 @@ revoke all on function public.payroll_runs_guard_shift_revision()
   from public, anon, authenticated;
 
 drop function if exists public.time_entry_reject_if_approved_run(uuid, timestamptz);
+drop function if exists public.time_entry_reject_if_approved_run(uuid, timestamptz, uuid);
+drop function if exists public.time_entry_reject_if_approved_run(uuid, timestamptz, uuid, uuid);
 
 create or replace function public.time_entry_reject_if_approved_run(
   target_org_id uuid,
   started_at timestamptz,
-  p_restaurant_id uuid default null
+  p_restaurant_id uuid default null,
+  p_employee_id uuid default null
 )
 returns void
 language plpgsql
@@ -1273,6 +1297,16 @@ begin
       r.restaurant_id is null
       or time_entry_reject_if_approved_run.p_restaurant_id is null
       or r.restaurant_id is not distinct from time_entry_reject_if_approved_run.p_restaurant_id
+      or (
+        time_entry_reject_if_approved_run.p_employee_id is not null
+        and exists (
+          select 1
+          from public.payroll_checks c
+          where c.run_id = r.id
+            and c.org_id = r.org_id
+            and c.employee_id = time_entry_reject_if_approved_run.p_employee_id
+        )
+      )
     )
   order by r.check_date, r.id
   limit 1;
@@ -1283,7 +1317,7 @@ begin
 end;
 $$;
 
-revoke all on function public.time_entry_reject_if_approved_run(uuid, timestamptz, uuid)
+revoke all on function public.time_entry_reject_if_approved_run(uuid, timestamptz, uuid, uuid)
   from public, anon, authenticated;
 
 create or replace function public.time_entries_guard_payroll_window()
@@ -1297,36 +1331,43 @@ declare
   new_start timestamptz;
   old_restaurant uuid;
   new_restaurant uuid;
+  old_employee uuid;
+  new_employee uuid;
 begin
   if TG_OP = 'DELETE' then
     org := OLD.org_id;
     old_start := OLD.started_at;
     old_restaurant := OLD.restaurant_id;
+    old_employee := OLD.employee_id;
   elsif TG_OP = 'UPDATE' then
     org := coalesce(NEW.org_id, OLD.org_id);
     old_start := OLD.started_at;
     new_start := NEW.started_at;
     old_restaurant := OLD.restaurant_id;
     new_restaurant := NEW.restaurant_id;
+    old_employee := OLD.employee_id;
+    new_employee := NEW.employee_id;
   else
     org := NEW.org_id;
     new_start := NEW.started_at;
     new_restaurant := NEW.restaurant_id;
+    new_employee := NEW.employee_id;
   end if;
 
   if old_start is not null then
     perform public.time_entry_lock_started_at(org, old_start);
-    perform public.time_entry_reject_if_approved_run(org, old_start, old_restaurant);
+    perform public.time_entry_reject_if_approved_run(org, old_start, old_restaurant, old_employee);
   end if;
   if
     new_start is not null
     and (
       new_start is distinct from old_start
       or new_restaurant is distinct from old_restaurant
+      or new_employee is distinct from old_employee
     )
   then
     perform public.time_entry_lock_started_at(org, new_start);
-    perform public.time_entry_reject_if_approved_run(org, new_start, new_restaurant);
+    perform public.time_entry_reject_if_approved_run(org, new_start, new_restaurant, new_employee);
   end if;
 
   if TG_OP = 'DELETE' then
@@ -1366,7 +1407,12 @@ begin
   end if;
 
   perform public.time_entry_lock_started_at(entry.org_id, entry.started_at);
-  perform public.time_entry_reject_if_approved_run(entry.org_id, entry.started_at, entry.restaurant_id);
+  perform public.time_entry_reject_if_approved_run(
+    entry.org_id,
+    entry.started_at,
+    entry.restaurant_id,
+    entry.employee_id
+  );
 
   if TG_OP = 'DELETE' then
     return OLD;
@@ -1402,6 +1448,13 @@ begin
       r.restaurant_id is null
       or NEW.restaurant_id is null
       or r.restaurant_id is not distinct from NEW.restaurant_id
+      or exists (
+        select 1
+        from public.payroll_checks c
+        where c.run_id = r.id
+          and c.org_id = r.org_id
+          and c.employee_id = NEW.employee_id
+      )
     )
   order by r.check_date, r.id
   limit 1;
@@ -1655,12 +1708,18 @@ begin
   );
 
   if action = 'update' then
-    perform public.time_entry_reject_if_approved_run(emp.org_id, entry_row.started_at, entry_row.restaurant_id);
+    perform public.time_entry_reject_if_approved_run(
+      emp.org_id,
+      entry_row.started_at,
+      entry_row.restaurant_id,
+      entry_row.employee_id
+    );
   end if;
   perform public.time_entry_reject_if_approved_run(
     emp.org_id,
     manager_save_time_entry.new_started_at,
-    manager_save_time_entry.target_restaurant_id
+    manager_save_time_entry.target_restaurant_id,
+    emp.id
   );
 
   gross := floor(extract(epoch from (
@@ -1816,7 +1875,12 @@ begin
   local_start := (entry_row.started_at at time zone zone)::date;
 
   perform public.time_entry_lock_payroll_years(entry_row.org_id, array[local_start]);
-  perform public.time_entry_reject_if_approved_run(entry_row.org_id, entry_row.started_at, entry_row.restaurant_id);
+  perform public.time_entry_reject_if_approved_run(
+    entry_row.org_id,
+    entry_row.started_at,
+    entry_row.restaurant_id,
+    entry_row.employee_id
+  );
 
   before_snap := public.time_entry_snapshot(entry_row.id);
 
@@ -1859,7 +1923,8 @@ returns table (
   restaurant_id uuid,
   time_zone text,
   "from" timestamptz,
-  "until" timestamptz
+  "until" timestamptz,
+  employee_ids uuid[]
 )
 language plpgsql
 security definer
@@ -1882,7 +1947,13 @@ begin
     r.restaurant_id,
     coalesce(r.settings->>'timeZone', public.payroll_hours_time_zone(r.org_id, r.check_date)),
     r.time_clock_from,
-    r.time_clock_until
+    r.time_clock_until,
+    (
+      select coalesce(array_agg(c.employee_id order by c.employee_id), '{}'::uuid[])
+      from public.payroll_checks c
+      where c.run_id = r.id
+        and c.org_id = r.org_id
+    ) as employee_ids
   from public.payroll_runs r
   where r.org_id = list_approved_time_clock_windows.target_org_id
     and r.status = 'approved'

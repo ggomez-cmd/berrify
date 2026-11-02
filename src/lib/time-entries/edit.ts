@@ -69,6 +69,7 @@ export type ApprovedTimeClockWindow = {
   time_zone: string;
   from: string;
   until: string;
+  employee_ids?: readonly string[] | null;
 };
 
 export type ReviewShiftRow = {
@@ -336,6 +337,7 @@ export function approvedCheckDateForShift(
   startedAt: string,
   windows: readonly ApprovedTimeClockWindow[],
   restaurantId?: string | null,
+  employeeId?: string | null,
 ): string | null {
   const started = instantSeconds(startedAt);
   if (started === null) return null;
@@ -346,6 +348,9 @@ export function approvedCheckDateForShift(
     if (started < from || started >= until) continue;
     if (window.restaurant_id == null) return window.check_date.slice(0, 10);
     if (restaurantId == null || window.restaurant_id === restaurantId) {
+      return window.check_date.slice(0, 10);
+    }
+    if (employeeId && window.employee_ids?.includes(employeeId)) {
       return window.check_date.slice(0, 10);
     }
   }
@@ -390,7 +395,12 @@ export function groupTimeEntriesForReview(input: {
       hasOpenException: openExceptions.has(entry.id),
       noRestaurant: !entry.restaurant_id,
       edited: edited.has(entry.id),
-      approvedCheckDate: approvedCheckDateForShift(entry.started_at, input.windows, entry.restaurant_id),
+      approvedCheckDate: approvedCheckDateForShift(
+        entry.started_at,
+        input.windows,
+        entry.restaurant_id,
+        entry.employee_id,
+      ),
     };
     const group = groups.get(entry.employee_id) ?? {
       employeeId: entry.employee_id,

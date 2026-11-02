@@ -55,7 +55,7 @@ export function usePayrollRunHistory() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payroll_runs")
-        .select("check_date, status, payroll_checks(employee_id, gross_cents, payroll_check_taxes(side, tax_code, taxable_cents, amount_cents))")
+        .select("id, check_date, status, payroll_checks(id, employee_id, gross_cents, payroll_check_taxes(side, tax_code, taxable_cents, amount_cents))")
         .eq("org_id", org!.id)
         .in("status", ["approved", "void"]);
       if (error) throw toThrownError(error, "Could not load payroll history");
@@ -127,9 +127,7 @@ export function usePayrollRunTimeEntries(
         .lt("started_at", revision.until)
         .order("started_at", { ascending: true });
       if (error) throw toThrownError(error, "Could not load time entries");
-      const rows = ((entries ?? []) as TimeEntry[]).filter((row) =>
-        restaurantId ? row.restaurant_id === restaurantId : true,
-      );
+      const rows = (entries ?? []) as TimeEntry[];
       const ids = rows.map((row) => row.id);
       let breaks: TimeBreak[] = [];
       if (ids.length > 0) {
