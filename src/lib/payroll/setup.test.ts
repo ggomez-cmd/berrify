@@ -3,6 +3,7 @@ import {
   basisPointsToPercentInput,
   buildPayrollEmployeeSetupProfile,
   buildPayrollPayRateSetupPayloads,
+  buildPayrollRestaurantSalarySetupPayloads,
   centsToDollarInput,
   cloverMappingFrom,
   dollarsToCents,
@@ -124,6 +125,29 @@ describe("money helpers", () => {
     expect(percentToBasisPoints("-1")).toBeNull();
     expect(percentToBasisPoints("100.01")).toBeNull();
     expect(basisPointsToPercentInput(270)).toBe("2.70");
+  });
+});
+
+describe("buildPayrollRestaurantSalarySetupPayloads", () => {
+  it("requires a restaurant and a salary greater than zero", () => {
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "rest-inlet", salary_dollars: "800.00" }]),
+    ).toEqual({
+      ok: true,
+      value: [{ restaurant_id: "rest-inlet", salary_cents: 80_000 }],
+    });
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "", salary_dollars: "800.00" }]).ok,
+    ).toBe(false);
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "rest-inlet", salary_dollars: "0" }]).ok,
+    ).toBe(false);
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads(
+        [{ restaurant_id: "rest-harbor", salary_dollars: "800.00" }],
+        "rest-harbor",
+      ).ok,
+    ).toBe(false);
   });
 });
 

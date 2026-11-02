@@ -16,6 +16,7 @@ import type {
   PayrollOpeningBalanceRow,
   PayrollOpeningBalanceTaxRow,
   PayrollPayRateRow,
+  PayrollRestaurantSalaryRow,
 } from "../types";
 
 export type {
@@ -25,6 +26,7 @@ export type {
   PayrollOpeningBalanceRow,
   PayrollOpeningBalanceTaxRow,
   PayrollPayRateRow,
+  PayrollRestaurantSalaryRow,
 };
 
 export type EmployerSetupSettings = EmployerSettings & {
@@ -104,6 +106,12 @@ export type PayrollPayRateSetupPayload = {
   effective_from: string;
 };
 
+/** jsonb array element for `save_payroll_employee_setup` `restaurant_salaries`. Keys must match the SQL. */
+export type PayrollRestaurantSalarySetupPayload = {
+  restaurant_id: string;
+  salary_cents: number;
+};
+
 /** jsonb array element for `import_payroll_opening_balances` `balances`. Keys must match the SQL. */
 export type OpeningBalanceImportPayload = {
   employee_id: string;
@@ -147,10 +155,18 @@ export type PayrollPayRateSetupDraft = {
   effective_from: string;
 };
 
+export type PayrollRestaurantSalarySetupDraft = {
+  restaurant_id: string;
+  salary_dollars: string;
+};
+
 export type PayrollSetupBuildResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export const DUPLICATE_PAY_RATE_ERROR =
   "Each rate needs a unique restaurant, position, and effective date. Two rows cannot share that combination.";
+
+export const DUPLICATE_RESTAURANT_SALARY_ERROR =
+  "Each other restaurant can have only one salary. Two rows cannot share the same restaurant.";
 
 export function payRateMatchKey(rate: Pick<PayrollPayRateSetupPayload, "restaurant_id" | "position" | "effective_from">): string {
   return `${rate.restaurant_id ?? ""}\t${rate.position ?? ""}\t${rate.effective_from}`;
@@ -164,6 +180,17 @@ export function findDuplicatePayRateError(
     const key = payRateMatchKey(rate);
     if (seen.has(key)) return DUPLICATE_PAY_RATE_ERROR;
     seen.add(key);
+  }
+  return null;
+}
+
+export function findDuplicateRestaurantSalaryError(
+  rows: ReadonlyArray<Pick<PayrollRestaurantSalarySetupPayload, "restaurant_id">>,
+): string | null {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.restaurant_id)) return DUPLICATE_RESTAURANT_SALARY_ERROR;
+    seen.add(row.restaurant_id);
   }
   return null;
 }
@@ -289,6 +316,30 @@ export function buildPayrollPayRateSetupPayloads(
   const duplicate = findDuplicatePayRateError(rates);
   if (duplicate) return { ok: false, error: duplicate };
   return { ok: true, value: rates };
+}
+
+export function buildPayrollRestaurantSalarySetupPayloads(
+  drafts: readonly PayrollRestaurantSalarySetupDraft[],
+  defaultRestaurantId?: string | null,
+): PayrollSetupBuildResult<PayrollRestaurantSalarySetupPayload[]> {
+  const salaries: PayrollRestaurantSalarySetupPayload[] = [];
+  for (const draft of drafts) {
+    const restaurantId = draft.restaurant_id.trim();
+    const salaryCents = dollarsToCents(draft.salary_dollars);
+    if (!restaurantId || salaryCents === null || salaryCents <= 0) {
+      return {
+        ok: false,
+        error: "Each other-restaurant salary needs a restaurant and a salary per check greater than zero",
+      };
+    }
+    if (defaultRestaurantId && restaurantId === defaultRestaurantId) {
+      return { ok: false, error: "Use the main salary field for the default restaurant" };
+    }
+    salaries.push({ restaurant_id: restaurantId, salary_cents: salaryCents });
+  }
+  const duplicate = findDuplicateRestaurantSalaryError(salaries);
+  if (duplicate) return { ok: false, error: duplicate };
+  return { ok: true, value: salaries };
 }
 
 export function toOpeningBalanceImportPayloads(

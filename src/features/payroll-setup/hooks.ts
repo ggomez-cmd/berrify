@@ -11,13 +11,16 @@ import type {
   PayrollOpeningBalanceWithTaxes,
   PayrollPayRateRow,
   PayrollPayScheduleRow,
+  PayrollRestaurantSalaryRow,
 } from "../../lib/types";
 import {
   findDuplicatePayRateError,
+  findDuplicateRestaurantSalaryError,
   toOpeningBalanceImportPayloads,
   type OpeningBalanceImportRow,
   type PayrollEmployeeSetupProfilePayload,
   type PayrollPayRateSetupPayload,
+  type PayrollRestaurantSalarySetupPayload,
 } from "../../lib/payroll/setup";
 
 function requireOrg(orgId: string | undefined): string {
@@ -113,6 +116,23 @@ export function usePayrollPayRates() {
   });
 }
 
+export function usePayrollRestaurantSalaries() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_restaurant_salaries", org?.id],
+    enabled: Boolean(org?.id) && isAdmin(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_restaurant_salaries")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("created_at", { ascending: true });
+      if (error) throw toThrownError(error, "Could not load restaurant salaries");
+      return (data ?? []) as PayrollRestaurantSalaryRow[];
+    },
+  });
+}
+
 export function useSavePayrollEmployeeSetup() {
   const qc = useQueryClient();
   return useMutation({
@@ -120,19 +140,25 @@ export function useSavePayrollEmployeeSetup() {
       employeeId: string;
       profile: PayrollEmployeeSetupProfilePayload;
       rates: PayrollPayRateSetupPayload[];
+      restaurantSalaries?: PayrollRestaurantSalarySetupPayload[];
     }) => {
       const duplicate = findDuplicatePayRateError(input.rates);
       if (duplicate) throw new Error(duplicate);
+      const salaries = input.restaurantSalaries ?? [];
+      const duplicateSalary = findDuplicateRestaurantSalaryError(salaries);
+      if (duplicateSalary) throw new Error(duplicateSalary);
       const { error } = await supabase.rpc("save_payroll_employee_setup", {
         target_employee_id: input.employeeId,
         profile: input.profile,
         rates: input.rates,
+        restaurant_salaries: salaries,
       });
       if (error) throw toThrownError(error, "Could not save payroll profile");
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["payroll_employee_profiles"] });
       void qc.invalidateQueries({ queryKey: ["payroll_pay_rates"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_restaurant_salaries"] });
     },
   });
 }

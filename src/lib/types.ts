@@ -537,6 +537,16 @@ export type PayrollPayRateRow = {
   updated_at: string;
 };
 
+export type PayrollRestaurantSalaryRow = {
+  id: string;
+  org_id: string;
+  employee_id: string;
+  restaurant_id: string;
+  salary_cents: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PayrollOpeningBalanceRow = {
   id: string;
   org_id: string;
