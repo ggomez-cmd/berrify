@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthState } from "../../auth/auth-context";
-import { periodContaining } from "../../lib/payroll/schedules";
+import { lastEndedPeriod } from "../../lib/payroll/schedules";
 import type { Organization } from "../../lib/types";
 import { PayrollRunEditorPage } from "./PayrollRunEditorPage";
 
@@ -89,7 +89,7 @@ describe("PayrollRunEditorPage", () => {
     expect(screen.getByRole("option", { name: /Inlet — add a pay schedule in setup/ })).toBeDisabled();
 
     fireEvent.change(restaurant, { target: { value: "r-harbor" } });
-    const expected = periodContaining(
+    const expected = lastEndedPeriod(
       harborSchedule,
       new Intl.DateTimeFormat("en-CA", { timeZone: "America/Puerto_Rico" }).format(new Date()),
     );
@@ -112,9 +112,10 @@ describe("PayrollRunEditorPage", () => {
         </AuthContext.Provider>,
       );
       fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "r-harbor" } });
-      expect(screen.getByLabelText("Period start")).toHaveValue("2026-10-27");
-      expect(screen.getByLabelText("Period end")).toHaveValue("2026-11-02");
-      expect(screen.getByLabelText("Check date")).toHaveValue("2026-11-07");
+      // Nov 2 is the last day of the Oct 27 – Nov 2 period, so the last ended period is Oct 20–26.
+      expect(screen.getByLabelText("Period start")).toHaveValue("2026-10-20");
+      expect(screen.getByLabelText("Period end")).toHaveValue("2026-10-26");
+      expect(screen.getByLabelText("Check date")).toHaveValue("2026-10-31");
     } finally {
       vi.useRealTimers();
     }

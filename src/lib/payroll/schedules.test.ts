@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextPeriod, periodContaining } from "./schedules";
+import { nextPeriod, periodContaining, lastEndedPeriod } from "./schedules";
 
 const weekly = {
   frequency: "weekly" as const,
@@ -47,6 +47,19 @@ describe("periodContaining", () => {
 
   it("uses ymd prefixes so timestamptz values do not shift the calendar day", () => {
     expect(periodContaining(weekly, "2026-10-18T23:00:00.000Z").periodEnd).toBe("2026-10-18");
+  });
+});
+
+describe("lastEndedPeriod", () => {
+  it("returns the period before the one in progress, even on its last day", () => {
+    const schedule = { frequency: "biweekly" as const, anchor_period_start: "2026-10-18", check_lag_days: 6 };
+    expect(lastEndedPeriod(schedule, "2026-11-02")).toEqual({
+      periodStart: "2026-10-18",
+      periodEnd: "2026-10-31",
+      checkDate: "2026-11-06",
+    });
+    expect(lastEndedPeriod(schedule, "2026-11-14").periodEnd).toBe("2026-10-31");
+    expect(lastEndedPeriod(schedule, "2026-11-15").periodEnd).toBe("2026-11-14");
   });
 });
 

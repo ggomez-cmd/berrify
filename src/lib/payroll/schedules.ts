@@ -66,6 +66,12 @@ export function nextPeriod(schedule: PayScheduleInput, date: string): PayPeriod 
   };
 }
 
+// The most recent period that has fully ended before `date`: the one a new run usually pays.
+export function lastEndedPeriod(schedule: PayScheduleInput, date: string): PayPeriod {
+  const current = periodContaining(schedule, date);
+  return periodContaining(schedule, addCalendarDays(current.periodStart, -1));
+}
+
 export function scheduleForRestaurant(
   schedules: readonly PayrollPayScheduleRow[],
   restaurantId: string,

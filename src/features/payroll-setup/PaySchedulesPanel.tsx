@@ -4,7 +4,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
-import { nextPeriod } from "../../lib/payroll/schedules";
+import { lastEndedPeriod } from "../../lib/payroll/schedules";
 import { ymdInTimeZone } from "../../lib/payroll-engine/hours/time";
 import type { PayFrequency } from "../../lib/payroll-engine/types";
 import type { PayrollPayScheduleRow, Restaurant } from "../../lib/types";
@@ -118,7 +118,7 @@ function ScheduleCard({
     try {
       const lag = Number(values.check_lag_days);
       if (!values.anchor_period_start || !Number.isSafeInteger(lag) || lag < 0) return null;
-      return nextPeriod(
+      return lastEndedPeriod(
         {
           frequency: values.frequency,
           anchor_period_start: values.anchor_period_start,
@@ -207,7 +207,7 @@ function ScheduleCard({
         <div className="sm:col-span-2 lg:col-span-4">
           {preview ? (
             <p className="text-sm text-muted">
-              Next period {preview.periodStart} – {preview.periodEnd} · check {preview.checkDate}
+              Last ended period {preview.periodStart} – {preview.periodEnd} · check {preview.checkDate}
             </p>
           ) : (
             <p className="text-sm text-muted">Set an anchor date to preview the next period.</p>

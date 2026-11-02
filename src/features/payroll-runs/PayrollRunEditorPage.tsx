@@ -7,7 +7,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { Table, THead, Td, Th } from "../../components/ui/table";
-import { periodContaining, scheduleForRestaurant } from "../../lib/payroll/schedules";
+import { lastEndedPeriod, scheduleForRestaurant } from "../../lib/payroll/schedules";
 import { dollarsToCents } from "../../lib/payroll/setup";
 import {
   buildRunInput,
@@ -474,7 +474,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                 const schedule = scheduleForRestaurant(schedulesQuery.data ?? [], next);
                 if (!schedule) return;
                 try {
-                  const period = periodContaining(
+                  const period = lastEndedPeriod(
                     schedule,
                     ymdInTimeZone(
                       Math.floor(Date.now() / 1000),
