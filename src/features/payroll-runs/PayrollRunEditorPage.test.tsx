@@ -59,6 +59,7 @@ vi.mock("../payroll-setup/hooks", () => ({
   usePayrollEmployerSettings: () => ok([]),
   usePayrollEmployeeProfiles: () => ok([]),
   usePayrollPayRates: () => ok([]),
+  usePayrollRestaurantSalaries: () => ok([]),
   usePayrollCloverNames: () => ok([]),
   usePayrollPaySchedules: () => ok([harborSchedule]),
 }));

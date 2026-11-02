@@ -36,6 +36,7 @@ import {
   usePayrollEmployerSettings,
   usePayrollPayRates,
   usePayrollPaySchedules,
+  usePayrollRestaurantSalaries,
 } from "../payroll-setup/hooks";
 import { CheckDetail, ChecksTable, IssuesPanel, RunSummaryPanel } from "./RunPanels";
 import { parseSignedCents, restaurantScopeLabel } from "./format";
@@ -74,6 +75,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const settingsQuery = usePayrollEmployerSettings();
   const profilesQuery = usePayrollEmployeeProfiles();
   const ratesQuery = usePayrollPayRates();
+  const salariesQuery = usePayrollRestaurantSalaries();
   const cloverQuery = usePayrollCloverNames();
   const schedulesQuery = usePayrollPaySchedules();
   const employeesQuery = useEmployees();
@@ -233,6 +235,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
     settingsQuery,
     profilesQuery,
     ratesQuery,
+    salariesQuery,
     restaurantsQuery,
     schedulesQuery,
     employeesQuery,
@@ -301,7 +304,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       setFormError("Period start, period end, and check date are required");
       return;
     }
-    if (!settingsQuery.data || !profilesQuery.data || !ratesQuery.data || !ytdBasisQuery.data) {
+    if (
+      !settingsQuery.data ||
+      !profilesQuery.data ||
+      !ratesQuery.data ||
+      !salariesQuery.data ||
+      !ytdBasisQuery.data
+    ) {
       setFormError("Payroll setup and year-to-date history must finish loading before calculate");
       return;
     }
@@ -357,6 +366,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         employerSettingsRows: settingsQuery.data,
         profiles: profilesQuery.data,
         payRates: ratesQuery.data,
+        restaurantSalaries: salariesQuery.data,
         cloverNames,
         restaurantId: restaurantId || null,
         schedules: schedulesQuery.data,
