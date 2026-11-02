@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { computeCheck } from "./check";
 import { PR_2026 } from "./data";
 import { computeExemption } from "./exemption";
 import {
@@ -7,6 +8,7 @@ import {
   computeAnnualizedSwh,
   computeBiweeklyTableSwh,
   computeSwh,
+  periodsPerYear,
 } from "./withholding";
 
 describe("SWH annualized brackets", () => {
@@ -55,6 +57,71 @@ describe("SWH biweekly table boundaries", () => {
   });
 });
 
+describe("weekly SWH", () => {
+  it("annualizes with 52 periods", () => {
+    expect(periodsPerYear("weekly", PR_2026)).toBe(52);
+    expect(
+      computeSwh(
+        {
+          periodGrossCents: 100_000,
+          method: "annualized",
+          payFrequency: "weekly",
+          exemption: computeExemption({ personal: "none" }, PR_2026),
+          additionalWithholdingCents: 0,
+          youngWorkerExempt: false,
+          openingYtdGrossCents: 0,
+        },
+        PR_2026,
+      ),
+    ).toBe(
+      computeAnnualizedSwh({
+        periodGrossCents: 100_000,
+        annualExemptionCents: 0,
+        additionalWithholdingCents: 0,
+        periods: 52,
+        schedule: PR_2026,
+      }),
+    );
+    expect(
+      computeAnnualizedSwh({
+        periodGrossCents: 100_000,
+        annualExemptionCents: 0,
+        additionalWithholdingCents: 0,
+        periods: 52,
+        schedule: PR_2026,
+      }),
+    ).toBe(11_644);
+  });
+
+  it("rejects biweekly_table with weekly frequency", () => {
+    expect(() =>
+      computeSwh(
+        {
+          periodGrossCents: 100_000,
+          method: "biweekly_table",
+          payFrequency: "weekly",
+          exemption: computeExemption({ personal: "none" }, PR_2026),
+          additionalWithholdingCents: 0,
+          youngWorkerExempt: false,
+          openingYtdGrossCents: 0,
+        },
+        PR_2026,
+      ),
+    ).toThrow("biweekly_table SWH cannot be used with weekly pay frequency");
+    const check = computeCheck(
+      {
+        employeeId: "E1",
+        payType: "payroll",
+        exemption: { personal: "none" },
+        earnings: [{ kind: "regular", amountCents: 100_000 }],
+      },
+      { sutRateBp: 540, swhMethod: "biweekly_table", payFrequency: "weekly" },
+      "2026-10-23",
+    );
+    expect(check.errors).toContain("biweekly_table SWH cannot be used with weekly pay frequency");
+  });
+});
+
 describe("young worker SWH", () => {
   it("is 0 while closing YTD wages stay at or under 40000", () => {
     const swh = computeSwh(
@@ -70,6 +137,25 @@ describe("young worker SWH", () => {
       PR_2026,
     );
     expect(swh).toBe(0);
+  });
+});
+
+describe("fixed SWH", () => {
+  it("uses the supplied amount, including 0", () => {
+    const settings = { sutRateBp: 540, swhMethod: "annualized" as const, payFrequency: "biweekly" as const };
+    const base = {
+      employeeId: "E1",
+      payType: "payroll" as const,
+      exemption: { personal: "none" as const },
+      earnings: [{ kind: "regular" as const, amountCents: 200_000 }],
+    };
+    const computed = computeCheck(base, settings, "2026-10-23");
+    expect(computed.employeeWithholdings.find((line) => line.code === "SWH")?.amountCents).toBeGreaterThan(0);
+    const fixed = computeCheck({ ...base, fixedSwhCents: 1_234 }, settings, "2026-10-23");
+    expect(fixed.employeeWithholdings.find((line) => line.code === "SWH")?.amountCents).toBe(1_234);
+    const zero = computeCheck({ ...base, fixedSwhCents: 0 }, settings, "2026-10-23");
+    expect(zero.employeeWithholdings.find((line) => line.code === "SWH")?.amountCents).toBe(0);
+    expect(zero.netCents).toBe(zero.grossCents - zero.employeeDeductionCents);
   });
 });
 

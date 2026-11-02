@@ -1,4 +1,5 @@
 export { parseCloverShifts, parseDateToYmd, parseTimeToHms } from "./clover";
+export { applyHoursPolicy, HUNDREDTH_HOUR_SECONDS, roundSecondsToHundredthHour } from "./policy";
 export { mealBreakFlags, UNCONFIRMED_MEAL_BREAK_RULES } from "./meal";
 export { buildHourlyWeeks } from "./rates";
 export { collectOverlapErrors, shiftsFromTimeEntries, validateShift, workedIntervals } from "./shifts";
@@ -21,6 +22,10 @@ export type {
   CloverParseResult,
   CloverPeriod,
   DailyWindowMode,
+  HoursPolicy,
+  HoursPolicyResult,
+  MealDeductionPolicy,
+  PunchRounding,
   HoursBucket,
   HoursSplitResult,
   HoursSplitSettings,

@@ -303,6 +303,21 @@ describe("buildRunInput", () => {
     expect(employee?.earnings?.find((row) => row.kind === "adjustment")?.classId).toBe(home);
   });
 
+  it("gives salaried employees with no punches 40 hours on a weekly frequency", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer({ pay_frequency: "weekly" })],
+      profiles: [profile({ id: "p1", employee_id: "E1", salary_cents: 190_000 })],
+      payRates: [],
+      shifts: [],
+    });
+    expect(built.input.settings.payFrequency).toBe("weekly");
+    expect(built.input.employees[0]?.salary?.hoursHundredths).toBe(4_000);
+  });
+
   it("gives salaried employees with no punches 80 hours", () => {
     const built = buildRunInput({
       checkDate: FIXTURE_A_CHECK_DATE,

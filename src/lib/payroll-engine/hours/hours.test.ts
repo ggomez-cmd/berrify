@@ -250,6 +250,54 @@ describe("splitHours", () => {
     });
   });
 
+  it("clock_in_day keeps an overnight shift on the clock-in date and workweek", () => {
+    const overnight = shift({
+      id: "ow",
+      ymd: "2026-10-10",
+      start: "20:00",
+      endYmd: "2026-10-11",
+      end: "07:00",
+    });
+    const clockInDay = splitHours(
+      [overnight],
+      settings({ dailyWindow: "clock_in_day", periodStart: "2026-10-04", periodEnd: "2026-10-10" }),
+    );
+    expect(clockInDay.errors).toEqual([]);
+    expect(hoursOf(sumAlloc(clockInDay.allocations))).toEqual({ regular: 8, daily: 3, weekly: 0 });
+    expect(clockInDay.allocations.every((row) => row.workweekId === "2026-10-04" && row.payable)).toBe(true);
+
+    const calendar = splitHours(
+      [overnight],
+      settings({ dailyWindow: "calendar_day", periodStart: "2026-10-04", periodEnd: "2026-10-10" }),
+    );
+    expect(hoursOf(sumAlloc(calendar.allocations, true))).toEqual({ regular: 4, daily: 0, weekly: 0 });
+  });
+
+  it("clock_in_day pays an overnight shift that starts on the last day in full, past a break after midnight", () => {
+    const overnight = shift({
+      id: "last",
+      ymd: "2026-10-18",
+      start: "22:00",
+      endYmd: "2026-10-19",
+      end: "06:00",
+      breaks: [
+        {
+          startedAt: localIso("2026-10-19", "01:00"),
+          endedAt: localIso("2026-10-19", "01:30"),
+          type: "meal",
+          paid: false,
+        },
+      ],
+    });
+    const result = splitHours(
+      [overnight],
+      settings({ dailyWindow: "clock_in_day", periodStart: "2026-10-12", periodEnd: "2026-10-18" }),
+    );
+    expect(result.errors).toEqual([]);
+    const paid = hoursOf(sumAlloc(result.allocations));
+    expect(paid.regular + paid.daily + paid.weekly).toBe(7.5);
+  });
+
   it("overnight shift across midnight and across the workweek boundary", () => {
     const overnight = shift({
       id: "ow",

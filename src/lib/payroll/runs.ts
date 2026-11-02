@@ -8,6 +8,7 @@ import {
   shiftsFromTimeEntries,
   splitHours,
 } from "../payroll-engine";
+import { applyHoursPolicy } from "../payroll-engine/hours/policy";
 import {
   addCalendarDays,
   instantSeconds,
@@ -61,8 +62,9 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMPLOYER_ONLY_CODES = new Set<TaxCode>(["FED-FUT", "FSE", "SUT"]);
-// Salaried employees who don't punch show the standard 80 biweekly hours, as on Alchavo checks.
+// Salaried employees who don't punch show the standard hours for the pay frequency, as on Alchavo checks.
 const BIWEEKLY_SALARY_HOURS_HUNDREDTHS = 8000;
+const WEEKLY_SALARY_HOURS_HUNDREDTHS = 4000;
 
 export function asUuidOrNull(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -631,6 +633,24 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     throw new Error(`Unhandled hours source: ${exhaustive}`);
   }
 
+  const policy = applyHoursPolicy(shifts, {
+    timeZone,
+    punchRounding: setup?.punchRounding ?? "none",
+    mealDeduction: setup?.mealDeduction ?? null,
+  });
+  errors.push(...policy.errors);
+  warnings.push(...policy.warnings);
+  // One line for the run: the automatic lunch rule touches most long days.
+  const lunchInPeriod = policy.lunchDeductions.filter((row) => row.ymd >= args.periodStart && row.ymd <= args.periodEnd);
+  if (lunchInPeriod.length > 0) {
+    const hours = secondsToHoursHundredths(lunchInPeriod.reduce((sum, row) => sum + row.seconds, 0)) / 100;
+    warnings.push(
+      `Lunch was deducted on ${lunchInPeriod.length} ${lunchInPeriod.length === 1 ? "day" : "days"} (${hours.toFixed(2)} h) under the automatic lunch rule`,
+    );
+  }
+  const sourceShifts = shifts;
+  shifts = policy.shifts;
+
   const lookbackStart = addCalendarDays(args.periodStart, -7);
   for (const shift of shifts) {
     const started = instantSeconds(shift.startedAt);
@@ -657,7 +677,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   // Shifts from the overtime lookback days are loaded but not paid in this run.
   const payableShiftIds = new Set(split.allocations.filter((row) => row.payable).map((row) => row.shiftId));
-  const meal = mealBreakFlags(shifts.filter((shift) => payableShiftIds.has(shift.id)));
+  const meal = mealBreakFlags(sourceShifts.filter((shift) => payableShiftIds.has(shift.id)));
   errors.push(...meal.errors);
   warnings.push(...meal.warnings);
   for (const flag of meal.flags) {
@@ -786,7 +806,8 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
           amountCents: salaryCents,
           classId: profile.default_restaurant_id,
           hoursHundredths:
-            secondsToHoursHundredths(salariedSeconds.get(employeeId) ?? 0) || BIWEEKLY_SALARY_HOURS_HUNDREDTHS,
+            secondsToHoursHundredths(salariedSeconds.get(employeeId) ?? 0) ||
+            (setup?.payFrequency === "weekly" ? WEEKLY_SALARY_HOURS_HUNDREDTHS : BIWEEKLY_SALARY_HOURS_HUNDREDTHS),
         },
         earnings: [...tipEarnings, ...employeeAdjustments],
       });

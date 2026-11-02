@@ -279,3 +279,79 @@ describe("regular pay priced on period hours", () => {
     ]);
   });
 });
+
+describe("period rounding of hourly pay", () => {
+  it("rounds a rate's regular and overtime pay once for the period, as Alchavo does", () => {
+    // 66.47 regular + 1.69 overtime at 1x and $10.50 is 68.16 h = $715.68. Rounding week one's
+    // 0.85 h of overtime on its own ($8.925 → $8.93) would give $715.69.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 3_300, dailyOtHoursHundredths: 85 },
+          { workweekId: "w2", rateCents: 1_050, regularHoursHundredths: 3_347, dailyOtHoursHundredths: 84 },
+        ],
+      },
+      PR_2026,
+      { periodRounding: true },
+    );
+    expect(earnings.errors).toEqual([]);
+    const total = earnings.lines.reduce((sum, line) => sum + line.amountCents, 0);
+    expect(total).toBe(71_568);
+    expect(earnings.lines.filter((line) => line.kind === "regular")).toHaveLength(1);
+  });
+
+  it("rounds overtime once for a rate with no regular hours", () => {
+    // 1.69 h at $10.50 and 1x is $17.745, which rounds half-even to $17.74 for the period.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 0, dailyOtHoursHundredths: 85 },
+          { workweekId: "w2", rateCents: 1_050, regularHoursHundredths: 0, dailyOtHoursHundredths: 84 },
+        ],
+      },
+      PR_2026,
+      { periodRounding: true },
+    );
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1_774);
+  });
+
+  it("never makes a line negative when it absorbs the period rounding", () => {
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        weeklyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          {
+            workweekId: "w1",
+            rateCents: 1,
+            regularHoursHundredths: 1,
+            dailyOtHoursHundredths: 50,
+            weeklyOtHoursHundredths: 50,
+          },
+        ],
+      },
+      PR_2026,
+      { periodRounding: true },
+    );
+    expect(earnings.lines.every((line) => line.amountCents >= 0)).toBe(true);
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(1);
+  });
+
+  it("keeps per-line overtime rounding unless period rounding is turned on", () => {
+    // 40 regular + 1.10 daily overtime at $10.50 and 1.5x: $420.00 + $17.325 rounded on its own.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        hourlyWeeks: [{ workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 4_000, dailyOtHoursHundredths: 110 }],
+      },
+      PR_2026,
+    );
+    expect(earnings.lines.find((line) => line.kind === "regular")?.amountCents).toBe(42_000);
+    expect(earnings.lines.reduce((sum, line) => sum + line.amountCents, 0)).toBe(43_733);
+  });
+});

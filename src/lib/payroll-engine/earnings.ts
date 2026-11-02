@@ -154,6 +154,9 @@ function invalidMultipliers(employee: EmployeePayInput): string | null {
   return null;
 }
 
+// Overtime pay for a period line before rounding, in cents × PPM per 100 hours-hundredths, keyed by the line.
+const overtimeExact = new WeakMap<EarningsLine, { exact: bigint; baseRateCents: number }>();
+
 function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsLine[] {
   const isTipped = employee.isTipped === true;
   const cashRateCents = week.rateCents;
@@ -192,6 +195,15 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
       overtimeHourlyRateCents({ isTipped, regularRateCents: week.rateCents, cashRateCents, multiplierPpm, schedule }),
       overtimeAmountCents({ isTipped, rateCents: week.rateCents, multiplierPpm, hoursHundredths, schedule }),
     );
+    const last = lines[lines.length - 1];
+    if (last?.kind === "overtime" && hoursHundredths > 0) {
+      overtimeExact.set(last, {
+        exact:
+          BigInt(hoursHundredths) *
+          overtimeHourlyMicroCents({ isTipped, rateCents: week.rateCents, multiplierPpm, schedule }),
+        baseRateCents: week.rateCents,
+      });
+    }
   }
   if ((week.tipsCents ?? 0) > 0) {
     lines.push({
@@ -210,7 +222,7 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
 
 // Alchavo prices regular hourly pay as rate x total period hours, rounded once half-to-even,
 // so the per-week regular lines for one rate, class and position become one priced line.
-function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
+function mergeRegularLines(lines: readonly EarningsLine[], periodRounding: boolean): EarningsLine[] {
   const merged = new Map<string, EarningsLine>();
   const out: EarningsLine[] = [];
   for (const line of lines) {
@@ -232,7 +244,45 @@ function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
   for (const line of merged.values()) {
     line.amountCents = amountFromHoursAndRateHalfEven(line.hoursHundredths, line.rateCents ?? 0);
   }
+  if (!periodRounding) return out;
+  // Alchavo prices a rate's regular and overtime hours for the whole period and rounds once. The cent
+  // that per-week overtime rounding adds or drops goes to the largest lines, never below zero.
+  const groupKey = (rateCents: number | null, line: EarningsLine) =>
+    `${rateCents}	${line.classId ?? ""}	${line.positionId ?? ""}`;
+  const groups = new Map<string, { regular: EarningsLine | null; overtime: EarningsLine[] }>();
+  for (const line of merged.values()) groups.set(groupKey(line.rateCents, line), { regular: line, overtime: [] });
+  for (const line of out) {
+    const exact = overtimeExact.get(line);
+    if (!exact) continue;
+    const key = groupKey(exact.baseRateCents, line);
+    const group = groups.get(key) ?? { regular: null, overtime: [] };
+    group.overtime.push(line);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.overtime.length === 0) continue;
+    const regular = group.regular;
+    const exact =
+      (regular ? BigInt(regular.hoursHundredths) * BigInt(regular.rateCents ?? 0) * PPM : 0n) +
+      group.overtime.reduce((sum, row) => sum + (overtimeExact.get(row)?.exact ?? 0n), 0n);
+    const targets = [...(regular ? [regular] : []), ...group.overtime].sort((x, y) => y.amountCents - x.amountCents);
+    let diff = roundHalfEvenDiv(exact, 100n * PPM) - sumCents(targets.map((row) => row.amountCents));
+    for (const target of targets) {
+      if (diff === 0) break;
+      const step = diff > 0 ? diff : Math.max(diff, -target.amountCents);
+      target.amountCents += step;
+      diff -= step;
+    }
+  }
   return out;
+}
+
+function roundHalfEvenDiv(numerator: bigint, denominator: bigint): number {
+  const quotient = numerator / denominator;
+  const twiceRemainder = (numerator % denominator) * 2n;
+  const rounded =
+    twiceRemainder > denominator || (twiceRemainder === denominator && quotient % 2n === 1n) ? quotient + 1n : quotient;
+  return Number(rounded);
 }
 
 function salaryLine(employee: EmployeePayInput, errors: string[]): EarningsLine | null {
@@ -363,7 +413,11 @@ function underMinimumWarnings(employee: EmployeePayInput, lines: EarningsLine[],
   return warnings;
 }
 
-export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsResult {
+export function computeEarnings(
+  employee: EmployeePayInput,
+  schedule: PrTaxSchedule,
+  options: { periodRounding?: boolean } = {},
+): EarningsResult {
   const errors: string[] = [];
   const lines: EarningsLine[] = [];
 
@@ -389,7 +443,7 @@ export function computeEarnings(employee: EmployeePayInput, schedule: PrTaxSched
     weeks.push(week);
     weekLines.push(...hourlyWeekLines(week, employee, schedule));
   }
-  lines.push(...mergeRegularLines(weekLines));
+  lines.push(...mergeRegularLines(weekLines, options.periodRounding ?? false));
 
   const salary = salaryLine(employee, errors);
   if (salary) lines.push(salary);

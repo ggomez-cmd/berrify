@@ -3,6 +3,7 @@ import {
   addCalendarDays,
   DEFAULT_DAILY_LIMIT_SECONDS,
   DEFAULT_WEEKLY_LIMIT_SECONDS,
+  instantSeconds,
   isHm,
   isYmd,
   localMidnightSeconds,
@@ -69,8 +70,12 @@ function validateSettings(settings: HoursSplitSettings, errors: string[]): boole
     errors.push("periodEnd is before periodStart");
     return false;
   }
-  if (settings.dailyWindow !== "rolling_24h" && settings.dailyWindow !== "calendar_day") {
-    errors.push("dailyWindow must be rolling_24h or calendar_day");
+  if (
+    settings.dailyWindow !== "rolling_24h" &&
+    settings.dailyWindow !== "calendar_day" &&
+    settings.dailyWindow !== "clock_in_day"
+  ) {
+    errors.push("dailyWindow must be rolling_24h, calendar_day, or clock_in_day");
     return false;
   }
   const dailyLimit = settings.dailyLimitSeconds ?? DEFAULT_DAILY_LIMIT_SECONDS;
@@ -93,15 +98,17 @@ function nextSplit(
   windowEnd: number | null,
 ): number {
   let next = end;
-  const midnight = nextLocalMidnightSeconds(start, settings.timeZone);
-  if (midnight > start && midnight < next) next = midnight;
-  const weekStart = nextWorkweekStartSeconds(
-    start,
-    settings.timeZone,
-    settings.workweekStartDow,
-    settings.workweekStartTime,
-  );
-  if (weekStart > start && weekStart < next) next = weekStart;
+  if (settings.dailyWindow !== "clock_in_day") {
+    const midnight = nextLocalMidnightSeconds(start, settings.timeZone);
+    if (midnight > start && midnight < next) next = midnight;
+    const weekStart = nextWorkweekStartSeconds(
+      start,
+      settings.timeZone,
+      settings.workweekStartDow,
+      settings.workweekStartTime,
+    );
+    if (weekStart > start && weekStart < next) next = weekStart;
+  }
   if (settings.dailyWindow === "rolling_24h" && windowEnd !== null && windowEnd > start && windowEnd < next) {
     next = windowEnd;
   }
@@ -188,8 +195,10 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
 
     for (const piece of pieces) {
       let cursor = piece.start;
+      // By clock-in day, an overnight shift that starts in the period is paid in full, even after a break past its end.
+      const periodAnchor = settings.dailyWindow === "clock_in_day" ? instantSeconds(piece.shift.startedAt) : null;
       while (cursor < piece.end) {
-        if (cursor >= periodEnd) break;
+        if ((periodAnchor ?? cursor) >= periodEnd) break;
 
         if (settings.dailyWindow === "rolling_24h") {
           if (windowEnd === null || cursor >= windowEnd) {
@@ -197,15 +206,21 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
             windowWorked = 0;
           }
         } else {
-          const day = ymdInTimeZone(cursor, settings.timeZone);
+          const clockIn = instantSeconds(piece.shift.startedAt);
+          const dayAnchor =
+            settings.dailyWindow === "clock_in_day" && clockIn !== null ? clockIn : cursor;
+          const day = ymdInTimeZone(dayAnchor, settings.timeZone);
           if (day !== calendarDay) {
             calendarDay = day;
             windowWorked = 0;
           }
         }
 
+        const clockIn = instantSeconds(piece.shift.startedAt);
+        const weekAnchor =
+          settings.dailyWindow === "clock_in_day" && clockIn !== null ? clockIn : cursor;
         const currentWeekStart = startOfWorkweekSeconds(
-          cursor,
+          weekAnchor,
           settings.timeZone,
           settings.workweekStartDow,
           settings.workweekStartTime,
@@ -229,7 +244,10 @@ export function splitHours(shifts: readonly WorkedShift[], settings: HoursSplitS
         const weeklyOtSeconds = nonDaily - regularSeconds;
         weekNonDaily += nonDaily;
 
-        const payable = cursor >= periodStart && cursor < periodEnd;
+        const payable =
+          settings.dailyWindow === "clock_in_day" && clockIn !== null
+            ? clockIn >= periodStart && clockIn < periodEnd
+            : cursor >= periodStart && cursor < periodEnd;
         const workweekId = ymdInTimeZone(weekStart, settings.timeZone);
         const alloc: ShiftAllocation = {
           shiftId: piece.shift.id,

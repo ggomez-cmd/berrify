@@ -49,6 +49,7 @@ export type {
   EmployeePayInput,
   EmployeePayType,
   EmployerSettings,
+  HourlyPayRounding,
   ExemptionInput,
   HourlyWeekInput,
   OpeningYtd,

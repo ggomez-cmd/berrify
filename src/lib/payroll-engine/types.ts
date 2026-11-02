@@ -15,7 +15,7 @@ export type EmployeePayType = "payroll" | "cash";
 
 export type SwhMethod = "annualized" | "biweekly_table";
 
-export type PayFrequency = "biweekly";
+export type PayFrequency = "weekly" | "biweekly";
 
 export type TaxCode =
   | "DIE"
@@ -101,6 +101,7 @@ export type EmployeePayInput = {
   weeklyOtMultiplierPpm?: PartsPerMillion;
   youngWorkerExempt?: boolean;
   additionalWithholdingCents?: Cents;
+  fixedSwhCents?: Cents;
   exemption?: ExemptionInput;
   openingYtd?: OpeningYtd;
   earnings?: EarningsLineInput[];
@@ -112,7 +113,11 @@ export type EmployerSettings = {
   sutRateBp: BasisPoints;
   swhMethod: SwhMethod;
   payFrequency: PayFrequency;
+  // "period" prices each rate's regular and overtime hours for the whole period and rounds once, as Alchavo does.
+  hourlyPayRounding?: HourlyPayRounding;
 };
+
+export type HourlyPayRounding = "per_line" | "period";
 
 export type PayrollRunInput = {
   checkDate: string;

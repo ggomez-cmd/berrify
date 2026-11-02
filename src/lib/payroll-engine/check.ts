@@ -67,10 +67,22 @@ function isNonNegativeInteger(value: number | undefined): boolean {
   return value === undefined || (Number.isSafeInteger(value) && value >= 0);
 }
 
-export function taxInputErrors(employee: EmployeePayInput): string[] {
+export function taxInputErrors(employee: EmployeePayInput, settings?: EmployerSettings): string[] {
   const errors: string[] = [];
   if (!isNonNegativeInteger(employee.additionalWithholdingCents)) {
     errors.push("Additional withholding must be a non-negative amount");
+  }
+  if (!isNonNegativeInteger(employee.fixedSwhCents)) {
+    errors.push("Fixed SWH must be a non-negative amount");
+  }
+  if (settings?.swhMethod === "biweekly_table" && settings.payFrequency === "weekly") {
+    errors.push("biweekly_table SWH cannot be used with weekly pay frequency");
+  }
+  if (settings?.payFrequency === "weekly" && employee.exemption?.biweeklyExemptionOverrideCents !== undefined) {
+    errors.push("Biweekly exemption override cannot be used with weekly pay frequency");
+  }
+  if (settings?.payFrequency === "weekly" && employee.salary?.periodDays === 14) {
+    errors.push("Salary periodDays 14 is a biweekly assumption and cannot be used with weekly pay frequency");
   }
   const exemption = employee.exemption;
   if (
@@ -124,18 +136,21 @@ export function computeCheckTaxes(
   const med = taxOnTaxable(medTaxable, schedule.employee.medRateBp);
   const addMed = taxOnTaxable(addMedTaxable, schedule.employee.additionalMedRateBp);
   const die = taxOnTaxable(dieTaxable, schedule.employee.dieRateBp);
-  const swh = computeSwh(
-    {
-      periodGrossCents: grossCents,
-      method: settings.swhMethod,
-      payFrequency: settings.payFrequency,
-      exemption,
-      additionalWithholdingCents: employee.additionalWithholdingCents ?? 0,
-      youngWorkerExempt: employee.youngWorkerExempt === true,
-      openingYtdGrossCents: opening?.grossCents ?? 0,
-    },
-    schedule,
-  );
+  const swh =
+    employee.fixedSwhCents !== undefined
+      ? employee.fixedSwhCents
+      : computeSwh(
+          {
+            periodGrossCents: grossCents,
+            method: settings.swhMethod,
+            payFrequency: settings.payFrequency,
+            exemption,
+            additionalWithholdingCents: employee.additionalWithholdingCents ?? 0,
+            youngWorkerExempt: employee.youngWorkerExempt === true,
+            openingYtdGrossCents: opening?.grossCents ?? 0,
+          },
+          schedule,
+        );
 
   const erOasdi = taxOnTaxable(oasdiTaxable, schedule.employer.oasdiRateBp);
   const erMed = taxOnTaxable(medTaxable, schedule.employer.medRateBp);
@@ -188,7 +203,9 @@ export function computeCheck(
   assertCheckDate(checkDate);
   assertEmployerSettings(settings);
   const taxSchedule = schedule ?? selectTaxSchedule(checkDate);
-  const earnings = computeEarnings(employee, taxSchedule);
+  const earnings = computeEarnings(employee, taxSchedule, {
+    periodRounding: settings.hourlyPayRounding === "period",
+  });
   const grossCents = earningsGrossCents(earnings.lines);
   const identity = {
     employeeId: employee.employeeId,
@@ -197,7 +214,7 @@ export function computeCheck(
     scheduleId: taxSchedule.id,
   };
 
-  const inputErrors = employee.payType === "payroll" ? taxInputErrors(employee) : [];
+  const inputErrors = employee.payType === "payroll" ? taxInputErrors(employee, settings) : [];
   if (grossCents < 0 || inputErrors.length > 0) {
     return {
       ...identity,
