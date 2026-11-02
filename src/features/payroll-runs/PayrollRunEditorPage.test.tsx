@@ -88,10 +88,34 @@ describe("PayrollRunEditorPage", () => {
     expect(screen.getByRole("option", { name: /Inlet — add a pay schedule in setup/ })).toBeDisabled();
 
     fireEvent.change(restaurant, { target: { value: "r-harbor" } });
-    const expected = periodContaining(harborSchedule, new Date().toISOString().slice(0, 10));
+    const expected = periodContaining(
+      harborSchedule,
+      new Intl.DateTimeFormat("en-CA", { timeZone: "America/Puerto_Rico" }).format(new Date()),
+    );
     expect(screen.getByLabelText("Period start")).toHaveValue(expected.periodStart);
     expect(screen.getByLabelText("Period end")).toHaveValue(expected.periodEnd);
     expect(screen.getByLabelText("Check date")).toHaveValue(expected.checkDate);
     expect(screen.getByRole("heading", { name: "Harbor" })).toBeInTheDocument();
+  });
+
+  it("prefills from the employer's local date, not UTC, in the evening", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Monday Nov 2, 8:30 p.m. in Puerto Rico is already Tuesday Nov 3 in UTC.
+    vi.setSystemTime(new Date("2026-11-03T00:30:00.000Z"));
+    try {
+      render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter>
+            <PayrollRunEditorPage />
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "r-harbor" } });
+      expect(screen.getByLabelText("Period start")).toHaveValue("2026-10-27");
+      expect(screen.getByLabelText("Period end")).toHaveValue("2026-11-02");
+      expect(screen.getByLabelText("Check date")).toHaveValue("2026-11-07");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,13 +1,15 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { nextPeriod } from "../../lib/payroll/schedules";
+import { ymdInTimeZone } from "../../lib/payroll-engine/hours/time";
 import type { PayFrequency } from "../../lib/payroll-engine/types";
 import type { PayrollPayScheduleRow, Restaurant } from "../../lib/types";
 import { useRestaurants } from "../invoices/hooks";
-import { usePayrollPaySchedules, useUpsertPayrollPaySchedule } from "./hooks";
+import { usePayrollEmployerSettings, usePayrollPaySchedules, useUpsertPayrollPaySchedule } from "./hooks";
 
 type ScheduleDraft = {
   frequency: PayFrequency;
@@ -15,10 +17,6 @@ type ScheduleDraft = {
   check_lag_days: string;
   taxes_via_provider: boolean;
 };
-
-function todayYmd(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function draftFromRow(row: PayrollPayScheduleRow): ScheduleDraft {
   return {
@@ -29,9 +27,9 @@ function draftFromRow(row: PayrollPayScheduleRow): ScheduleDraft {
   };
 }
 
-const emptyDraft = (): ScheduleDraft => ({
+const emptyDraft = (today: string): ScheduleDraft => ({
   frequency: "biweekly",
-  anchor_period_start: todayYmd(),
+  anchor_period_start: today,
   check_lag_days: "5",
   taxes_via_provider: true,
 });
@@ -39,7 +37,14 @@ const emptyDraft = (): ScheduleDraft => ({
 export function PaySchedulesPanel() {
   const { data: restaurants = [], isLoading: restaurantsLoading, error: restaurantsError } = useRestaurants();
   const schedulesQuery = usePayrollPaySchedules();
+  const settingsQuery = usePayrollEmployerSettings();
+  const { org } = useAuth();
   const [addingFor, setAddingFor] = useState<string | null>(null);
+  // "Today" is the employer's local date, not UTC, so evening previews don't jump a day ahead.
+  const today = ymdInTimeZone(
+    Math.floor(Date.now() / 1000),
+    settingsQuery.data?.[0]?.time_zone ?? org?.timezone ?? "America/Puerto_Rico",
+  );
 
   const scheduleByRestaurant = useMemo(() => {
     const map = new Map<string, PayrollPayScheduleRow>();
@@ -82,6 +87,7 @@ export function PaySchedulesPanel() {
             key={restaurant.id}
             restaurant={restaurant}
             row={existing}
+            today={today}
             onCancelAdd={() => setAddingFor(null)}
             onSaved={() => setAddingFor(null)}
           />
@@ -94,16 +100,18 @@ export function PaySchedulesPanel() {
 function ScheduleCard({
   restaurant,
   row,
+  today,
   onCancelAdd,
   onSaved,
 }: {
   restaurant: Restaurant;
   row: PayrollPayScheduleRow | null;
+  today: string;
   onCancelAdd: () => void;
   onSaved: () => void;
 }) {
   const upsert = useUpsertPayrollPaySchedule();
-  const [values, setValues] = useState<ScheduleDraft>(row ? draftFromRow(row) : emptyDraft());
+  const [values, setValues] = useState<ScheduleDraft>(row ? draftFromRow(row) : emptyDraft(today));
   const [formError, setFormError] = useState<string | null>(null);
 
   const preview = (() => {
@@ -116,7 +124,7 @@ function ScheduleCard({
           anchor_period_start: values.anchor_period_start,
           check_lag_days: lag,
         },
-        todayYmd(),
+        today,
       );
     } catch {
       return null;

@@ -4,6 +4,10 @@ import { PaySchedulesPanel } from "./PaySchedulesPanel";
 
 const mutateAsync = vi.fn().mockResolvedValue("sched-new");
 
+vi.mock("../../auth/auth-context", () => ({
+  useAuth: () => ({ org: { timezone: "America/Puerto_Rico" } }),
+}));
+
 vi.mock("../invoices/hooks", () => ({
   useRestaurants: () => ({
     data: [
@@ -16,6 +20,7 @@ vi.mock("../invoices/hooks", () => ({
 }));
 
 vi.mock("./hooks", () => ({
+  usePayrollEmployerSettings: () => ({ data: [], isLoading: false, error: null }),
   usePayrollPaySchedules: () => ({
     data: [
       {

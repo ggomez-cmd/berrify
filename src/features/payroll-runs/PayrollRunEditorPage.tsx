@@ -24,7 +24,7 @@ import {
   type PayrollRunInputsSnapshot,
   type PayrollRunSettingsSnapshot,
 } from "../../lib/payroll/runs";
-import { workweekIdsForPeriod } from "../../lib/payroll-engine/hours/time";
+import { workweekIdsForPeriod, ymdInTimeZone } from "../../lib/payroll-engine/hours/time";
 import type { HoursSource } from "../../lib/payroll-engine/hours/types";
 import type { PayrollRunResult } from "../../lib/payroll-engine/types";
 import { isAdmin } from "../../lib/schedule";
@@ -464,7 +464,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                 const schedule = scheduleForRestaurant(schedulesQuery.data ?? [], next);
                 if (!schedule) return;
                 try {
-                  const period = periodContaining(schedule, new Date().toISOString().slice(0, 10));
+                  const period = periodContaining(
+                    schedule,
+                    ymdInTimeZone(
+                      Math.floor(Date.now() / 1000),
+                      settingsQuery.data?.[0]?.time_zone ?? org?.timezone ?? "America/Puerto_Rico",
+                    ),
+                  );
                   setPeriodStart(period.periodStart);
                   setPeriodEnd(period.periodEnd);
                   setCheckDate(period.checkDate);

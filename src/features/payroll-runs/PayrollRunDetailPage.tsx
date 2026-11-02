@@ -125,17 +125,24 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
       </div>
 
       <IssuesPanel errors={result.errors} warnings={result.warnings} names={names} restaurantNames={restaurantNames} />
-      <DepositSummaryPanel
-        checks={result.checks}
-        profiles={profilesQuery.data ?? []}
-        taxesViaProvider={
-          run.restaurant_id
-            ? (schedulesQuery.data ?? []).find((row) => row.restaurant_id === run.restaurant_id)
-                ?.taxes_via_provider ?? true
-            : true
-        }
-        names={names}
-      />
+      {profilesQuery.error || (run.restaurant_id && schedulesQuery.error) ? (
+        <p className="text-sm text-danger">
+          Deposit summary unavailable: {(profilesQuery.error ?? schedulesQuery.error)?.message}
+        </p>
+      ) : !profilesQuery.isSuccess || (run.restaurant_id && !schedulesQuery.isSuccess) ? (
+        <p className="text-sm text-muted">Loading deposit summary…</p>
+      ) : (
+        <DepositSummaryPanel
+          checks={result.checks}
+          profiles={profilesQuery.data}
+          taxesViaProvider={
+            run.restaurant_id
+              ? schedulesQuery.data?.find((row) => row.restaurant_id === run.restaurant_id)?.taxes_via_provider ?? true
+              : true
+          }
+          names={names}
+        />
+      )}
       <RunSummaryPanel result={result} restaurantNames={restaurantNames} />
       <ChecksTable checks={result.checks} names={names} numbers={numbers} />
       {result.checks.map((check) => (
