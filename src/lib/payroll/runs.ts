@@ -643,13 +643,6 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     }
   }
 
-  const meal = mealBreakFlags(shifts);
-  errors.push(...meal.errors);
-  warnings.push(...meal.warnings);
-  for (const flag of meal.flags) {
-    warnings.push(mealWarning(flag));
-  }
-
   const splitSettings = {
     timeZone,
     workweekStartDow,
@@ -661,6 +654,15 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   const split = splitHours(shifts, splitSettings);
   errors.push(...split.errors);
   warnings.push(...split.warnings);
+
+  // Shifts from the overtime lookback days are loaded but not paid in this run.
+  const payableShiftIds = new Set(split.allocations.filter((row) => row.payable).map((row) => row.shiftId));
+  const meal = mealBreakFlags(shifts.filter((shift) => payableShiftIds.has(shift.id)));
+  errors.push(...meal.errors);
+  warnings.push(...meal.warnings);
+  for (const flag of meal.flags) {
+    warnings.push(mealWarning(flag));
+  }
 
   // Salary pays salaried employees; their punches only set the hours shown, so they need no hourly rate.
   const salariedIds = new Set(
@@ -728,7 +730,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     shifts: engineShifts,
     allocations: split.allocations.filter((row) => !salariedShiftIds.has(row.shiftId)),
     rates: positionRates,
-    tips: tips.filter((row) => !salariedIds.has(row.employeeId)),
+    tips: tips.filter((row) => !salariedIds.has(row.employeeId) && row.tipsCents !== 0),
     timeZone,
     period: splitSettings,
   });
@@ -740,8 +742,12 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   for (const profile of args.profiles) {
     if (profile.salary_cents != null) employeeIds.add(profile.employee_id);
   }
-  for (const shift of shifts) employeeIds.add(shift.employeeId);
-  for (const tip of tips) employeeIds.add(tip.employeeId);
+  for (const shift of shifts) {
+    if (payableShiftIds.has(shift.id)) employeeIds.add(shift.employeeId);
+  }
+  for (const tip of tips) {
+    if (tip.tipsCents !== 0) employeeIds.add(tip.employeeId);
+  }
   for (const line of adjustments) employeeIds.add(line.employeeId);
   for (const employeeId of hourly.weeks.keys()) employeeIds.add(employeeId);
 
@@ -754,8 +760,15 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     }
     const base = employeePayBase(profile, [], Number(args.checkDate.slice(0, 4)));
     const openingYtd = ytdLookup(args.ytdByEmployee, employeeId);
-    const weeks = hourly.weeks.get(employeeId) ?? [];
-    const employeeAdjustments = adjustments.filter((row) => row.employeeId === employeeId).map(adjustmentEarnings);
+    // Tips in a week with no shifts, and adjustments with no restaurant, are charged to the default restaurant.
+    const defaultClassId = profile.default_restaurant_id;
+    const weeks = (hourly.weeks.get(employeeId) ?? []).map((week) =>
+      week.classId ? week : { ...week, classId: defaultClassId },
+    );
+    const employeeAdjustments = adjustments
+      .filter((row) => row.employeeId === employeeId)
+      .map(adjustmentEarnings)
+      .map((line) => (line.classId ? line : { ...line, classId: defaultClassId }));
     const salaryCents = profile.salary_cents;
     if (salaryCents != null) {
       const tipEarnings: EarningsLineInput[] = tips

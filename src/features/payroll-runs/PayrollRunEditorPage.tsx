@@ -379,6 +379,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   };
 
   const persist = async (): Promise<string | null> => {
+    setFormError(null);
     if (!result || !builtInputs || !computedFrom) {
       setFormError("Calculate the run before saving");
       return null;
@@ -502,7 +503,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                           setTips((current) => ({ ...current, [tipKey(profile.employee_id, week)]: e.target.value }))
                         }
                         inputMode="decimal"
-                        aria-label={`Tips ${profile.employee_id} ${week}`}
+                        aria-label={`Tips for ${names[profile.employee_id] ?? profile.employee_number ?? profile.employee_id}, week of ${week}`}
                       />
                     </Td>
                   ))}
@@ -532,6 +533,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
           {adjustments.map((row) => (
             <div key={row.key} className="grid gap-2 sm:grid-cols-4">
               <Select
+                aria-label="Adjustment employee"
                 value={row.employeeId}
                 onChange={(e) =>
                   setAdjustments((rows) =>
@@ -547,6 +549,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                 ))}
               </Select>
               <Input
+                aria-label="Adjustment amount"
                 value={row.dollars}
                 onChange={(e) =>
                   setAdjustments((rows) =>
@@ -556,6 +559,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                 placeholder="0.00"
               />
               <Input
+                aria-label="Adjustment reason"
                 value={row.reason}
                 onChange={(e) =>
                   setAdjustments((rows) =>
@@ -565,6 +569,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                 placeholder="Reason"
               />
               <Select
+                aria-label="Adjustment restaurant"
                 value={row.restaurantId}
                 onChange={(e) =>
                   setAdjustments((rows) =>
@@ -572,7 +577,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
                   )
                 }
               >
-                <option value="">Restaurant</option>
+                <option value="">Default restaurant</option>
                 {(restaurantsQuery.data ?? []).map((restaurant) => (
                   <option key={restaurant.id} value={restaurant.id}>
                     {restaurant.name}
@@ -590,9 +595,6 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
           {message}
         </p>
       ))}
-      {saveDraft.error ? <p className="text-sm text-danger">{saveDraft.error.message}</p> : null}
-      {approve.error ? <p className="text-sm text-danger">{approve.error.message}</p> : null}
-      {discardDraft.error ? <p className="text-sm text-danger">{discardDraft.error.message}</p> : null}
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={calculate} disabled={!prerequisitesReady || timeQuery.isFetching}>
@@ -602,9 +604,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
           variant="outline"
           disabled={!result || saveDraft.isPending}
           onClick={() => {
-            void persist().then((id) => {
-              if (id && !runId) navigate(`/payroll/runs/${id}/edit`);
-            });
+            void persist()
+              .then((id) => {
+                if (id && !runId) navigate(`/payroll/runs/${id}/edit`);
+              })
+              .catch((error: unknown) => {
+                setFormError(error instanceof Error ? error.message : "Could not save payroll draft");
+              });
           }}
         >
           Save draft
