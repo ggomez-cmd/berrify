@@ -3,6 +3,7 @@ import { useAuth } from "../../auth/auth-context";
 import { isAdmin } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import { toThrownError } from "../../lib/thrown-error";
+import type { PayFrequency } from "../../lib/payroll-engine/types";
 import type {
   PayrollCloverNameRow,
   PayrollEmployeeProfileRow,
@@ -203,6 +204,42 @@ export function usePayrollPaySchedules() {
   });
 }
 
+export function useUpsertPayrollPaySchedule() {
+  const { org } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id?: string;
+      restaurant_id: string;
+      frequency: PayFrequency;
+      anchor_period_start: string;
+      check_lag_days: number;
+      taxes_via_provider: boolean;
+    }) => {
+      const orgId = requireOrg(org?.id);
+      const payload = {
+        org_id: orgId,
+        restaurant_id: input.restaurant_id,
+        frequency: input.frequency,
+        anchor_period_start: input.anchor_period_start,
+        check_lag_days: input.check_lag_days,
+        taxes_via_provider: input.taxes_via_provider,
+      };
+      if (input.id) {
+        const { error } = await supabase.from("payroll_pay_schedules").update(payload).eq("id", input.id);
+        if (error) throw toThrownError(error, "Could not save pay schedule");
+        return input.id;
+      }
+      const { data, error } = await supabase.from("payroll_pay_schedules").insert(payload).select("id").single();
+      if (error || !data) throw toThrownError(error, "Could not save pay schedule");
+      return data.id as string;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["payroll_pay_schedules"] });
+    },
+  });
+}
+
 export function usePayrollCloverNames() {
   const { org, role } = useAuth();
   return useQuery({
@@ -228,6 +265,7 @@ export function useUpsertPayrollCloverName() {
       id?: string;
       clover_name: string;
       employee_id: string | null;
+      restaurant_id: string | null;
       ignored: boolean;
     }) => {
       const orgId = requireOrg(org?.id);
@@ -235,6 +273,7 @@ export function useUpsertPayrollCloverName() {
         org_id: orgId,
         clover_name: input.clover_name.trim(),
         employee_id: input.ignored ? null : input.employee_id,
+        restaurant_id: input.restaurant_id,
         ignored: input.ignored,
       };
       if (input.id) {

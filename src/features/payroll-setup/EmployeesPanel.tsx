@@ -10,6 +10,7 @@ import {
   buildPayrollEmployeeSetupProfile,
   buildPayrollPayRateSetupPayloads,
   centsToDollarInput,
+  dollarsToCents,
   type PayrollEmployeeSetupDraft,
 } from "../../lib/payroll/setup";
 import type { EmployeePayType, PersonalExemptionStatus } from "../../lib/payroll-engine/types";
@@ -184,6 +185,8 @@ function EmployeePayrollDialog({
   const { data: restaurants = [] } = useRestaurants();
   const save = useSavePayrollEmployeeSetup();
   const [values, setValues] = useState<PayrollEmployeeSetupDraft>(emptyProfile);
+  const [paymentMethod, setPaymentMethod] = useState<"" | "ach" | "check" | "cash">("");
+  const [fixedSwhDollars, setFixedSwhDollars] = useState("");
   const [rateDrafts, setRateDrafts] = useState<RateDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [ratesDraftReady, setRatesDraftReady] = useState(false);
@@ -221,8 +224,14 @@ function EmployeePayrollDialog({
         r41_effective_date: profile.r41_effective_date ?? "",
         notes: profile.notes ?? "",
       });
+      setPaymentMethod(profile.payment_method ?? "");
+      setFixedSwhDollars(
+        profile.fixed_swh_cents == null ? "" : centsToDollarInput(profile.fixed_swh_cents),
+      );
     } else {
       setValues(emptyProfile);
+      setPaymentMethod("");
+      setFixedSwhDollars("");
     }
     setRateDrafts(
       rates.map((row) => ({
@@ -253,10 +262,23 @@ function EmployeePayrollDialog({
       setFormError(ratePayload.error);
       return;
     }
+    let fixedSwhCents: number | null = null;
+    if (fixedSwhDollars.trim()) {
+      const cents = dollarsToCents(fixedSwhDollars);
+      if (cents === null) {
+        setFormError("Fixed PR withholding must look like 1,234.56 with no negatives");
+        return;
+      }
+      fixedSwhCents = cents;
+    }
     try {
       await save.mutateAsync({
         employeeId: employee.id,
-        profile: profilePayload.value,
+        profile: {
+          ...profilePayload.value,
+          payment_method: paymentMethod || null,
+          fixed_swh_cents: fixedSwhCents,
+        },
         rates: ratePayload.value,
       });
       onOpenChange(false);
@@ -344,6 +366,34 @@ function EmployeePayrollDialog({
             inputMode="numeric"
             value={values.weekly_ot_multiplier_ppm}
             onChange={(e) => setValues((current) => ({ ...current, weekly_ot_multiplier_ppm: e.target.value }))}
+          />
+        </Field>
+        {Number(values.daily_ot_multiplier_ppm) < 1_500_000 ||
+        Number(values.weekly_ot_multiplier_ppm) < 1_500_000 ? (
+          <div className="col-span-2 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-ink">
+            Puerto Rico law generally requires overtime at a premium; confirm with your accountant.
+          </div>
+        ) : null}
+        <Field label="Payment method" htmlFor="pay-method">
+          <Select
+            id="pay-method"
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value as "" | "ach" | "check" | "cash")}
+          >
+            <option value="">Not set</option>
+            <option value="ach">ACH</option>
+            <option value="check">Check</option>
+            <option value="cash">Cash</option>
+          </Select>
+        </Field>
+        <Field label="Fixed PR withholding per check" htmlFor="pay-fixed-swh">
+          <Input
+            id="pay-fixed-swh"
+            inputMode="decimal"
+            value={fixedSwhDollars}
+            onChange={(e) => setFixedSwhDollars(e.target.value)}
+            aria-label="Fixed PR withholding per check"
+            placeholder="Blank = tax table"
           />
         </Field>
         <Field label="Personal exemption" htmlFor="pay-exemption">
