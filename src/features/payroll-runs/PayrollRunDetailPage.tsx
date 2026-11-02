@@ -11,8 +11,9 @@ import { resultFromStoredRun } from "../../lib/payroll/runs";
 import { isAdmin } from "../../lib/schedule";
 import { useEmployees } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
-import { usePayrollEmployeeProfiles } from "../payroll-setup/hooks";
-import { CheckDetail, ChecksTable, IssuesPanel, RunSummaryPanel } from "./RunPanels";
+import { usePayrollEmployeeProfiles, usePayrollPaySchedules } from "../payroll-setup/hooks";
+import { restaurantScopeLabel } from "./format";
+import { CheckDetail, ChecksTable, DepositSummaryPanel, IssuesPanel, RunSummaryPanel } from "./RunPanels";
 import { usePayrollRun, useVoidPayrollRun } from "./hooks";
 
 function downloadText(filename: string, contents: string) {
@@ -31,6 +32,7 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
   const employeesQuery = useEmployees();
   const restaurantsQuery = useRestaurants();
   const profilesQuery = usePayrollEmployeeProfiles();
+  const schedulesQuery = usePayrollPaySchedules();
   const voidRun = useVoidPayrollRun();
   const [voidOpen, setVoidOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -76,7 +78,8 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
         <div>
           <Badge tone={tone}>{run.status}</Badge>
           <p className="mt-2 text-sm text-muted">
-            {run.period_start.slice(0, 10)} – {run.period_end.slice(0, 10)} · check {run.check_date.slice(0, 10)} ·{" "}
+            {restaurantScopeLabel(run.restaurant_id, restaurantNames)} · {run.period_start.slice(0, 10)} –{" "}
+            {run.period_end.slice(0, 10)} · check {run.check_date.slice(0, 10)} ·{" "}
             {run.hours_source === "time_clock" ? "Time Clock" : "Clover"}
           </p>
           {run.void_reason ? <p className="mt-1 text-sm text-ink">Void reason: {run.void_reason}</p> : null}
@@ -122,6 +125,17 @@ export function PayrollRunDetailPage({ runId }: { runId: string }) {
       </div>
 
       <IssuesPanel errors={result.errors} warnings={result.warnings} names={names} restaurantNames={restaurantNames} />
+      <DepositSummaryPanel
+        checks={result.checks}
+        profiles={profilesQuery.data ?? []}
+        taxesViaProvider={
+          run.restaurant_id
+            ? (schedulesQuery.data ?? []).find((row) => row.restaurant_id === run.restaurant_id)
+                ?.taxes_via_provider ?? true
+            : true
+        }
+        names={names}
+      />
       <RunSummaryPanel result={result} restaurantNames={restaurantNames} />
       <ChecksTable checks={result.checks} names={names} numbers={numbers} />
       {result.checks.map((check) => (

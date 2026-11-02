@@ -7,6 +7,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { Table, THead, Td, Th } from "../../components/ui/table";
+import { periodContaining, scheduleForRestaurant } from "../../lib/payroll/schedules";
 import { dollarsToCents } from "../../lib/payroll/setup";
 import {
   buildRunInput,
@@ -34,9 +35,10 @@ import {
   usePayrollEmployeeProfiles,
   usePayrollEmployerSettings,
   usePayrollPayRates,
+  usePayrollPaySchedules,
 } from "../payroll-setup/hooks";
 import { CheckDetail, ChecksTable, IssuesPanel, RunSummaryPanel } from "./RunPanels";
-import { parseSignedCents } from "./format";
+import { parseSignedCents, restaurantScopeLabel } from "./format";
 import {
   useApprovePayrollRun,
   useDiscardPayrollRunDraft,
@@ -73,6 +75,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const profilesQuery = usePayrollEmployeeProfiles();
   const ratesQuery = usePayrollPayRates();
   const cloverQuery = usePayrollCloverNames();
+  const schedulesQuery = usePayrollPaySchedules();
   const employeesQuery = useEmployees();
   const restaurantsQuery = useRestaurants();
   const saveDraft = useSavePayrollRunDraft();
@@ -80,6 +83,8 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const discardDraft = useDiscardPayrollRunDraft();
 
   const restored = isRunInputsSnapshot(stored.data?.inputs) ? stored.data.inputs : null;
+  const existingRestaurantId = stored.data?.restaurant_id ?? restored?.restaurantId ?? "";
+  const [restaurantId, setRestaurantId] = useState(existingRestaurantId);
   const [periodStart, setPeriodStart] = useState(stored.data?.period_start.slice(0, 10) ?? restored?.periodStart ?? "");
   const [periodEnd, setPeriodEnd] = useState(stored.data?.period_end.slice(0, 10) ?? restored?.periodEnd ?? "");
   const [checkDate, setCheckDate] = useState(stored.data?.check_date.slice(0, 10) ?? restored?.checkDate ?? "");
@@ -113,12 +118,13 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
 
-  const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd, checkDate);
+  const timeQuery = usePayrollRunTimeEntries(periodStart, periodEnd, checkDate, restaurantId || null);
   const taxYear = checkDate ? taxYearFromCheckDate(checkDate) : null;
   const ytdBasisQuery = usePayrollYtdBasis(taxYear, checkDate);
 
   useEffect(() => {
     if (!runId || !stored.data || hydratedId === stored.data.id) return;
+    setRestaurantId(stored.data.restaurant_id ?? "");
     setPeriodStart(stored.data.period_start.slice(0, 10));
     setPeriodEnd(stored.data.period_end.slice(0, 10));
     setCheckDate(stored.data.check_date.slice(0, 10));
@@ -196,7 +202,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         reason: row.reason,
         restaurantId: row.restaurantId,
       })),
-      historyFingerprint: "",
+      historyFingerprint: restaurantId,
       openingBalancesFingerprint: "",
       ytdBasisRevision: ytdBasisQuery.data?.revision ?? "",
       shiftRevision: hoursSource === "time_clock" ? (timeQuery.data?.shiftRevision ?? "") : "",
@@ -208,6 +214,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       hoursSource,
       periodEnd,
       periodStart,
+      restaurantId,
       timeQuery.data?.shiftRevision,
       tips,
       ytdBasisQuery.data?.revision,
@@ -227,6 +234,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
     profilesQuery,
     ratesQuery,
     restaurantsQuery,
+    schedulesQuery,
     employeesQuery,
     ...(checkDate ? [ytdBasisQuery] : []),
   ];
@@ -350,6 +358,8 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
         profiles: profilesQuery.data,
         payRates: ratesQuery.data,
         cloverNames,
+        restaurantId: restaurantId || null,
+        schedules: schedulesQuery.data,
         timeEntries: clockHours?.timeEntries,
         timeBreaks: clockHours?.timeBreaks,
         cloverCsv: hoursSource === "clover" ? cloverCsv : undefined,
@@ -371,6 +381,7 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
       hoursSource,
       periodStart,
       periodEnd,
+      ...(restaurantId ? { restaurantId } : {}),
       shifts: built.shifts,
       tips: built.tips,
       adjustments: built.adjustments,
@@ -426,10 +437,54 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   return (
     <div className="grid gap-4">
       <p className="max-w-3xl text-sm text-muted">
-        Choose a period, load hours, enter tips, then calculate. Save a draft to come back. Approve locks the
-        run.
+        Choose a restaurant, period, load hours, enter tips, then calculate. Save a draft to come back. Approve
+        locks the run.
       </p>
+      <h2 className="text-base font-semibold tracking-tight">
+        {restaurantScopeLabel(restaurantId || null, restaurantNames)}
+      </h2>
       <Card className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Restaurant" htmlFor="run-restaurant">
+          {runId ? (
+            <Input
+              id="run-restaurant"
+              readOnly
+              value={restaurantScopeLabel(restaurantId || null, restaurantNames)}
+              aria-label="Restaurant"
+            />
+          ) : (
+            <Select
+              id="run-restaurant"
+              value={restaurantId}
+              aria-label="Restaurant"
+              onChange={(e) => {
+                const next = e.target.value;
+                setRestaurantId(next);
+                if (!next) return;
+                const schedule = scheduleForRestaurant(schedulesQuery.data ?? [], next);
+                if (!schedule) return;
+                try {
+                  const period = periodContaining(schedule, new Date().toISOString().slice(0, 10));
+                  setPeriodStart(period.periodStart);
+                  setPeriodEnd(period.periodEnd);
+                  setCheckDate(period.checkDate);
+                } catch {
+                  // Invalid schedule dates stay editable on the form.
+                }
+              }}
+            >
+              <option value="">All restaurants (org-wide)</option>
+              {(restaurantsQuery.data ?? []).map((restaurant) => {
+                const hasSchedule = Boolean(scheduleForRestaurant(schedulesQuery.data ?? [], restaurant.id));
+                return (
+                  <option key={restaurant.id} value={restaurant.id} disabled={!hasSchedule}>
+                    {hasSchedule ? restaurant.name : `${restaurant.name} — add a pay schedule in setup`}
+                  </option>
+                );
+              })}
+            </Select>
+          )}
+        </Field>
         <Field label="Period start" htmlFor="run-start">
           <Input id="run-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
         </Field>

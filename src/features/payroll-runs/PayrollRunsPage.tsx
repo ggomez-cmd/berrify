@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Badge } from "../../components/ui/badge";
@@ -5,7 +6,8 @@ import { Button } from "../../components/ui/button";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { isAdmin } from "../../lib/schedule";
 import type { PayrollRunStatus } from "../../lib/types";
-import { formatCents } from "./format";
+import { useRestaurants } from "../invoices/hooks";
+import { formatCents, restaurantScopeLabel } from "./format";
 import { usePayrollRuns } from "./hooks";
 
 function statusTone(status: PayrollRunStatus): "neutral" | "ok" | "warn" {
@@ -27,6 +29,12 @@ export function PayrollRunsPage() {
   const { role } = useAuth();
   const navigate = useNavigate();
   const runs = usePayrollRuns();
+  const restaurants = useRestaurants();
+  const restaurantNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of restaurants.data ?? []) map[row.id] = row.name;
+    return map;
+  }, [restaurants.data]);
 
   if (!isAdmin(role)) {
     return (
@@ -51,6 +59,7 @@ export function PayrollRunsPage() {
         <THead>
           <tr>
             <Th>Status</Th>
+            <Th>Restaurant</Th>
             <Th>Period</Th>
             <Th>Check date</Th>
             <Th>Gross</Th>
@@ -60,7 +69,7 @@ export function PayrollRunsPage() {
         <tbody>
           {(runs.data ?? []).length === 0 ? (
             <tr>
-              <Td colSpan={5} className="py-10 text-center text-muted">
+              <Td colSpan={6} className="py-10 text-center text-muted">
                 No payroll runs yet.
               </Td>
             </tr>
@@ -72,6 +81,7 @@ export function PayrollRunsPage() {
                     <Badge tone={statusTone(run.status)}>{run.status}</Badge>
                   </Link>
                 </Td>
+                <Td>{restaurantScopeLabel(run.restaurant_id, restaurantNames)}</Td>
                 <Td>
                   {run.period_start.slice(0, 10)} – {run.period_end.slice(0, 10)}
                 </Td>
