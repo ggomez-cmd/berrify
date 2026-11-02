@@ -66,6 +66,10 @@ function employer(partial: Partial<PayrollEmployerSettingsRow> = {}): PayrollEmp
     daily_ot_mode: "rolling_24h",
     workweek_start_day: 0,
     time_zone: "America/Puerto_Rico",
+    punch_rounding: "none",
+    hourly_pay_rounding: "per_line",
+    meal_deduct_after_minutes: null,
+    meal_deduct_minutes: null,
     notes: null,
     ...timestamps,
     ...partial,
@@ -94,6 +98,8 @@ function profile(
     biweekly_exemption_override_cents: null,
     young_worker_exempt: false,
     additional_withholding_cents: 0,
+    fixed_swh_cents: null,
+    payment_method: null,
     r41_effective_date: null,
     notes: null,
     ...timestamps,
@@ -410,6 +416,87 @@ describe("buildRunInput", () => {
     expect(built.errors).toEqual([]);
     const preview = previewPayrollRun(built);
     expect(preview.checks[0]?.grossCents).toBe(14_000);
+  });
+
+  it("scopes hours, salary, and frequency to a restaurant schedule", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: restaurantA,
+      schedules: [
+        {
+          id: "sched-a",
+          org_id: "org-1",
+          restaurant_id: restaurantA,
+          frequency: "weekly",
+          anchor_period_start: "2026-10-12",
+          check_lag_days: 5,
+          taxes_via_provider: true,
+          created_at: timestamps.created_at,
+          updated_at: timestamps.updated_at,
+        },
+      ],
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({ id: "p1", employee_id: "E1" }),
+        profile({
+          id: "p2",
+          employee_id: "E2",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantB,
+        }),
+        profile({
+          id: "p3",
+          employee_id: "E3",
+          salary_cents: 200_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [rate({ id: "r1", employee_id: "E1", rate_cents: 1500, effective_from: "2026-01-01" })],
+      timeEntries: [
+        {
+          id: "te-a",
+          employee_id: "E1",
+          restaurant_id: restaurantA,
+          position: "Cook",
+          started_at: localIso("2026-10-13", "09:00:00"),
+          ended_at: localIso("2026-10-13", "13:00:00"),
+        },
+        {
+          id: "te-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          position: "Cook",
+          started_at: localIso("2026-10-14", "09:00:00"),
+          ended_at: localIso("2026-10-14", "17:00:00"),
+        },
+      ],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.settings.payFrequency).toBe("weekly");
+    expect(built.settingsSnapshot?.restaurantId).toBe(restaurantA);
+    expect(built.input.employees.map((row) => row.employeeId).sort()).toEqual(["E1", "E3"]);
+    expect(built.shifts.every((shift) => shift.classId === restaurantA)).toBe(true);
+  });
+
+  it("errors when a restaurant run has no pay schedule", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: "11111111-1111-4111-8111-111111111111",
+      schedules: [],
+      employerSettingsRows: [employer()],
+      profiles: [],
+      payRates: [],
+      shifts: [],
+    });
+    expect(built.errors.some((row) => row.includes("No pay schedule"))).toBe(true);
   });
 });
 
@@ -728,6 +815,7 @@ function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithC
   return {
     id: "run-1",
     org_id: "org-1",
+    restaurant_id: null,
     period_start: "2026-10-12",
     period_end: "2026-10-25",
     check_date: FIXTURE_A_CHECK_DATE,

@@ -15,6 +15,7 @@ const approvedWindow = {
   period_start: "2026-10-01",
   period_end: "2026-10-08",
   check_date: "2026-10-09",
+  restaurant_id: null,
   time_zone: zone,
   from: "2026-09-23T04:00:00.000Z",
   until: "2026-10-09T04:00:00.000Z",

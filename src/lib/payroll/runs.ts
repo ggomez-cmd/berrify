@@ -49,9 +49,11 @@ import type {
   PayrollOpeningBalanceTaxRow,
   PayrollOpeningBalanceWithTaxes,
   PayrollPayRateRow,
+  PayrollPayScheduleRow,
   PayrollRunStatus,
   PayrollRunWithChecks,
 } from "../types";
+import { scheduleForRestaurant } from "./schedules";
 import {
   cloverMappingFrom,
   employeePayBase,
@@ -205,6 +207,7 @@ export type PayrollRunSettingsSnapshot = EmployerSetupSettings & {
   workweekStartTime: string;
   periodStart: string;
   periodEnd: string;
+  restaurantId?: string;
 };
 
 export type PayrollRunInputsSnapshot = PayrollRunInput & {
@@ -215,6 +218,7 @@ export type PayrollRunInputsSnapshot = PayrollRunInput & {
   tips: WeekTips[];
   adjustments: ManualAdjustmentInput[];
   shiftRevision?: string;
+  restaurantId?: string;
 };
 
 /** jsonb `run` for `save_payroll_run_draft`. Keys must match the SQL. */
@@ -222,6 +226,7 @@ export type PayrollRunDraftPayload = {
   period_start: string;
   period_end: string;
   check_date: string;
+  restaurant_id?: string | null;
   hours_source: HoursSource;
   schedule_id: string;
   settings: PayrollRunSettingsSnapshot;
@@ -370,6 +375,8 @@ export type BuildRunInputArgs = {
   profiles: readonly PayrollEmployeeProfileRow[];
   payRates: readonly PayrollPayRateRow[];
   cloverNames?: readonly PayrollCloverNameRow[];
+  restaurantId?: string | null;
+  schedules?: readonly PayrollPayScheduleRow[];
   timeEntries?: readonly TimeEntryRow[];
   timeBreaks?: readonly TimeBreakRow[];
   shifts?: readonly WorkedShift[];
@@ -582,6 +589,16 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     errors.push(`Missing employer settings for ${args.checkDate}`);
   }
 
+  const restaurantId = args.restaurantId ?? null;
+  if (restaurantId) {
+    const schedule = scheduleForRestaurant(args.schedules ?? [], restaurantId);
+    if (!schedule) {
+      errors.push(`No pay schedule for restaurant ${restaurantId}`);
+    } else if (setup) {
+      setup = { ...setup, payFrequency: schedule.frequency };
+    }
+  }
+
   const timeZone = setup?.timeZone ?? "America/Puerto_Rico";
   const workweekStartDow = setup?.workweekStartDow ?? 0;
   const dailyOtMode = setup?.dailyOtMode ?? "rolling_24h";
@@ -591,13 +608,21 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
         workweekStartTime,
         periodStart: args.periodStart,
         periodEnd: args.periodEnd,
+        ...(restaurantId ? { restaurantId } : {}),
       }
     : null;
 
+  const timeEntries = restaurantId
+    ? (args.timeEntries ?? []).filter((row) => row.restaurant_id === restaurantId)
+    : (args.timeEntries ?? []);
+
   let shifts: WorkedShift[] = [...(args.shifts ?? [])];
+  if (restaurantId && args.shifts) {
+    shifts = shifts.filter((shift) => shift.classId === restaurantId);
+  }
   if (args.hoursSource === "time_clock") {
     if (!args.shifts) {
-      const fromClock = shiftsFromTimeEntries(args.timeEntries ?? [], args.timeBreaks ?? []);
+      const fromClock = shiftsFromTimeEntries(timeEntries, args.timeBreaks ?? []);
       errors.push(...fromClock.errors);
       warnings.push(...fromClock.warnings);
       shifts = fromClock.shifts;
@@ -607,13 +632,13 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
       if (!args.cloverCsv?.trim()) {
         errors.push("Missing Clover CSV");
       } else {
-        const maps = cloverMappingFrom(args.cloverNames ?? []);
+        const maps = cloverMappingFrom(args.cloverNames ?? [], restaurantId);
         const profileById = new Map(args.profiles.map((row) => [row.employee_id, row]));
         for (const [name, mapped] of Object.entries(maps.mapping)) {
           const profile = profileById.get(mapped.employeeId);
           maps.mapping[name] = {
             employeeId: mapped.employeeId,
-            classId: profile?.default_restaurant_id ?? mapped.classId,
+            classId: restaurantId ?? profile?.default_restaurant_id ?? mapped.classId,
             positionKey: mapped.positionKey,
           };
         }
@@ -686,7 +711,13 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   // Salary pays salaried employees; their punches only set the hours shown, so they need no hourly rate.
   const salariedIds = new Set(
-    args.profiles.filter((row) => row.salary_cents != null).map((row) => row.employee_id),
+    args.profiles
+      .filter((row) => {
+        if (row.salary_cents == null) return false;
+        if (restaurantId && row.default_restaurant_id !== restaurantId) return false;
+        return true;
+      })
+      .map((row) => row.employee_id),
   );
   const salariedShiftIds = new Set(shifts.filter((shift) => salariedIds.has(shift.employeeId)).map((shift) => shift.id));
   const salariedSeconds = new Map<string, number>();
@@ -760,7 +791,9 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   const profileById = new Map(args.profiles.map((row) => [row.employee_id, row]));
   const employeeIds = new Set<string>();
   for (const profile of args.profiles) {
-    if (profile.salary_cents != null) employeeIds.add(profile.employee_id);
+    if (profile.salary_cents == null) continue;
+    if (restaurantId && profile.default_restaurant_id !== restaurantId) continue;
+    employeeIds.add(profile.employee_id);
   }
   for (const shift of shifts) {
     if (payableShiftIds.has(shift.id)) employeeIds.add(shift.employeeId);
@@ -882,6 +915,9 @@ export function toDraftPayload(
       period_start: meta.periodStart,
       period_end: meta.periodEnd,
       check_date: result.checkDate,
+      ...(meta.inputs.restaurantId || meta.settings.restaurantId
+        ? { restaurant_id: meta.inputs.restaurantId ?? meta.settings.restaurantId ?? null }
+        : {}),
       hours_source: meta.hoursSource,
       schedule_id: result.scheduleId,
       settings: meta.settings,
@@ -959,7 +995,8 @@ export function historyFromStoredRuns(
   const gross: YtdPriorGross[] = [];
   for (const run of runs) {
     const checkDate = run.check_date.slice(0, 10);
-    if (checkDate >= beforeCheckDate) continue;
+    if (checkDate > beforeCheckDate) continue;
+    if (checkDate === beforeCheckDate && run.status !== "approved") continue;
     if (Number(checkDate.slice(0, 4)) !== taxYear) continue;
     for (const check of run.payroll_checks) {
       gross.push({

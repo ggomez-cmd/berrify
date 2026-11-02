@@ -149,6 +149,7 @@ function profileRow(employee: FixtureEmployee): PayrollEmployeeProfileRow {
     young_worker_exempt: false,
     additional_withholding_cents: 0,
     fixed_swh_cents: employee.fixedSwhCents,
+    payment_method: null,
     r41_effective_date: null,
     notes: null,
     ...timestamps,

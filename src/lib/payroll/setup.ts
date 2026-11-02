@@ -90,6 +90,8 @@ export type PayrollEmployeeSetupProfilePayload = {
   biweekly_exemption_override_cents: number | null;
   young_worker_exempt: boolean;
   additional_withholding_cents: number;
+  fixed_swh_cents?: number | null;
+  payment_method?: "ach" | "check" | "cash" | null;
   r41_effective_date: string | null;
   notes: string | null;
 };
@@ -431,10 +433,21 @@ export function employeePayBase(
   };
 }
 
-export function cloverMappingFrom(rows: readonly PayrollCloverNameRow[]): CloverParseMaps {
+export function cloverMappingFrom(
+  rows: readonly PayrollCloverNameRow[],
+  restaurantId?: string | null,
+): CloverParseMaps {
   const mapping: CloverParseMaps["mapping"] = {};
   const ignore: string[] = [];
-  for (const row of rows) {
+  const applicable = restaurantId
+    ? rows.filter((row) => row.restaurant_id == null || row.restaurant_id === restaurantId)
+    : [...rows];
+  applicable.sort((left, right) => {
+    const leftRank = left.restaurant_id != null ? 1 : 0;
+    const rightRank = right.restaurant_id != null ? 1 : 0;
+    return leftRank - rightRank;
+  });
+  for (const row of applicable) {
     if (row.ignored) {
       ignore.push(row.clover_name);
       continue;

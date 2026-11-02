@@ -487,10 +487,10 @@ export type PayrollEmployerSettingsRow = {
   daily_ot_mode: DailyWindowMode;
   workweek_start_day: number;
   time_zone: string;
-  punch_rounding?: "none" | "hundredth_hour";
-  hourly_pay_rounding?: "per_line" | "period";
-  meal_deduct_after_minutes?: number | null;
-  meal_deduct_minutes?: number | null;
+  punch_rounding: "none" | "hundredth_hour";
+  hourly_pay_rounding: "per_line" | "period";
+  meal_deduct_after_minutes: number | null;
+  meal_deduct_minutes: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -517,7 +517,8 @@ export type PayrollEmployeeProfileRow = {
   biweekly_exemption_override_cents: number | null;
   young_worker_exempt: boolean;
   additional_withholding_cents: number;
-  fixed_swh_cents?: number | null;
+  fixed_swh_cents: number | null;
+  payment_method: "ach" | "check" | "cash" | null;
   r41_effective_date: string | null;
   notes: string | null;
   created_at: string;
@@ -567,9 +568,22 @@ export type PayrollOpeningBalanceWithTaxes = PayrollOpeningBalanceRow & {
 export type PayrollCloverNameRow = {
   id: string;
   org_id: string;
+  restaurant_id: string | null;
   clover_name: string;
   employee_id: string | null;
   ignored: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollPayScheduleRow = {
+  id: string;
+  org_id: string;
+  restaurant_id: string;
+  frequency: PayFrequency;
+  anchor_period_start: string;
+  check_lag_days: number;
+  taxes_via_provider: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -581,6 +595,7 @@ export type PayrollHoursSource = "time_clock" | "clover";
 export type PayrollRunRow = {
   id: string;
   org_id: string;
+  restaurant_id: string | null;
   period_start: string;
   period_end: string;
   check_date: string;

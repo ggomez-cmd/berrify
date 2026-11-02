@@ -40,6 +40,10 @@ function employer(
     daily_ot_mode: "rolling_24h",
     workweek_start_day: 0,
     time_zone: "America/Puerto_Rico",
+    punch_rounding: "none",
+    hourly_pay_rounding: "per_line",
+    meal_deduct_after_minutes: null,
+    meal_deduct_minutes: null,
     notes: null,
     ...timestamps,
     ...partial,
@@ -68,6 +72,8 @@ function profile(
     biweekly_exemption_override_cents: null,
     young_worker_exempt: false,
     additional_withholding_cents: 2500,
+    fixed_swh_cents: null,
+    payment_method: null,
     r41_effective_date: "2026-01-15",
     notes: null,
     ...timestamps,
@@ -93,6 +99,7 @@ function clover(
 ): PayrollCloverNameRow {
   return {
     org_id: "org-1",
+    restaurant_id: null,
     employee_id: null,
     ignored: false,
     ...timestamps,
@@ -135,6 +142,8 @@ describe("employerSettingsFor", () => {
       dailyOtMode: "rolling_24h",
       workweekStartDow: 0,
       timeZone: "America/Puerto_Rico",
+      punchRounding: "none",
+      hourlyPayRounding: "per_line",
     });
     expect(employerSettingsFor(rows, "2025-12-31").sutRateBp).toBe(240);
     expect(employerSettingsFor(rows, "2025-12-31").dailyOtMode).toBe("calendar_day");
@@ -355,6 +364,28 @@ describe("cloverMappingFrom", () => {
       "Jordan H": { employeeId: "emp-jordan", positionKey: "unmapped", classId: "unmapped" },
     });
     expect(result.ignore).toEqual(["Training Till"]);
+  });
+
+  it("prefers a restaurant-specific Clover name over an org-wide row", () => {
+    const result = cloverMappingFrom(
+      [
+        clover({ id: "c-org", clover_name: "Jordan H", employee_id: "emp-org" }),
+        clover({
+          id: "c-kane",
+          clover_name: "Jordan H",
+          employee_id: "emp-kane",
+          restaurant_id: "rest-kane",
+        }),
+        clover({
+          id: "c-semilla",
+          clover_name: "Jordan H",
+          employee_id: "emp-semilla",
+          restaurant_id: "rest-semilla",
+        }),
+      ],
+      "rest-kane",
+    );
+    expect(result.mapping["Jordan H"]?.employeeId).toBe("emp-kane");
   });
 });
 
