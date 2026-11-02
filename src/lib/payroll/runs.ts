@@ -823,7 +823,8 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
       .map(adjustmentEarnings)
       .map((line) => (line.classId ? line : { ...line, classId: defaultClassId }));
     const salaryCents = profile.salary_cents;
-    if (salaryCents != null) {
+    // A salary is paid only in its own restaurant's run; elsewhere the employee is paid by the hour.
+    if (salaryCents != null && salariedIds.has(employeeId)) {
       const tipEarnings: EarningsLineInput[] = tips
         .filter((row) => row.employeeId === employeeId && row.tipsCents > 0 && runWorkweeks.has(row.workweekId))
         .map((row) => ({
@@ -848,6 +849,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     }
     employees.push({
       ...base,
+      salary: undefined,
       openingYtd,
       hourlyWeeks: weeks,
       earnings: employeeAdjustments,

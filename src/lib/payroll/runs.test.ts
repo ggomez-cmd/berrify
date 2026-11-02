@@ -456,7 +456,10 @@ describe("buildRunInput", () => {
           default_restaurant_id: restaurantA,
         }),
       ],
-      payRates: [rate({ id: "r1", employee_id: "E1", rate_cents: 1500, effective_from: "2026-01-01" })],
+      payRates: [
+        rate({ id: "r1", employee_id: "E1", rate_cents: 1500, effective_from: "2026-01-01" }),
+        rate({ id: "r2", employee_id: "E2", rate_cents: 1200, effective_from: "2026-01-01" }),
+      ],
       timeEntries: [
         {
           id: "te-a",
@@ -474,12 +477,23 @@ describe("buildRunInput", () => {
           started_at: localIso("2026-10-14", "09:00:00"),
           ended_at: localIso("2026-10-14", "17:00:00"),
         },
+        {
+          id: "te-e2",
+          employee_id: "E2",
+          restaurant_id: restaurantA,
+          position: "Cook",
+          started_at: localIso("2026-10-15", "09:00:00"),
+          ended_at: localIso("2026-10-15", "13:00:00"),
+        },
       ],
     });
     expect(built.errors).toEqual([]);
     expect(built.input.settings.payFrequency).toBe("weekly");
+    const salariedElsewhere = built.input.employees.find((row) => row.employeeId === "E2");
+    expect(salariedElsewhere?.salary).toBeUndefined();
+    expect(salariedElsewhere?.hourlyWeeks?.[0]?.regularHoursHundredths).toBe(400);
     expect(built.settingsSnapshot?.restaurantId).toBe(restaurantA);
-    expect(built.input.employees.map((row) => row.employeeId).sort()).toEqual(["E1", "E3"]);
+    expect(built.input.employees.map((row) => row.employeeId).sort()).toEqual(["E1", "E2", "E3"]);
     expect(built.shifts.every((shift) => shift.classId === restaurantA)).toBe(true);
   });
 

@@ -439,15 +439,14 @@ export function cloverMappingFrom(
 ): CloverParseMaps {
   const mapping: CloverParseMaps["mapping"] = {};
   const ignore: string[] = [];
-  const applicable = restaurantId
-    ? rows.filter((row) => row.restaurant_id == null || row.restaurant_id === restaurantId)
-    : [...rows];
-  applicable.sort((left, right) => {
-    const leftRank = left.restaurant_id != null ? 1 : 0;
-    const rightRank = right.restaurant_id != null ? 1 : 0;
-    return leftRank - rightRank;
-  });
-  for (const row of applicable) {
+  // Org-wide runs use only org-wide names. A restaurant's own row for a name replaces the org-wide one.
+  const winners = new Map<string, PayrollCloverNameRow>();
+  for (const row of rows) {
+    if (row.restaurant_id != null && row.restaurant_id !== restaurantId) continue;
+    if (row.restaurant_id == null && winners.has(row.clover_name)) continue;
+    winners.set(row.clover_name, row);
+  }
+  for (const row of winners.values()) {
     if (row.ignored) {
       ignore.push(row.clover_name);
       continue;

@@ -387,6 +387,28 @@ describe("cloverMappingFrom", () => {
     );
     expect(result.mapping["Jordan H"]?.employeeId).toBe("emp-kane");
   });
+
+  it("uses only org-wide names when no restaurant is given", () => {
+    const result = cloverMappingFrom([
+      clover({ id: "c-org", clover_name: "Pat", employee_id: "emp-org" }),
+      clover({ id: "c-semilla", clover_name: "Pat", employee_id: "emp-semilla", restaurant_id: "rest-semilla" }),
+      clover({ id: "c-kane", clover_name: "Till", ignored: true, restaurant_id: "rest-kane" }),
+    ]);
+    expect(result.mapping).toEqual({ Pat: { employeeId: "emp-org", positionKey: "unmapped", classId: "unmapped" } });
+    expect(result.ignore).toEqual([]);
+  });
+
+  it("lets a restaurant mapping replace an org-wide ignored name", () => {
+    const result = cloverMappingFrom(
+      [
+        clover({ id: "c-org", clover_name: "Pat", ignored: true }),
+        clover({ id: "c-semilla", clover_name: "Pat", employee_id: "emp-semilla", restaurant_id: "rest-semilla" }),
+      ],
+      "rest-semilla",
+    );
+    expect(result.mapping.Pat?.employeeId).toBe("emp-semilla");
+    expect(result.ignore).toEqual([]);
+  });
 });
 
 describe("parseOpeningBalancesCsv", () => {
