@@ -8,7 +8,13 @@ import {
   shiftsFromTimeEntries,
   splitHours,
 } from "../payroll-engine";
-import { addCalendarDays, instantSeconds, workweekIdsForPeriod, ymdInTimeZone } from "../payroll-engine/hours/time";
+import {
+  addCalendarDays,
+  instantSeconds,
+  secondsToHoursHundredths,
+  workweekIdsForPeriod,
+  ymdInTimeZone,
+} from "../payroll-engine/hours/time";
 import type {
   HoursSource,
   PositionRate,
@@ -656,10 +662,41 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
   errors.push(...split.errors);
   warnings.push(...split.warnings);
 
+  // Salary pays salaried employees; their punches only set the hours shown, so they need no hourly rate.
+  const salariedIds = new Set(
+    args.profiles.filter((row) => row.salary_cents != null).map((row) => row.employee_id),
+  );
+  const salariedShiftIds = new Set(shifts.filter((shift) => salariedIds.has(shift.employeeId)).map((shift) => shift.id));
+  const salariedSeconds = new Map<string, number>();
+  const shiftEmployee = new Map(shifts.map((shift) => [shift.id, shift.employeeId]));
+  for (const allocation of split.allocations) {
+    if (!allocation.payable || !salariedShiftIds.has(allocation.shiftId)) continue;
+    const employeeId = shiftEmployee.get(allocation.shiftId)!;
+    salariedSeconds.set(
+      employeeId,
+      (salariedSeconds.get(employeeId) ?? 0) +
+        allocation.regularSeconds +
+        allocation.dailyOtSeconds +
+        allocation.weeklyOtSeconds,
+    );
+  }
+  // Salaried tips skip buildHourlyWeeks, so check them here the way it checks hourly tips.
+  const workweekIds = workweekIdsForPeriod(splitSettings);
+  const runWorkweeks = new Set(workweekIds);
+  for (const tip of tips) {
+    if (!salariedIds.has(tip.employeeId)) continue;
+    if (tip.tipsCents < 0) {
+      errors.push(`Employee ${tip.employeeId} has negative tips on workweek ${tip.workweekId}`);
+    } else if (!runWorkweeks.has(tip.workweekId)) {
+      errors.push(`Employee ${tip.employeeId} has an unknown workweek ${tip.workweekId}`);
+    }
+  }
+
   const positionRates: PositionRate[] = [];
   const engineShifts: WorkedShift[] = [];
   const missingRateKeys = new Set<string>();
   for (const shift of shifts) {
+    if (salariedShiftIds.has(shift.id)) continue;
     const scopedKey = scopedEnginePositionKey(shift.positionKey, shift.classId);
     engineShifts.push({ ...shift, positionKey: scopedKey, classId: shift.classId });
     const started = instantSeconds(shift.startedAt);
@@ -689,9 +726,9 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
 
   const hourly = buildHourlyWeeks({
     shifts: engineShifts,
-    allocations: split.allocations,
+    allocations: split.allocations.filter((row) => !salariedShiftIds.has(row.shiftId)),
     rates: positionRates,
-    tips,
+    tips: tips.filter((row) => !salariedIds.has(row.employeeId)),
     timeZone,
     period: splitSettings,
   });
@@ -722,7 +759,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     const salaryCents = profile.salary_cents;
     if (salaryCents != null) {
       const tipEarnings: EarningsLineInput[] = tips
-        .filter((row) => row.employeeId === employeeId && row.tipsCents !== 0)
+        .filter((row) => row.employeeId === employeeId && row.tipsCents > 0 && runWorkweeks.has(row.workweekId))
         .map((row) => ({
           kind: "tips" as const,
           amountCents: row.tipsCents,
@@ -736,14 +773,7 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
           amountCents: salaryCents,
           classId: profile.default_restaurant_id,
           hoursHundredths:
-            weeks.reduce(
-              (sum, week) =>
-                sum +
-                week.regularHoursHundredths +
-                (week.dailyOtHoursHundredths ?? 0) +
-                (week.weeklyOtHoursHundredths ?? 0),
-              0,
-            ) || BIWEEKLY_SALARY_HOURS_HUNDREDTHS,
+            secondsToHoursHundredths(salariedSeconds.get(employeeId) ?? 0) || BIWEEKLY_SALARY_HOURS_HUNDREDTHS,
         },
         earnings: [...tipEarnings, ...employeeAdjustments],
       });
@@ -757,7 +787,6 @@ export function buildRunInput(args: BuildRunInputArgs): BuildRunInputResult {
     });
   }
 
-  const workweekIds = workweekIdsForPeriod(splitSettings);
   return {
     input: {
       checkDate: args.checkDate,
