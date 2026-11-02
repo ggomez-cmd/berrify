@@ -257,6 +257,52 @@ describe("buildRunInput", () => {
     expect(built.warnings.some((row) => row.includes("meal break"))).toBe(true);
   });
 
+  it("leaves out employees and meal warnings that only come from overtime lookback shifts", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1" }), profile({ id: "p2", employee_id: "E2" })],
+      payRates: [
+        rate({ id: "r1", employee_id: "E1", rate_cents: 1500, effective_from: "2026-01-01" }),
+        rate({ id: "r2", employee_id: "E2", rate_cents: 1500, effective_from: "2026-01-01" }),
+      ],
+      shifts: [
+        shift({ id: "s1", employeeId: "E1", ymd: "2026-10-13", start: "09:00:00", end: "13:00:00" }),
+        shift({ id: "s2", employeeId: "E2", ymd: "2026-10-08", start: "08:00:00", end: "16:00:00" }),
+      ],
+      tips: [{ employeeId: "E2", workweekId: "2026-10-11", tipsCents: 0 }],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.employees.map((row) => row.employeeId)).toEqual(["E1"]);
+    expect(built.warnings.some((row) => row.includes("meal break"))).toBe(false);
+  });
+
+  it("charges tips in a week with no shifts and adjustments with no restaurant to the default restaurant", () => {
+    const home = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1", is_tipped: true, default_restaurant_id: home })],
+      payRates: [rate({ id: "r1", employee_id: "E1", rate_cents: 1050, effective_from: "2026-01-01" })],
+      shifts: [shift({ id: "s1", employeeId: "E1", ymd: "2026-10-13", start: "09:00:00", end: "13:00:00" })],
+      tips: [{ employeeId: "E1", workweekId: "2026-10-18", tipsCents: 8_000 }],
+      adjustments: [{ employeeId: "E1", amountCents: 5_000, reason: "Bonus" }],
+    });
+    expect(built.errors).toEqual([]);
+    const employee = built.input.employees[0];
+    expect(employee?.hourlyWeeks?.find((row) => row.workweekId === "2026-10-18")?.classId).toBe(home);
+    expect(employee?.hourlyWeeks?.find((row) => row.workweekId === "2026-10-11")?.classId).toBe(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(employee?.earnings?.find((row) => row.kind === "adjustment")?.classId).toBe(home);
+  });
+
   it("gives salaried employees with no punches 80 hours", () => {
     const built = buildRunInput({
       checkDate: FIXTURE_A_CHECK_DATE,
