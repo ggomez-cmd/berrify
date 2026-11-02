@@ -34,3 +34,36 @@ export function readableIssue(
     })
     .replace(BARE_ID, (id) => employeeNames[id.toLowerCase()] ?? restaurantNames[id.toLowerCase()] ?? id);
 }
+
+const SHIFT_WARNING = /^Employee (\S+) shift \S+: (.+)$/;
+
+export type ShiftWarningGroup = {
+  message: string;
+  shiftCount: number;
+  employees: Array<{ employeeId: string; shiftCount: number }>;
+};
+
+// Per-shift warnings (meal breaks) can run to dozens a period, so show one line per kind with counts.
+export function groupShiftWarnings(warnings: string[]): { groups: ShiftWarningGroup[]; other: string[] } {
+  const groups = new Map<string, Map<string, number>>();
+  const other: string[] = [];
+  for (const warning of warnings) {
+    const match = warning.match(SHIFT_WARNING);
+    if (!match) {
+      other.push(warning);
+      continue;
+    }
+    const [, employeeId, message] = match as unknown as [string, string, string];
+    const byEmployee = groups.get(message) ?? new Map<string, number>();
+    byEmployee.set(employeeId, (byEmployee.get(employeeId) ?? 0) + 1);
+    groups.set(message, byEmployee);
+  }
+  return {
+    groups: [...groups].map(([message, byEmployee]) => ({
+      message: message.charAt(0).toUpperCase() + message.slice(1),
+      shiftCount: [...byEmployee.values()].reduce((sum, count) => sum + count, 0),
+      employees: [...byEmployee].map(([employeeId, shiftCount]) => ({ employeeId, shiftCount })),
+    })),
+    other,
+  };
+}

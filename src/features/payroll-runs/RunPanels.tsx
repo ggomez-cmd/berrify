@@ -3,7 +3,7 @@ import { Card } from "../../components/ui/card";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { costPerBusiness, summarizeRun } from "../../lib/payroll/reports";
 import type { PayrollCheck, PayrollRunResult } from "../../lib/payroll-engine/types";
-import { formatCents, formatHoursHundredths, readableIssue } from "./format";
+import { formatCents, formatHoursHundredths, groupShiftWarnings, readableIssue } from "./format";
 
 export function IssuesPanel({
   errors,
@@ -17,6 +17,7 @@ export function IssuesPanel({
   restaurantNames: Record<string, string>;
 }) {
   if (errors.length === 0 && warnings.length === 0) return null;
+  const grouped = groupShiftWarnings(warnings);
   return (
     <div className="grid gap-3">
       {errors.length > 0 ? (
@@ -37,7 +38,22 @@ export function IssuesPanel({
             <Badge tone="warn">Warnings</Badge>
           </div>
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
-            {warnings.map((row) => (
+            {grouped.groups.map((group) => (
+              <li key={group.message}>
+                <details>
+                  <summary className="cursor-pointer">
+                    {group.message}: {group.shiftCount} {group.shiftCount === 1 ? "shift" : "shifts"},{" "}
+                    {group.employees.length} {group.employees.length === 1 ? "employee" : "employees"}
+                  </summary>
+                  <p className="mt-1 text-muted">
+                    {group.employees
+                      .map((row) => `${readableIssue(row.employeeId, names, restaurantNames)} (${row.shiftCount})`)
+                      .join(", ")}
+                  </p>
+                </details>
+              </li>
+            ))}
+            {grouped.other.map((row) => (
               <li key={row}>{readableIssue(row, names, restaurantNames)}</li>
             ))}
           </ul>
@@ -60,7 +76,7 @@ export function RunSummaryPanel({
     <div className="grid gap-4">
       <Card>
         <h2 className="text-base font-semibold tracking-tight">Earnings</h2>
-        <Table className="mt-3 min-w-0">
+        <Table fluid className="mt-3">
           <THead>
             <tr>
               <Th>Type</Th>
@@ -83,7 +99,7 @@ export function RunSummaryPanel({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <h2 className="text-base font-semibold tracking-tight">Employee withholdings</h2>
-          <Table className="mt-3 min-w-0">
+          <Table fluid className="mt-3">
             <THead>
               <tr>
                 <Th>Code</Th>
@@ -104,7 +120,7 @@ export function RunSummaryPanel({
         </Card>
         <Card>
           <h2 className="text-base font-semibold tracking-tight">Employer taxes</h2>
-          <Table className="mt-3 min-w-0">
+          <Table fluid className="mt-3">
             <THead>
               <tr>
                 <Th>Code</Th>
@@ -127,7 +143,7 @@ export function RunSummaryPanel({
 
       <Card>
         <h2 className="text-base font-semibold tracking-tight">Total Payroll Liabilities to be Paid or Debited</h2>
-        <Table className="mt-3 min-w-0">
+        <Table fluid className="mt-3">
           <THead>
             <tr>
               <Th>Liability</Th>
@@ -159,7 +175,7 @@ export function RunSummaryPanel({
 
       <Card>
         <h2 className="text-base font-semibold tracking-tight">Cost per business</h2>
-        <Table className="mt-3 min-w-0">
+        <Table fluid className="mt-3">
           <THead>
             <tr>
               <Th>Business</Th>
@@ -271,7 +287,7 @@ export function CheckDetail({
       <p className="mt-1 text-xs font-medium text-muted">
         {check.payType} · check {check.checkDate}
       </p>
-      <Table className="mt-3 min-w-0">
+      <Table fluid className="mt-3">
         <THead>
           <tr>
             <Th>Earning</Th>
