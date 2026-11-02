@@ -73,10 +73,14 @@ alter table public.payroll_employee_profiles
   add constraint payroll_employee_profiles_payment_method_check
   check (payment_method is null or payment_method in ('ach', 'check', 'cash'));
 
+drop function if exists public.save_payroll_employee_setup(uuid, jsonb, jsonb);
+drop function if exists public.save_payroll_employee_setup(uuid, jsonb, jsonb, jsonb);
+
 create or replace function public.save_payroll_employee_setup(
   target_employee_id uuid,
   profile jsonb,
-  rates jsonb
+  rates jsonb,
+  restaurant_salaries jsonb default null
 )
 returns void
 language plpgsql
@@ -86,6 +90,7 @@ as $$
 declare
   emp public.employees;
   rate_row jsonb;
+  salary_row jsonb;
 begin
   select * into emp
   from public.employees
@@ -201,11 +206,36 @@ begin
       (rate_row->>'effective_from')::date
     );
   end loop;
+
+  if restaurant_salaries is not null then
+    if jsonb_typeof(restaurant_salaries) is distinct from 'array' then
+      raise exception 'restaurant_salaries must be a json array';
+    end if;
+
+    delete from public.payroll_restaurant_salaries
+    where employee_id = target_employee_id
+      and org_id = emp.org_id;
+
+    for salary_row in select value from jsonb_array_elements(restaurant_salaries)
+    loop
+      insert into public.payroll_restaurant_salaries (
+        org_id,
+        employee_id,
+        restaurant_id,
+        salary_cents
+      ) values (
+        emp.org_id,
+        target_employee_id,
+        (salary_row->>'restaurant_id')::uuid,
+        (salary_row->>'salary_cents')::bigint
+      );
+    end loop;
+  end if;
 end;
 $$;
 
-revoke all on function public.save_payroll_employee_setup(uuid, jsonb, jsonb) from public, anon;
-grant execute on function public.save_payroll_employee_setup(uuid, jsonb, jsonb) to authenticated;
+revoke all on function public.save_payroll_employee_setup(uuid, jsonb, jsonb, jsonb) from public, anon;
+grant execute on function public.save_payroll_employee_setup(uuid, jsonb, jsonb, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Pay schedules: one per restaurant
@@ -242,6 +272,47 @@ create policy payroll_pay_schedules_admin on public.payroll_pay_schedules
   with check (public.has_org_role(org_id, array['admin']));
 
 grant select, insert, update, delete on public.payroll_pay_schedules to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Restaurant salaries: one extra salary per restaurant besides the profile
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.payroll_restaurant_salaries (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations (id) on delete cascade,
+  employee_id uuid not null,
+  restaurant_id uuid not null,
+  salary_cents bigint not null check (salary_cents > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint payroll_restaurant_salaries_employee_restaurant_uidx
+    unique (employee_id, restaurant_id),
+  constraint payroll_restaurant_salaries_employee_org_fkey
+    foreign key (org_id, employee_id) references public.employees (org_id, id) on delete cascade,
+  constraint payroll_restaurant_salaries_restaurant_org_fkey
+    foreign key (org_id, restaurant_id) references public.restaurants (org_id, id) on delete restrict
+);
+
+create index if not exists payroll_restaurant_salaries_org_id_idx
+  on public.payroll_restaurant_salaries (org_id);
+create index if not exists payroll_restaurant_salaries_employee_id_idx
+  on public.payroll_restaurant_salaries (employee_id);
+create index if not exists payroll_restaurant_salaries_restaurant_id_idx
+  on public.payroll_restaurant_salaries (restaurant_id);
+
+drop trigger if exists payroll_restaurant_salaries_set_updated_at on public.payroll_restaurant_salaries;
+create trigger payroll_restaurant_salaries_set_updated_at
+  before update on public.payroll_restaurant_salaries
+  for each row execute function public.set_updated_at();
+
+alter table public.payroll_restaurant_salaries enable row level security;
+
+drop policy if exists payroll_restaurant_salaries_admin on public.payroll_restaurant_salaries;
+create policy payroll_restaurant_salaries_admin on public.payroll_restaurant_salaries
+  for all using (public.has_org_role(org_id, array['admin']))
+  with check (public.has_org_role(org_id, array['admin']));
+
+grant select, insert, update, delete on public.payroll_restaurant_salaries to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Clover names: optional restaurant scope
