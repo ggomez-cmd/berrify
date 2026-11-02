@@ -15,7 +15,7 @@ export type EmployeePayType = "payroll" | "cash";
 
 export type SwhMethod = "annualized" | "biweekly_table";
 
-export type PayFrequency = "biweekly";
+export type PayFrequency = "weekly" | "biweekly";
 
 export type TaxCode =
   | "DIE"
@@ -101,6 +101,7 @@ export type EmployeePayInput = {
   weeklyOtMultiplierPpm?: PartsPerMillion;
   youngWorkerExempt?: boolean;
   additionalWithholdingCents?: Cents;
+  fixedSwhCents?: Cents;
   exemption?: ExemptionInput;
   openingYtd?: OpeningYtd;
   earnings?: EarningsLineInput[];

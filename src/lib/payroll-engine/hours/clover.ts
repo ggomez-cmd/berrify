@@ -427,6 +427,7 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
     const baseId = `clover:${employeeId}:${name}:${inDate}T${inTimeText}`;
     const used = (usedShiftIds.get(baseId) ?? 0) + 1;
     usedShiftIds.set(baseId, used);
+    const reportedHours = parseHoursCell(cell(row, columns.paidHours));
     const shift: WorkedShift = {
       id: used === 1 ? baseId : `${baseId}:${used}`,
       employeeId,
@@ -436,6 +437,7 @@ export function parseCloverShifts(input: CloverParseInput): CloverParseResult {
       endedAt: isoFromSeconds(end),
       breaks,
       source: "clover",
+      ...(reportedHours !== null && reportedHours >= 0 ? { reportedWorkedSeconds: Math.round(reportedHours * 3600) } : {}),
     };
     parsed.shifts.push(shift);
     parsed.parsedSeconds += workedIntervals(shift).reduce((sum, interval) => sum + (interval.end - interval.start), 0);

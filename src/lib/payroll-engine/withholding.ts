@@ -16,6 +16,8 @@ export type SwhInput = {
 
 export function periodsPerYear(payFrequency: PayFrequency, schedule: PrTaxSchedule): number {
   switch (payFrequency) {
+    case "weekly":
+      return schedule.payPeriodsPerYear.weekly;
     case "biweekly":
       return schedule.payPeriodsPerYear.biweekly;
     default: {
@@ -102,6 +104,9 @@ export function computeSwh(input: SwhInput, schedule: PrTaxSchedule): Cents {
         schedule,
       });
     case "biweekly_table":
+      if (input.payFrequency === "weekly") {
+        throw new Error("biweekly_table SWH cannot be used with weekly pay frequency");
+      }
       return computeBiweeklyTableSwh({
         periodGrossCents: input.periodGrossCents,
         biweeklyExemptionCents: input.exemption.biweeklyCents,

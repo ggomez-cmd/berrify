@@ -22,6 +22,7 @@ export type PrTaxSchedule = {
   id: string;
   effectiveFrom: string;
   payPeriodsPerYear: {
+    weekly: number;
     biweekly: number;
   };
   employee: {
@@ -76,6 +77,7 @@ export const PR_2026: PrTaxSchedule = {
   id: "pr-2026",
   effectiveFrom: "2026-01-01",
   payPeriodsPerYear: {
+    weekly: 52,
     biweekly: 26,
   },
   employee: {

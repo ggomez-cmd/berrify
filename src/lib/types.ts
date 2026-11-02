@@ -487,6 +487,9 @@ export type PayrollEmployerSettingsRow = {
   daily_ot_mode: DailyWindowMode;
   workweek_start_day: number;
   time_zone: string;
+  punch_rounding?: "none" | "hundredth_hour";
+  meal_deduct_after_minutes?: number | null;
+  meal_deduct_minutes?: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -513,6 +516,7 @@ export type PayrollEmployeeProfileRow = {
   biweekly_exemption_override_cents: number | null;
   young_worker_exempt: boolean;
   additional_withholding_cents: number;
+  fixed_swh_cents?: number | null;
   r41_effective_date: string | null;
   notes: string | null;
   created_at: string;

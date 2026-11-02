@@ -154,6 +154,9 @@ function invalidMultipliers(employee: EmployeePayInput): string | null {
   return null;
 }
 
+// Overtime pay for a period line before rounding, in cents × PPM per 100 hours-hundredths, keyed by the line.
+const overtimeExact = new WeakMap<EarningsLine, { exact: bigint; baseRateCents: number }>();
+
 function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, schedule: PrTaxSchedule): EarningsLine[] {
   const isTipped = employee.isTipped === true;
   const cashRateCents = week.rateCents;
@@ -192,6 +195,15 @@ function hourlyWeekLines(week: HourlyWeekInput, employee: EmployeePayInput, sche
       overtimeHourlyRateCents({ isTipped, regularRateCents: week.rateCents, cashRateCents, multiplierPpm, schedule }),
       overtimeAmountCents({ isTipped, rateCents: week.rateCents, multiplierPpm, hoursHundredths, schedule }),
     );
+    const last = lines[lines.length - 1];
+    if (last?.kind === "overtime" && hoursHundredths > 0) {
+      overtimeExact.set(last, {
+        exact:
+          BigInt(hoursHundredths) *
+          overtimeHourlyMicroCents({ isTipped, rateCents: week.rateCents, multiplierPpm, schedule }),
+        baseRateCents: week.rateCents,
+      });
+    }
   }
   if ((week.tipsCents ?? 0) > 0) {
     lines.push({
@@ -232,7 +244,34 @@ function mergeRegularLines(lines: readonly EarningsLine[]): EarningsLine[] {
   for (const line of merged.values()) {
     line.amountCents = amountFromHoursAndRateHalfEven(line.hoursHundredths, line.rateCents ?? 0);
   }
+  // Alchavo prices a rate's regular and overtime hours for the whole period and rounds once, so the
+  // regular line absorbs the cent that per-week overtime rounding would otherwise add or drop.
+  for (const line of merged.values()) {
+    const overtime = out.filter((row) => {
+      const exact = overtimeExact.get(row);
+      return (
+        exact !== undefined &&
+        exact.baseRateCents === line.rateCents &&
+        (row.classId ?? "") === (line.classId ?? "") &&
+        (row.positionId ?? "") === (line.positionId ?? "")
+      );
+    });
+    if (overtime.length === 0) continue;
+    const exact =
+      BigInt(line.hoursHundredths) * BigInt(line.rateCents ?? 0) * PPM +
+      overtime.reduce((sum, row) => sum + (overtimeExact.get(row)?.exact ?? 0n), 0n);
+    const totalCents = roundHalfEvenDiv(exact, 100n * PPM);
+    line.amountCents = totalCents - sumCents(overtime.map((row) => row.amountCents));
+  }
   return out;
+}
+
+function roundHalfEvenDiv(numerator: bigint, denominator: bigint): number {
+  const quotient = numerator / denominator;
+  const twiceRemainder = (numerator % denominator) * 2n;
+  const rounded =
+    twiceRemainder > denominator || (twiceRemainder === denominator && quotient % 2n === 1n) ? quotient + 1n : quotient;
+  return Number(rounded);
 }
 
 function salaryLine(employee: EmployeePayInput, errors: string[]): EarningsLine | null {

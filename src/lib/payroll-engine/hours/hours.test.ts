@@ -250,6 +250,29 @@ describe("splitHours", () => {
     });
   });
 
+  it("clock_in_day keeps an overnight shift on the clock-in date and workweek", () => {
+    const overnight = shift({
+      id: "ow",
+      ymd: "2026-10-10",
+      start: "20:00",
+      endYmd: "2026-10-11",
+      end: "07:00",
+    });
+    const clockInDay = splitHours(
+      [overnight],
+      settings({ dailyWindow: "clock_in_day", periodStart: "2026-10-04", periodEnd: "2026-10-10" }),
+    );
+    expect(clockInDay.errors).toEqual([]);
+    expect(hoursOf(sumAlloc(clockInDay.allocations))).toEqual({ regular: 8, daily: 3, weekly: 0 });
+    expect(clockInDay.allocations.every((row) => row.workweekId === "2026-10-04" && row.payable)).toBe(true);
+
+    const calendar = splitHours(
+      [overnight],
+      settings({ dailyWindow: "calendar_day", periodStart: "2026-10-04", periodEnd: "2026-10-10" }),
+    );
+    expect(hoursOf(sumAlloc(calendar.allocations, true))).toEqual({ regular: 4, daily: 0, weekly: 0 });
+  });
+
   it("overnight shift across midnight and across the workweek boundary", () => {
     const overnight = shift({
       id: "ow",

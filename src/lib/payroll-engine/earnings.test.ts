@@ -279,3 +279,25 @@ describe("regular pay priced on period hours", () => {
     ]);
   });
 });
+
+describe("period rounding of hourly pay", () => {
+  it("rounds a rate's regular and overtime pay once for the period, as Alchavo does", () => {
+    // 66.47 regular + 1.69 overtime at 1x and $10.50 is 68.16 h = $715.68. Rounding week one's
+    // 0.85 h of overtime on its own ($8.925 → $8.93) would give $715.69.
+    const earnings = computeEarnings(
+      {
+        ...payrollBase,
+        dailyOtMultiplierPpm: 1_000_000,
+        hourlyWeeks: [
+          { workweekId: "w1", rateCents: 1_050, regularHoursHundredths: 3_300, dailyOtHoursHundredths: 85 },
+          { workweekId: "w2", rateCents: 1_050, regularHoursHundredths: 3_347, dailyOtHoursHundredths: 84 },
+        ],
+      },
+      PR_2026,
+    );
+    expect(earnings.errors).toEqual([]);
+    const total = earnings.lines.reduce((sum, line) => sum + line.amountCents, 0);
+    expect(total).toBe(71_568);
+    expect(earnings.lines.filter((line) => line.kind === "regular")).toHaveLength(1);
+  });
+});

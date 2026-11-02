@@ -1,0 +1,303 @@
+{
+  "periods": {
+    "Semilla": { "start": "2026-10-05", "end": "2026-10-18", "periodsPerYear": 26, "taxesViaAlchavo": true },
+    "Kane": { "start": "2026-10-12", "end": "2026-10-18", "periodsPerYear": 52, "taxesViaAlchavo": true }
+  },
+  "employees": [
+    {
+      "code": "S01",
+      "restaurant": "Semilla",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1050,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "S02",
+      "restaurant": "Semilla",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1100,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "S03",
+      "restaurant": "Semilla",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1050,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "S05",
+      "restaurant": "Semilla",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1000,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "S06",
+      "restaurant": "Semilla",
+      "payType": "cash",
+      "paymentMethod": "cash",
+      "rateCents": 1300,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "K01",
+      "restaurant": "Kane",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1050,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "K02",
+      "restaurant": "Kane",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 0,
+      "salaryCents": 150000,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": null
+    },
+    {
+      "code": "K03",
+      "restaurant": "Kane",
+      "payType": "payroll",
+      "paymentMethod": "ach",
+      "rateCents": 1500,
+      "salaryCents": null,
+      "annualExemptionCents": 0,
+      "fixedSwhCents": 0
+    }
+  ],
+  "punches": [
+    {
+      "restaurant": "Semilla",
+      "employee": "S01",
+      "in": "2026-10-07T14:57:30",
+      "out": "2026-10-07T22:33:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 759
+    },
+    {
+      "restaurant": "Semilla",
+      "employee": "S02",
+      "in": "2026-10-08T11:00:00",
+      "out": "2026-10-08T15:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 400
+    },
+    {
+      "restaurant": "Semilla",
+      "employee": "S02",
+      "in": "2026-10-08T15:18:00",
+      "out": "2026-10-08T19:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 370
+    },
+    {
+      "restaurant": "Semilla",
+      "employee": "S03",
+      "in": "2026-10-09T10:00:00",
+      "out": "2026-10-09T18:00:00",
+      "breakMinutes": 30,
+      "sheetHoursHundredths": 750
+    },
+    {
+      "restaurant": "Semilla",
+      "employee": "S05",
+      "in": "2026-10-11T20:00:00",
+      "out": "2026-10-12T07:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 1100
+    },
+    {
+      "restaurant": "Semilla",
+      "employee": "S06",
+      "in": "2026-10-13T09:00:00",
+      "out": "2026-10-13T13:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 400
+    },
+    {
+      "restaurant": "Kane",
+      "employee": "K01",
+      "in": "2026-10-13T10:00:00",
+      "out": "2026-10-13T16:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 600
+    },
+    {
+      "restaurant": "Kane",
+      "employee": "K03",
+      "in": "2026-10-14T09:00:00",
+      "out": "2026-10-14T17:00:00",
+      "breakMinutes": 0,
+      "sheetHoursHundredths": 800
+    }
+  ],
+  "days": {
+    "Semilla|S01|2026-10-07": { "dayHoursHundredths": 759, "lunchHundredths": 50, "paidHundredths": 709, "otHundredths": 0 },
+    "Semilla|S02|2026-10-08": { "dayHoursHundredths": 770, "lunchHundredths": 20, "paidHundredths": 750, "otHundredths": 0 },
+    "Semilla|S03|2026-10-09": { "dayHoursHundredths": 750, "lunchHundredths": 0, "paidHundredths": 750, "otHundredths": 0 },
+    "Semilla|S05|2026-10-11": { "dayHoursHundredths": 1100, "lunchHundredths": 50, "paidHundredths": 1050, "otHundredths": 250 },
+    "Semilla|S06|2026-10-13": { "dayHoursHundredths": 400, "lunchHundredths": 0, "paidHundredths": 400, "otHundredths": 0 },
+    "Kane|K01|2026-10-13": { "dayHoursHundredths": 600, "lunchHundredths": 0, "paidHundredths": 600, "otHundredths": 0 },
+    "Kane|K03|2026-10-14": { "dayHoursHundredths": 800, "lunchHundredths": 50, "paidHundredths": 750, "otHundredths": 0 }
+  },
+  "tips": [{ "restaurant": "Semilla", "employee": "S01", "tipsCents": 12000 }],
+  "adjustments": [{ "restaurant": "Kane", "employee": "K01", "amountCents": 25000, "reason": "Allowance" }],
+  "expected": [
+    {
+      "employee": "S01",
+      "restaurant": "Semilla",
+      "regularHundredths": 709,
+      "otHundredths": 0,
+      "hourlyPayCents": 7444,
+      "salaryCents": 0,
+      "tipsCents": 12000,
+      "adjustmentCents": 0,
+      "grossCents": 19444,
+      "ssCents": 1206,
+      "medicareCents": 282,
+      "sdiCents": 58,
+      "prCents": 0,
+      "netCents": 17898,
+      "employer": { "ssCents": 1206, "medicareCents": 282, "futaCents": 117, "sutaCents": 1050, "sinotCents": 58 }
+    },
+    {
+      "employee": "S02",
+      "restaurant": "Semilla",
+      "regularHundredths": 750,
+      "otHundredths": 0,
+      "hourlyPayCents": 8250,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 8250,
+      "ssCents": 512,
+      "medicareCents": 120,
+      "sdiCents": 25,
+      "prCents": 0,
+      "netCents": 7593,
+      "employer": { "ssCents": 512, "medicareCents": 120, "futaCents": 50, "sutaCents": 446, "sinotCents": 25 }
+    },
+    {
+      "employee": "S03",
+      "restaurant": "Semilla",
+      "regularHundredths": 750,
+      "otHundredths": 0,
+      "hourlyPayCents": 7875,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 7875,
+      "ssCents": 488,
+      "medicareCents": 114,
+      "sdiCents": 24,
+      "prCents": 0,
+      "netCents": 7249,
+      "employer": { "ssCents": 488, "medicareCents": 114, "futaCents": 47, "sutaCents": 425, "sinotCents": 24 }
+    },
+    {
+      "employee": "S05",
+      "restaurant": "Semilla",
+      "regularHundredths": 800,
+      "otHundredths": 250,
+      "hourlyPayCents": 10500,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 10500,
+      "ssCents": 651,
+      "medicareCents": 152,
+      "sdiCents": 32,
+      "prCents": 0,
+      "netCents": 9665,
+      "employer": { "ssCents": 651, "medicareCents": 152, "futaCents": 63, "sutaCents": 567, "sinotCents": 32 }
+    },
+    {
+      "employee": "S06",
+      "restaurant": "Semilla",
+      "regularHundredths": 400,
+      "otHundredths": 0,
+      "hourlyPayCents": 5200,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 5200,
+      "ssCents": 0,
+      "medicareCents": 0,
+      "sdiCents": 0,
+      "prCents": 0,
+      "netCents": 5200,
+      "employer": { "ssCents": 0, "medicareCents": 0, "futaCents": 0, "sutaCents": 0, "sinotCents": 0 }
+    },
+    {
+      "employee": "K01",
+      "restaurant": "Kane",
+      "regularHundredths": 600,
+      "otHundredths": 0,
+      "hourlyPayCents": 6300,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 25000,
+      "grossCents": 31300,
+      "ssCents": 1941,
+      "medicareCents": 454,
+      "sdiCents": 94,
+      "prCents": 979,
+      "netCents": 27832,
+      "employer": { "ssCents": 1941, "medicareCents": 454, "futaCents": 188, "sutaCents": 1690, "sinotCents": 94 }
+    },
+    {
+      "employee": "K02",
+      "restaurant": "Kane",
+      "regularHundredths": 0,
+      "otHundredths": 0,
+      "hourlyPayCents": 0,
+      "salaryCents": 150000,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 150000,
+      "ssCents": 9300,
+      "medicareCents": 2175,
+      "sdiCents": 450,
+      "prCents": 26683,
+      "netCents": 111392,
+      "employer": { "ssCents": 9300, "medicareCents": 2175, "futaCents": 900, "sutaCents": 8100, "sinotCents": 450 }
+    },
+    {
+      "employee": "K03",
+      "restaurant": "Kane",
+      "regularHundredths": 750,
+      "otHundredths": 0,
+      "hourlyPayCents": 11250,
+      "salaryCents": 0,
+      "tipsCents": 0,
+      "adjustmentCents": 0,
+      "grossCents": 11250,
+      "ssCents": 698,
+      "medicareCents": 163,
+      "sdiCents": 34,
+      "prCents": 0,
+      "netCents": 10355,
+      "employer": { "ssCents": 698, "medicareCents": 163, "futaCents": 68, "sutaCents": 608, "sinotCents": 34 }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import type { DailyWindowMode } from "../payroll-engine/hours/types";
+import type { DailyWindowMode, MealDeductionPolicy, PunchRounding } from "../payroll-engine/hours/types";
 import type {
   Cents,
   EmployeePayInput,
@@ -31,6 +31,8 @@ export type EmployerSetupSettings = EmployerSettings & {
   dailyOtMode: DailyWindowMode;
   workweekStartDow: number;
   timeZone: string;
+  punchRounding?: PunchRounding;
+  mealDeduction?: MealDeductionPolicy | null;
 };
 
 export type RateLookup = {
@@ -327,6 +329,8 @@ export function employerSettingsFor(
   if (!latest) {
     throw new Error(`No employer settings are effective on ${onDate}`);
   }
+  const afterMinutes = latest.meal_deduct_after_minutes;
+  const deductMinutes = latest.meal_deduct_minutes;
   return {
     sutRateBp: latest.sut_rate_bp,
     swhMethod: latest.swh_method,
@@ -334,6 +338,10 @@ export function employerSettingsFor(
     dailyOtMode: latest.daily_ot_mode,
     workweekStartDow: latest.workweek_start_day,
     timeZone: latest.time_zone,
+    ...(latest.punch_rounding != null ? { punchRounding: latest.punch_rounding } : {}),
+    ...(afterMinutes != null && deductMinutes != null
+      ? { mealDeduction: { afterSeconds: afterMinutes * 60, deductSeconds: deductMinutes * 60 } }
+      : {}),
   };
 }
 
@@ -401,6 +409,7 @@ export function employeePayBase(
     weeklyOtMultiplierPpm: profile.weekly_ot_multiplier_ppm,
     youngWorkerExempt: profile.young_worker_exempt,
     additionalWithholdingCents: profile.additional_withholding_cents,
+    ...(profile.fixed_swh_cents != null ? { fixedSwhCents: profile.fixed_swh_cents } : {}),
     exemption: {
       personal: profile.personal_exemption,
       veteran: profile.veteran,

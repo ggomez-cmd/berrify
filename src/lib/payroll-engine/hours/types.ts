@@ -20,6 +20,8 @@ export type WorkedShift = {
   endedAt: string;
   breaks: ShiftBreak[];
   source: HoursSource;
+  /** Paid time the source reported for this punch (Clover's "Total paid hours"), when it has one. */
+  reportedWorkedSeconds?: number;
 };
 
 export type TimeEntryRow = {
@@ -39,7 +41,33 @@ export type TimeBreakRow = {
   paid: boolean;
 };
 
-export type DailyWindowMode = "rolling_24h" | "calendar_day";
+export type DailyWindowMode = "rolling_24h" | "calendar_day" | "clock_in_day";
+
+export type PunchRounding = "none" | "hundredth_hour";
+
+export type MealDeductionPolicy = {
+  afterSeconds: number;
+  deductSeconds: number;
+};
+
+export type HoursPolicy = {
+  timeZone: string;
+  punchRounding?: PunchRounding;
+  mealDeduction?: MealDeductionPolicy | null;
+};
+
+export type LunchDeduction = {
+  employeeId: string;
+  ymd: string;
+  seconds: number;
+};
+
+export type HoursPolicyResult = {
+  shifts: WorkedShift[];
+  lunchDeductions: LunchDeduction[];
+  warnings: string[];
+  errors: string[];
+};
 
 export type HoursSplitSettings = {
   timeZone: string;
