@@ -57,13 +57,33 @@ function applyPunchRounding(shifts: readonly WorkedShift[], warnings: string[]):
   });
 }
 
+// Time inside the shift that no break (paid or unpaid) covers, so an added break never overlaps one.
+function unbrokenIntervals(shift: WorkedShift): Array<{ start: number; end: number }> {
+  const start = instantSeconds(shift.startedAt);
+  const end = instantSeconds(shift.endedAt);
+  if (start === null || end === null || end <= start) return [];
+  const breaks = shift.breaks
+    .map((row) => ({ start: instantSeconds(row.startedAt), end: instantSeconds(row.endedAt) }))
+    .filter((row): row is { start: number; end: number } => row.start !== null && row.end !== null && row.end > row.start)
+    .sort((a, b) => a.start - b.start);
+  const out: Array<{ start: number; end: number }> = [];
+  let cursor = start;
+  for (const row of breaks) {
+    if (row.start > cursor) out.push({ start: cursor, end: Math.min(row.start, end) });
+    cursor = Math.max(cursor, row.end);
+    if (cursor >= end) break;
+  }
+  if (cursor < end) out.push({ start: cursor, end });
+  return out.filter((row) => row.end > row.start);
+}
+
 function deductFromShift(
   shift: WorkedShift,
   seconds: number,
   type: ShiftBreak["type"] = "meal",
 ): { shift: WorkedShift; remaining: number } {
   if (seconds <= 0) return { shift, remaining: 0 };
-  const intervals = workedIntervals(shift);
+  const intervals = unbrokenIntervals(shift);
   if (intervals.length === 0) return { shift, remaining: seconds };
   const added: ShiftBreak[] = [];
   let remaining = seconds;
@@ -90,6 +110,7 @@ function dayKey(employeeId: string, classId: string, ymd: string): string {
 
 function applyMealDeduction(
   shifts: readonly WorkedShift[],
+  recorded: ReadonlyMap<string, WorkedShift>,
   policy: NonNullable<HoursPolicy["mealDeduction"]>,
   timeZone: string,
   lunchDeductions: LunchDeduction[],
@@ -140,13 +161,15 @@ function applyMealDeduction(
       let earliest = Number.POSITIVE_INFINITY;
       let latest = Number.NEGATIVE_INFINITY;
       let qualifiedWorked = 0;
+      // As on the worksheet, breaks come from the punch times as recorded, not from rounded hours.
       for (const shift of qualifying) {
-        const start = instantSeconds(shift.startedAt);
-        const end = instantSeconds(shift.endedAt);
+        const raw = recorded.get(shift.id) ?? shift;
+        const start = instantSeconds(raw.startedAt);
+        const end = instantSeconds(raw.endedAt);
         if (start === null || end === null) continue;
         earliest = Math.min(earliest, start);
         latest = Math.max(latest, end);
-        qualifiedWorked += workedSecondsOf(shift);
+        qualifiedWorked += workedSecondsOf(raw);
       }
       if (Number.isFinite(earliest) && Number.isFinite(latest)) {
         breakTaken = Math.max(0, latest - earliest - qualifiedWorked);
@@ -202,7 +225,14 @@ export function applyHoursPolicy(shifts: readonly WorkedShift[], policy: HoursPo
     next = applyPunchRounding(next, warnings);
   }
   if (policy.mealDeduction) {
-    next = applyMealDeduction(next, policy.mealDeduction, policy.timeZone, lunchDeductions, errors);
+    next = applyMealDeduction(
+      next,
+      new Map(shifts.map((shift) => [shift.id, shift])),
+      policy.mealDeduction,
+      policy.timeZone,
+      lunchDeductions,
+      errors,
+    );
   }
   return { shifts: next, lunchDeductions, warnings, errors };
 }

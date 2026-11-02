@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyHoursPolicy, roundSecondsToHundredthHour } from "./policy";
 import { workedIntervals } from "./shifts";
+import { splitHours } from "./split";
 import { instantSeconds, isoFromSeconds, utcSecondsFromZoned } from "./time";
 import type { ShiftBreak, WorkedShift } from "./types";
 
@@ -102,6 +103,38 @@ describe("punch rounding", () => {
     const [roundedFirst, roundedSecond] = result.shifts;
     expect(instantSeconds(roundedFirst!.endedAt)).toBeLessThanOrEqual(instantSeconds(roundedSecond!.startedAt)!);
     expect(result.warnings).toEqual(["Shift a could not be rounded to 0.01 h without overlapping another punch"]);
+  });
+
+  it("rounds down around a paid break at the end of the shift without overlapping it", () => {
+    const punch = {
+      ...shift({ id: "paid", ymd: "2026-10-12", start: "08:00:00", end: "16:00:10" }),
+      breaks: [
+        { startedAt: localIso("2026-10-12", "15:45:00"), endedAt: localIso("2026-10-12", "16:00:10"), type: "rest" as const, paid: true },
+      ],
+    };
+    const result = applyHoursPolicy([punch], { timeZone: TZ, punchRounding: "hundredth_hour" });
+    const split = splitHours(result.shifts, {
+      timeZone: TZ,
+      workweekStartDow: 0,
+      workweekStartTime: "00:00",
+      dailyWindow: "clock_in_day",
+      periodStart: "2026-10-11",
+      periodEnd: "2026-10-17",
+    });
+    expect(split.errors).toEqual([]);
+    expect(workedSeconds(result.shifts[0]!)).toBe(800 * 36);
+  });
+
+  it("does not count a rounding adjustment as lunch already taken", () => {
+    // Clover reports 7.98 h for an 8-hour punch with no break; lunch takes the full 0.50 h.
+    const punch = { ...shift({ id: "c", ymd: "2026-10-12", start: "08:00:00", end: "16:00:00" }), reportedWorkedSeconds: 798 * 36 };
+    const result = applyHoursPolicy([punch], {
+      timeZone: TZ,
+      punchRounding: "hundredth_hour",
+      mealDeduction: { afterSeconds: 21_600, deductSeconds: 1_800 },
+    });
+    expect(workedSeconds(result.shifts[0]!)).toBe(748 * 36);
+    expect(result.lunchDeductions).toEqual([{ employeeId: "E1", ymd: "2026-10-12", seconds: 1_800 }]);
   });
 
   it("leaves timestamps unchanged when rounding is off", () => {
