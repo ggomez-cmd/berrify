@@ -31,6 +31,7 @@ type FormState = {
   auto_lunch: boolean;
   meal_deduct_after_minutes: string;
   meal_deduct_minutes: string;
+  meal_deduct_mode: PayrollEmployerSettingsRow["meal_deduct_mode"];
   notes: string;
 };
 
@@ -47,6 +48,7 @@ const empty: FormState = {
   auto_lunch: false,
   meal_deduct_after_minutes: DEFAULT_MEAL_AFTER_MINUTES,
   meal_deduct_minutes: DEFAULT_MEAL_DEDUCT_MINUTES,
+  meal_deduct_mode: "top_up",
   notes: "",
 };
 
@@ -224,6 +226,7 @@ function EmployerSettingsDialog({
           ? String(row.meal_deduct_after_minutes)
           : DEFAULT_MEAL_AFTER_MINUTES,
         meal_deduct_minutes: autoLunch ? String(row.meal_deduct_minutes) : DEFAULT_MEAL_DEDUCT_MINUTES,
+        meal_deduct_mode: row.meal_deduct_mode ?? "top_up",
         notes: row.notes ?? "",
       });
     } else {
@@ -265,6 +268,7 @@ function EmployerSettingsDialog({
           hourly_pay_rounding: values.hourly_pay_rounding,
           meal_deduct_after_minutes: mealAfter,
           meal_deduct_minutes: mealMinutes,
+          meal_deduct_mode: values.meal_deduct_mode,
           notes: values.notes.trim() || null,
         },
       });
@@ -442,6 +446,23 @@ function EmployerSettingsDialog({
                 }
               />
             </Field>
+            <div className="col-span-2">
+              <Field label="When a break was taken" htmlFor="employer-lunch-mode">
+                <Select
+                  id="employer-lunch-mode"
+                  value={values.meal_deduct_mode}
+                  onChange={(e) =>
+                    setValues((current) => ({
+                      ...current,
+                      meal_deduct_mode: e.target.value as FormState["meal_deduct_mode"],
+                    }))
+                  }
+                >
+                  <option value="top_up">Deduct the rest of the lunch</option>
+                  <option value="skip_if_break">Deduct nothing (break of 6 min or more)</option>
+                </Select>
+              </Field>
+            </div>
           </>
         ) : null}
         <div className="col-span-2 rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink">

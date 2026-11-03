@@ -477,6 +477,8 @@ export type PayrollExportLine = {
   created_at: string;
 };
 
+export type MealDeductMode = "top_up" | "skip_if_break";
+
 export type PayrollEmployerSettingsRow = {
   id: string;
   org_id: string;
@@ -491,6 +493,7 @@ export type PayrollEmployerSettingsRow = {
   hourly_pay_rounding: "per_line" | "period";
   meal_deduct_after_minutes: number | null;
   meal_deduct_minutes: number | null;
+  meal_deduct_mode: MealDeductMode;
   notes: string | null;
   created_at: string;
   updated_at: string;

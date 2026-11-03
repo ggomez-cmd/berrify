@@ -53,6 +53,16 @@ alter table public.payroll_employer_settings
     )
   );
 
+-- 'top_up': deduct the lunch minus any break already taken. 'skip_if_break': deduct the whole lunch
+-- unless the day already has a break of 6 minutes or more.
+alter table public.payroll_employer_settings
+  add column if not exists meal_deduct_mode text not null default 'top_up';
+alter table public.payroll_employer_settings
+  drop constraint if exists payroll_employer_settings_meal_deduct_mode_check;
+alter table public.payroll_employer_settings
+  add constraint payroll_employer_settings_meal_deduct_mode_check
+  check (meal_deduct_mode in ('top_up', 'skip_if_break'));
+
 -- ---------------------------------------------------------------------------
 -- Employee profiles: fixed SWH and payment method
 -- ---------------------------------------------------------------------------

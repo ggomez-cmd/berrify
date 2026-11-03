@@ -45,6 +45,7 @@ function employer(
     hourly_pay_rounding: "per_line",
     meal_deduct_after_minutes: null,
     meal_deduct_minutes: null,
+    meal_deduct_mode: "top_up",
     notes: null,
     ...timestamps,
     ...partial,

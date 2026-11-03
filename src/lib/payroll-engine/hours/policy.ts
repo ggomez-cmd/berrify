@@ -7,6 +7,7 @@ export const HUNDREDTH_HOUR_SECONDS = 36;
 // Clover's own paid hours win when they are within 0.02 h of the punch times, as on the payroll worksheet.
 const REPORTED_TOLERANCE_SECONDS = 2 * HUNDREDTH_HOUR_SECONDS;
 const MIN_SHIFT_FOR_BREAK_SECONDS = 6 * 60;
+const MIN_BREAK_SECONDS = 6 * 60;
 
 function cloneShift(shift: WorkedShift): WorkedShift {
   return { ...shift, breaks: shift.breaks.map((row) => ({ ...row })) };
@@ -118,6 +119,31 @@ function dayKey(employeeId: string, classId: string, ymd: string): string {
   return `${employeeId}\t${classId}\t${ymd}`;
 }
 
+// A break is a gap of at least 6 minutes between two punches on the day, or an unpaid break of at
+// least 6 minutes inside one, using the punch times as recorded.
+function hasBreak(group: readonly WorkedShift[], recorded: ReadonlyMap<string, WorkedShift>): boolean {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const shift of group) {
+    const raw = recorded.get(shift.id) ?? shift;
+    const start = instantSeconds(raw.startedAt);
+    const end = instantSeconds(raw.endedAt);
+    if (start === null || end === null) continue;
+    spans.push({ start, end });
+    for (const row of raw.breaks) {
+      const breakStart = instantSeconds(row.startedAt);
+      const breakEnd = instantSeconds(row.endedAt);
+      if (!row.paid && breakStart !== null && breakEnd !== null && breakEnd - breakStart >= MIN_BREAK_SECONDS) return true;
+    }
+  }
+  spans.sort((a, b) => a.start - b.start);
+  let latestEnd = Number.NEGATIVE_INFINITY;
+  for (const span of spans) {
+    if (Number.isFinite(latestEnd) && span.start - latestEnd >= MIN_BREAK_SECONDS) return true;
+    latestEnd = Math.max(latestEnd, span.end);
+  }
+  return false;
+}
+
 function applyMealDeduction(
   shifts: readonly WorkedShift[],
   recorded: ReadonlyMap<string, WorkedShift>,
@@ -187,7 +213,12 @@ function applyMealDeduction(
       }
     }
 
-    const deduction = roundSecondsToHundredthHour(Math.max(0, policy.deductSeconds - breakTaken));
+    const deduction =
+      policy.mode === "skip_if_break"
+        ? hasBreak(group, recorded)
+          ? 0
+          : roundSecondsToHundredthHour(policy.deductSeconds)
+        : roundSecondsToHundredthHour(Math.max(0, policy.deductSeconds - breakTaken));
     if (deduction <= 0) continue;
 
     const chronological = [...group].sort((a, b) => {

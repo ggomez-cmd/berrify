@@ -394,7 +394,13 @@ export function employerSettingsFor(
     ...(latest.punch_rounding != null ? { punchRounding: latest.punch_rounding } : {}),
     ...(latest.hourly_pay_rounding != null ? { hourlyPayRounding: latest.hourly_pay_rounding } : {}),
     ...(afterMinutes != null && deductMinutes != null
-      ? { mealDeduction: { afterSeconds: afterMinutes * 60, deductSeconds: deductMinutes * 60 } }
+      ? {
+          mealDeduction: {
+            afterSeconds: afterMinutes * 60,
+            deductSeconds: deductMinutes * 60,
+            mode: latest.meal_deduct_mode ?? "top_up",
+          },
+        }
       : {}),
   };
 }
