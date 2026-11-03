@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { groupShiftWarnings, readableIssue } from "./format";
+import { groupShiftWarnings, readableIssue, restaurantScopeLabel } from "./format";
 
 const EMP = "3826ed7d-b1e0-4f9b-99ff-8dd36c8dbeaf";
 const REST = "b860ab3d-f509-4dc9-ab63-d5672a69f361";
 const SHIFT = "0bf213f0-6b93-4186-ab55-227ed52c0a3c";
+
+describe("restaurantScopeLabel", () => {
+  it("labels a null restaurant as all restaurants", () => {
+    expect(restaurantScopeLabel(null, { "r-1": "Harbor" })).toBe("All restaurants");
+    expect(restaurantScopeLabel("r-1", { "r-1": "Harbor" })).toBe("Harbor");
+  });
+});
 
 describe("readableIssue", () => {
   const names = { [EMP]: "Cook One" };

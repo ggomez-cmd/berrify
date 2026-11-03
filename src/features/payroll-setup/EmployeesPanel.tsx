@@ -9,14 +9,26 @@ import { STATIONS } from "../../lib/constants";
 import {
   buildPayrollEmployeeSetupProfile,
   buildPayrollPayRateSetupPayloads,
+  buildPayrollRestaurantSalarySetupPayloads,
   centsToDollarInput,
+  dollarsToCents,
   type PayrollEmployeeSetupDraft,
 } from "../../lib/payroll/setup";
 import type { EmployeePayType, PersonalExemptionStatus } from "../../lib/payroll-engine/types";
-import type { Employee, PayrollEmployeeProfileRow, PayrollPayRateRow } from "../../lib/types";
+import type {
+  Employee,
+  PayrollEmployeeProfileRow,
+  PayrollPayRateRow,
+  PayrollRestaurantSalaryRow,
+} from "../../lib/types";
 import { useEmployees } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
-import { usePayrollEmployeeProfiles, usePayrollPayRates, useSavePayrollEmployeeSetup } from "./hooks";
+import {
+  usePayrollEmployeeProfiles,
+  usePayrollPayRates,
+  usePayrollRestaurantSalaries,
+  useSavePayrollEmployeeSetup,
+} from "./hooks";
 
 const EXEMPTIONS: Array<{ id: PersonalExemptionStatus; label: string }> = [
   { id: "none", label: "None" },
@@ -32,6 +44,12 @@ type RateDraft = {
   position: string;
   rate_dollars: string;
   effective_from: string;
+};
+
+type SalaryDraft = {
+  key: string;
+  restaurant_id: string;
+  salary_dollars: string;
 };
 
 const emptyProfile: PayrollEmployeeSetupDraft = {
@@ -60,9 +78,10 @@ export function EmployeesPanel() {
   const { data: employees = [], isLoading, error } = useEmployees();
   const profilesQuery = usePayrollEmployeeProfiles();
   const ratesQuery = usePayrollPayRates();
+  const salariesQuery = usePayrollRestaurantSalaries();
   const { data: restaurants = [] } = useRestaurants();
   const [editing, setEditing] = useState<Employee | null>(null);
-  const setupReady = profilesQuery.isSuccess && ratesQuery.isSuccess;
+  const setupReady = profilesQuery.isSuccess && ratesQuery.isSuccess && salariesQuery.isSuccess;
 
   const profileByEmployee = useMemo(() => {
     const map = new Map<string, PayrollEmployeeProfileRow>();
@@ -88,8 +107,9 @@ export function EmployeesPanel() {
       {error ? <p className="mb-3 text-sm text-danger">{error.message}</p> : null}
       {profilesQuery.error ? <p className="mb-3 text-sm text-danger">{profilesQuery.error.message}</p> : null}
       {ratesQuery.error ? <p className="mb-3 text-sm text-danger">{ratesQuery.error.message}</p> : null}
+      {salariesQuery.error ? <p className="mb-3 text-sm text-danger">{salariesQuery.error.message}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading employees…</p> : null}
-      {!setupReady && !profilesQuery.error && !ratesQuery.error ? (
+      {!setupReady && !profilesQuery.error && !ratesQuery.error && !salariesQuery.error ? (
         <p className="mb-3 text-sm text-muted">Loading payroll profiles and rates…</p>
       ) : null}
       {!isLoading ? (
@@ -154,9 +174,17 @@ export function EmployeesPanel() {
             ? (ratesQuery.data ?? []).filter((row) => row.employee_id === editing.id)
             : []
         }
+        restaurantSalaries={
+          editing && salariesQuery.isSuccess
+            ? (salariesQuery.data ?? []).filter((row) => row.employee_id === editing.id)
+            : []
+        }
         setupReady={setupReady}
         loadError={
-          profilesQuery.error?.message ?? ratesQuery.error?.message ?? null
+          profilesQuery.error?.message ??
+          ratesQuery.error?.message ??
+          salariesQuery.error?.message ??
+          null
         }
         onOpenChange={(open) => {
           if (!open) setEditing(null);
@@ -166,10 +194,11 @@ export function EmployeesPanel() {
   );
 }
 
-function EmployeePayrollDialog({
+export function EmployeePayrollDialog({
   employee,
   profile,
   rates,
+  restaurantSalaries,
   setupReady,
   loadError,
   onOpenChange,
@@ -177,6 +206,7 @@ function EmployeePayrollDialog({
   employee: Employee | null;
   profile: PayrollEmployeeProfileRow | null;
   rates: PayrollPayRateRow[];
+  restaurantSalaries: PayrollRestaurantSalaryRow[];
   setupReady: boolean;
   loadError: string | null;
   onOpenChange: (open: boolean) => void;
@@ -184,7 +214,10 @@ function EmployeePayrollDialog({
   const { data: restaurants = [] } = useRestaurants();
   const save = useSavePayrollEmployeeSetup();
   const [values, setValues] = useState<PayrollEmployeeSetupDraft>(emptyProfile);
+  const [paymentMethod, setPaymentMethod] = useState<"" | "ach" | "check" | "cash">("");
+  const [fixedSwhDollars, setFixedSwhDollars] = useState("");
   const [rateDrafts, setRateDrafts] = useState<RateDraft[]>([]);
+  const [salaryDrafts, setSalaryDrafts] = useState<SalaryDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [ratesDraftReady, setRatesDraftReady] = useState(false);
 
@@ -221,8 +254,14 @@ function EmployeePayrollDialog({
         r41_effective_date: profile.r41_effective_date ?? "",
         notes: profile.notes ?? "",
       });
+      setPaymentMethod(profile.payment_method ?? "");
+      setFixedSwhDollars(
+        profile.fixed_swh_cents == null ? "" : centsToDollarInput(profile.fixed_swh_cents),
+      );
     } else {
       setValues(emptyProfile);
+      setPaymentMethod("");
+      setFixedSwhDollars("");
     }
     setRateDrafts(
       rates.map((row) => ({
@@ -233,9 +272,16 @@ function EmployeePayrollDialog({
         effective_from: row.effective_from,
       })),
     );
+    setSalaryDrafts(
+      restaurantSalaries.map((row) => ({
+        key: row.id,
+        restaurant_id: row.restaurant_id,
+        salary_dollars: centsToDollarInput(row.salary_cents),
+      })),
+    );
     setFormError(null);
     setRatesDraftReady(true);
-  }, [employee, profile, rates, setupReady]);
+  }, [employee, profile, rates, restaurantSalaries, setupReady]);
 
   const canEdit = setupReady && ratesDraftReady;
 
@@ -253,12 +299,34 @@ function EmployeePayrollDialog({
       setFormError(ratePayload.error);
       return;
     }
+    const salaryPayload = buildPayrollRestaurantSalarySetupPayloads(
+      salaryDrafts,
+      values.default_restaurant_id || null,
+    );
+    if (!salaryPayload.ok) {
+      setFormError(salaryPayload.error);
+      return;
+    }
+    let fixedSwhCents: number | null = null;
+    if (fixedSwhDollars.trim()) {
+      const cents = dollarsToCents(fixedSwhDollars);
+      if (cents === null) {
+        setFormError("Fixed PR withholding must look like 1,234.56 with no negatives");
+        return;
+      }
+      fixedSwhCents = cents;
+    }
     try {
       await save.mutateAsync({
         employeeId: employee.id,
-        profile: profilePayload.value,
-        rates: ratePayload.value,
-      });
+        profile: {
+          ...profilePayload.value,
+          payment_method: paymentMethod || null,
+          fixed_swh_cents: fixedSwhCents,
+        },
+          rates: ratePayload.value,
+          restaurantSalaries: salaryPayload.value,
+        });
       onOpenChange(false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not save payroll profile");
@@ -304,7 +372,11 @@ function EmployeePayrollDialog({
           <Select
             id="pay-class"
             value={values.default_restaurant_id}
-            onChange={(e) => setValues((current) => ({ ...current, default_restaurant_id: e.target.value }))}
+            onChange={(e) => {
+              const next = e.target.value;
+              setValues((current) => ({ ...current, default_restaurant_id: next }));
+              setSalaryDrafts((current) => current.filter((row) => row.restaurant_id !== next));
+            }}
           >
             <option value="">None</option>
             {restaurants.map((restaurant) => (
@@ -344,6 +416,34 @@ function EmployeePayrollDialog({
             inputMode="numeric"
             value={values.weekly_ot_multiplier_ppm}
             onChange={(e) => setValues((current) => ({ ...current, weekly_ot_multiplier_ppm: e.target.value }))}
+          />
+        </Field>
+        {Number(values.daily_ot_multiplier_ppm) < 1_500_000 ||
+        Number(values.weekly_ot_multiplier_ppm) < 1_500_000 ? (
+          <div className="col-span-2 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-ink">
+            Puerto Rico law generally requires overtime at a premium; confirm with your accountant.
+          </div>
+        ) : null}
+        <Field label="Payment method" htmlFor="pay-method">
+          <Select
+            id="pay-method"
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value as "" | "ach" | "check" | "cash")}
+          >
+            <option value="">Not set</option>
+            <option value="ach">ACH</option>
+            <option value="check">Check</option>
+            <option value="cash">Cash</option>
+          </Select>
+        </Field>
+        <Field label="Fixed PR withholding per check" htmlFor="pay-fixed-swh">
+          <Input
+            id="pay-fixed-swh"
+            inputMode="decimal"
+            value={fixedSwhDollars}
+            onChange={(e) => setFixedSwhDollars(e.target.value)}
+            aria-label="Fixed PR withholding per check"
+            placeholder="Blank = tax table"
           />
         </Field>
         <Field label="Personal exemption" htmlFor="pay-exemption">
@@ -452,6 +552,94 @@ function EmployeePayrollDialog({
           </Field>
         </div>
       </form>
+
+      <div className="mt-5">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-base font-semibold tracking-tight">Salary at other restaurants</h3>
+          <Button
+            variant="outline"
+            onClick={() =>
+              setSalaryDrafts((current) => [
+                ...current,
+                {
+                  key: `new-salary-${current.length}-${Date.now()}`,
+                  restaurant_id: "",
+                  salary_dollars: "",
+                },
+              ])
+            }
+          >
+            Add salary
+          </Button>
+        </div>
+        <Table>
+          <THead>
+            <tr>
+              <Th>Restaurant</Th>
+              <Th>Salary per check</Th>
+              <Th />
+            </tr>
+          </THead>
+          <tbody>
+            {salaryDrafts.length === 0 ? (
+              <tr>
+                <Td colSpan={3} className="py-6 text-center text-muted">
+                  No extra restaurant salaries. The main salary field pays only at the default restaurant.
+                </Td>
+              </tr>
+            ) : (
+              salaryDrafts.map((draft) => (
+                <tr key={draft.key}>
+                  <Td>
+                    <Select
+                      value={draft.restaurant_id}
+                      aria-label="Salary restaurant"
+                      onChange={(e) =>
+                        setSalaryDrafts((current) =>
+                          current.map((row) =>
+                            row.key === draft.key ? { ...row, restaurant_id: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="">Select restaurant</option>
+                      {restaurants
+                        .filter((restaurant) => restaurant.id !== values.default_restaurant_id)
+                        .map((restaurant) => (
+                          <option key={restaurant.id} value={restaurant.id}>
+                            {restaurant.name}
+                          </option>
+                        ))}
+                    </Select>
+                  </Td>
+                  <Td>
+                    <Input
+                      inputMode="decimal"
+                      value={draft.salary_dollars}
+                      aria-label="Salary per check"
+                      onChange={(e) =>
+                        setSalaryDrafts((current) =>
+                          current.map((row) =>
+                            row.key === draft.key ? { ...row, salary_dollars: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    />
+                  </Td>
+                  <Td>
+                    <Button
+                      variant="subtle"
+                      onClick={() => setSalaryDrafts((current) => current.filter((row) => row.key !== draft.key))}
+                    >
+                      Remove
+                    </Button>
+                  </Td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </Table>
+      </div>
 
       <div className="mt-5">
         <div className="mb-2 flex items-center justify-between">

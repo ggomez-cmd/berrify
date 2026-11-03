@@ -3,6 +3,7 @@ import {
   basisPointsToPercentInput,
   buildPayrollEmployeeSetupProfile,
   buildPayrollPayRateSetupPayloads,
+  buildPayrollRestaurantSalarySetupPayloads,
   centsToDollarInput,
   cloverMappingFrom,
   dollarsToCents,
@@ -40,6 +41,11 @@ function employer(
     daily_ot_mode: "rolling_24h",
     workweek_start_day: 0,
     time_zone: "America/Puerto_Rico",
+    punch_rounding: "none",
+    hourly_pay_rounding: "per_line",
+    meal_deduct_after_minutes: null,
+    meal_deduct_minutes: null,
+    meal_deduct_mode: "top_up",
     notes: null,
     ...timestamps,
     ...partial,
@@ -68,6 +74,8 @@ function profile(
     biweekly_exemption_override_cents: null,
     young_worker_exempt: false,
     additional_withholding_cents: 2500,
+    fixed_swh_cents: null,
+    payment_method: null,
     r41_effective_date: "2026-01-15",
     notes: null,
     ...timestamps,
@@ -93,6 +101,7 @@ function clover(
 ): PayrollCloverNameRow {
   return {
     org_id: "org-1",
+    restaurant_id: null,
     employee_id: null,
     ignored: false,
     ...timestamps,
@@ -120,6 +129,29 @@ describe("money helpers", () => {
   });
 });
 
+describe("buildPayrollRestaurantSalarySetupPayloads", () => {
+  it("requires a restaurant and a salary greater than zero", () => {
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "rest-inlet", salary_dollars: "800.00" }]),
+    ).toEqual({
+      ok: true,
+      value: [{ restaurant_id: "rest-inlet", salary_cents: 80_000 }],
+    });
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "", salary_dollars: "800.00" }]).ok,
+    ).toBe(false);
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads([{ restaurant_id: "rest-inlet", salary_dollars: "0" }]).ok,
+    ).toBe(false);
+    expect(
+      buildPayrollRestaurantSalarySetupPayloads(
+        [{ restaurant_id: "rest-harbor", salary_dollars: "800.00" }],
+        "rest-harbor",
+      ).ok,
+    ).toBe(false);
+  });
+});
+
 describe("employerSettingsFor", () => {
   const rows = [
     employer({ id: "set-2025", effective_from: "2025-01-01", sut_rate_bp: 240, daily_ot_mode: "calendar_day" }),
@@ -135,6 +167,8 @@ describe("employerSettingsFor", () => {
       dailyOtMode: "rolling_24h",
       workweekStartDow: 0,
       timeZone: "America/Puerto_Rico",
+      punchRounding: "none",
+      hourlyPayRounding: "per_line",
     });
     expect(employerSettingsFor(rows, "2025-12-31").sutRateBp).toBe(240);
     expect(employerSettingsFor(rows, "2025-12-31").dailyOtMode).toBe("calendar_day");
@@ -355,6 +389,50 @@ describe("cloverMappingFrom", () => {
       "Jordan H": { employeeId: "emp-jordan", positionKey: "unmapped", classId: "unmapped" },
     });
     expect(result.ignore).toEqual(["Training Till"]);
+  });
+
+  it("prefers a restaurant-specific Clover name over an org-wide row", () => {
+    const result = cloverMappingFrom(
+      [
+        clover({ id: "c-org", clover_name: "Jordan H", employee_id: "emp-org" }),
+        clover({
+          id: "c-kane",
+          clover_name: "Jordan H",
+          employee_id: "emp-kane",
+          restaurant_id: "rest-kane",
+        }),
+        clover({
+          id: "c-semilla",
+          clover_name: "Jordan H",
+          employee_id: "emp-semilla",
+          restaurant_id: "rest-semilla",
+        }),
+      ],
+      "rest-kane",
+    );
+    expect(result.mapping["Jordan H"]?.employeeId).toBe("emp-kane");
+  });
+
+  it("uses only org-wide names when no restaurant is given", () => {
+    const result = cloverMappingFrom([
+      clover({ id: "c-org", clover_name: "Pat", employee_id: "emp-org" }),
+      clover({ id: "c-semilla", clover_name: "Pat", employee_id: "emp-semilla", restaurant_id: "rest-semilla" }),
+      clover({ id: "c-kane", clover_name: "Till", ignored: true, restaurant_id: "rest-kane" }),
+    ]);
+    expect(result.mapping).toEqual({ Pat: { employeeId: "emp-org", positionKey: "unmapped", classId: "unmapped" } });
+    expect(result.ignore).toEqual([]);
+  });
+
+  it("lets a restaurant mapping replace an org-wide ignored name", () => {
+    const result = cloverMappingFrom(
+      [
+        clover({ id: "c-org", clover_name: "Pat", ignored: true }),
+        clover({ id: "c-semilla", clover_name: "Pat", employee_id: "emp-semilla", restaurant_id: "rest-semilla" }),
+      ],
+      "rest-semilla",
+    );
+    expect(result.mapping.Pat?.employeeId).toBe("emp-semilla");
+    expect(result.ignore).toEqual([]);
   });
 });
 

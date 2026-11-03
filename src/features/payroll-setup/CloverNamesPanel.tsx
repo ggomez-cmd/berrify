@@ -7,16 +7,19 @@ import { Field } from "../../components/ui/label";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import type { PayrollCloverNameRow } from "../../lib/types";
 import { useEmployees } from "../employees/hooks";
+import { useRestaurants } from "../invoices/hooks";
 import { useDeletePayrollCloverName, usePayrollCloverNames, useUpsertPayrollCloverName } from "./hooks";
 
 export function CloverNamesPanel() {
   const { data: rows = [], isLoading, error } = usePayrollCloverNames();
   const { data: employees = [] } = useEmployees();
+  const { data: restaurants = [] } = useRestaurants();
   const remove = useDeletePayrollCloverName();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PayrollCloverNameRow | null>(null);
 
   const nameById = new Map(employees.filter((row) => row.active).map((row) => [row.id, row.full_name]));
+  const restaurantById = new Map(restaurants.map((row) => [row.id, row.name]));
 
   return (
     <div>
@@ -37,6 +40,7 @@ export function CloverNamesPanel() {
           <THead>
             <tr>
               <Th>Clover name</Th>
+              <Th>Restaurant</Th>
               <Th>Mapped employee</Th>
               <Th>Status</Th>
               <Th />
@@ -45,7 +49,7 @@ export function CloverNamesPanel() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <Td colSpan={4} className="py-10 text-center text-muted">
+                <Td colSpan={5} className="py-10 text-center text-muted">
                   No Clover names yet.
                 </Td>
               </tr>
@@ -53,6 +57,11 @@ export function CloverNamesPanel() {
               rows.map((row) => (
                 <tr key={row.id}>
                   <Td className="font-medium">{row.clover_name}</Td>
+                  <Td>
+                    {row.restaurant_id
+                      ? (restaurantById.get(row.restaurant_id) ?? row.restaurant_id)
+                      : "Any restaurant"}
+                  </Td>
                   <Td>{row.employee_id ? (nameById.get(row.employee_id) ?? row.employee_id) : "—"}</Td>
                   <Td>
                     <Badge tone={row.ignored ? "neutral" : "ok"}>{row.ignored ? "Ignored" : "Mapped"}</Badge>
@@ -91,6 +100,7 @@ export function CloverNamesPanel() {
         onOpenChange={setOpen}
         row={editing}
         employees={employees.filter((row) => row.active)}
+        restaurants={restaurants}
       />
     </div>
   );
@@ -101,15 +111,18 @@ function CloverNameDialog({
   onOpenChange,
   row,
   employees,
+  restaurants,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   row: PayrollCloverNameRow | null;
   employees: Array<{ id: string; full_name: string }>;
+  restaurants: Array<{ id: string; name: string }>;
 }) {
   const upsert = useUpsertPayrollCloverName();
   const [cloverName, setCloverName] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  const [restaurantId, setRestaurantId] = useState("");
   const [ignored, setIgnored] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -117,6 +130,7 @@ function CloverNameDialog({
     if (!open) return;
     setCloverName(row?.clover_name ?? "");
     setEmployeeId(row?.employee_id ?? "");
+    setRestaurantId(row?.restaurant_id ?? "");
     setIgnored(row?.ignored ?? false);
     setFormError(null);
   }, [open, row]);
@@ -137,6 +151,7 @@ function CloverNameDialog({
         id: row?.id,
         clover_name: cloverName,
         employee_id: ignored ? null : employeeId,
+        restaurant_id: restaurantId || null,
         ignored,
       });
       onOpenChange(false);
@@ -160,6 +175,20 @@ function CloverNameDialog({
             value={cloverName}
             onChange={(e) => setCloverName(e.target.value)}
           />
+        </Field>
+        <Field label="Restaurant" htmlFor="clover-restaurant">
+          <Select
+            id="clover-restaurant"
+            value={restaurantId}
+            onChange={(e) => setRestaurantId(e.target.value)}
+          >
+            <option value="">Any restaurant</option>
+            {restaurants.map((restaurant) => (
+              <option key={restaurant.id} value={restaurant.id}>
+                {restaurant.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Employee" htmlFor="clover-employee">
           <Select

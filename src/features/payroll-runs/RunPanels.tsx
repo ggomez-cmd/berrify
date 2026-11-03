@@ -1,8 +1,10 @@
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
 import { Table, THead, Td, Th } from "../../components/ui/table";
+import { depositSummary } from "../../lib/payroll/deposit";
 import { costPerBusiness, summarizeRun } from "../../lib/payroll/reports";
 import type { PayrollCheck, PayrollRunResult } from "../../lib/payroll-engine/types";
+import type { PayrollEmployeeProfileRow } from "../../lib/types";
 import { formatCents, formatHoursHundredths, groupShiftWarnings, readableIssue } from "./format";
 
 export function IssuesPanel({
@@ -215,6 +217,91 @@ function Kpi({ label, value }: { label: string; value: string }) {
     <Card>
       <p className="text-xs font-medium text-muted">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">{value}</p>
+    </Card>
+  );
+}
+
+export function DepositSummaryPanel({
+  checks,
+  profiles,
+  taxesViaProvider,
+  names,
+}: {
+  checks: readonly PayrollCheck[];
+  profiles: readonly Pick<PayrollEmployeeProfileRow, "employee_id" | "payment_method" | "pay_type">[];
+  taxesViaProvider: boolean;
+  names: Readonly<Record<string, string>>;
+}) {
+  const summary = depositSummary({
+    checks: checks.map((check) => ({
+      employeeId: check.employeeId,
+      payType: check.payType,
+      netCents: check.netCents,
+      employeeDeductionCents: check.employeeDeductionCents,
+      employerTaxCents: check.employerTaxCents,
+    })),
+    profiles,
+    taxesViaProvider,
+  });
+  const missingMethod = profiles.filter(
+    (row) => row.pay_type === "payroll" && row.payment_method == null,
+  );
+
+  return (
+    <Card>
+      <h2 className="text-base font-semibold tracking-tight">Deposit summary</h2>
+      <Table fluid className="mt-3">
+        <THead>
+          <tr>
+            <Th>Item</Th>
+            <Th>Amount</Th>
+          </tr>
+        </THead>
+        <tbody>
+          <tr>
+            <Td>Net by ACH</Td>
+            <Td>{formatCents(summary.netByMethod.achCents)}</Td>
+          </tr>
+          <tr>
+            <Td>Net by Check</Td>
+            <Td>{formatCents(summary.netByMethod.checkCents)}</Td>
+          </tr>
+          <tr>
+            <Td>Net by Cash</Td>
+            <Td>{formatCents(summary.netByMethod.cashCents)}</Td>
+          </tr>
+          <tr>
+            <Td>Net unassigned</Td>
+            <Td>{formatCents(summary.netByMethod.unassignedCents)}</Td>
+          </tr>
+          <tr>
+            <Td>Employee taxes withheld</Td>
+            <Td>{formatCents(summary.employeeTaxesCents)}</Td>
+          </tr>
+          <tr>
+            <Td>Employer taxes</Td>
+            <Td>{formatCents(summary.employerTaxesCents)}</Td>
+          </tr>
+          <tr>
+            <Td className="font-semibold">Payroll provider funding</Td>
+            <Td className="font-semibold">{formatCents(summary.providerFundingCents)}</Td>
+          </tr>
+        </tbody>
+      </Table>
+      {taxesViaProvider ? null : (
+        <p className="mt-3 text-sm text-ink">
+          Net pay only — taxes for this restaurant are not paid through the provider
+        </p>
+      )}
+      {missingMethod.length > 0 ? (
+        <div className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-ink">
+          {missingMethod.length === 1 ? "One payroll employee has no payment method: " : "Payroll employees with no payment method: "}
+          {missingMethod
+            .map((row) => names[row.employee_id] ?? row.employee_id)
+            .join(", ")}
+          .
+        </div>
+      ) : null}
     </Card>
   );
 }

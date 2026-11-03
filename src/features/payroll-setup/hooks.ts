@@ -3,19 +3,24 @@ import { useAuth } from "../../auth/auth-context";
 import { isAdmin } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import { toThrownError } from "../../lib/thrown-error";
+import type { PayFrequency } from "../../lib/payroll-engine/types";
 import type {
   PayrollCloverNameRow,
   PayrollEmployeeProfileRow,
   PayrollEmployerSettingsRow,
   PayrollOpeningBalanceWithTaxes,
   PayrollPayRateRow,
+  PayrollPayScheduleRow,
+  PayrollRestaurantSalaryRow,
 } from "../../lib/types";
 import {
   findDuplicatePayRateError,
+  findDuplicateRestaurantSalaryError,
   toOpeningBalanceImportPayloads,
   type OpeningBalanceImportRow,
   type PayrollEmployeeSetupProfilePayload,
   type PayrollPayRateSetupPayload,
+  type PayrollRestaurantSalarySetupPayload,
 } from "../../lib/payroll/setup";
 
 function requireOrg(orgId: string | undefined): string {
@@ -111,6 +116,23 @@ export function usePayrollPayRates() {
   });
 }
 
+export function usePayrollRestaurantSalaries() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_restaurant_salaries", org?.id],
+    enabled: Boolean(org?.id) && isAdmin(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_restaurant_salaries")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("created_at", { ascending: true });
+      if (error) throw toThrownError(error, "Could not load restaurant salaries");
+      return (data ?? []) as PayrollRestaurantSalaryRow[];
+    },
+  });
+}
+
 export function useSavePayrollEmployeeSetup() {
   const qc = useQueryClient();
   return useMutation({
@@ -118,19 +140,25 @@ export function useSavePayrollEmployeeSetup() {
       employeeId: string;
       profile: PayrollEmployeeSetupProfilePayload;
       rates: PayrollPayRateSetupPayload[];
+      restaurantSalaries?: PayrollRestaurantSalarySetupPayload[];
     }) => {
       const duplicate = findDuplicatePayRateError(input.rates);
       if (duplicate) throw new Error(duplicate);
+      const salaries = input.restaurantSalaries ?? [];
+      const duplicateSalary = findDuplicateRestaurantSalaryError(salaries);
+      if (duplicateSalary) throw new Error(duplicateSalary);
       const { error } = await supabase.rpc("save_payroll_employee_setup", {
         target_employee_id: input.employeeId,
         profile: input.profile,
         rates: input.rates,
+        restaurant_salaries: salaries,
       });
       if (error) throw toThrownError(error, "Could not save payroll profile");
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["payroll_employee_profiles"] });
       void qc.invalidateQueries({ queryKey: ["payroll_pay_rates"] });
+      void qc.invalidateQueries({ queryKey: ["payroll_restaurant_salaries"] });
     },
   });
 }
@@ -185,6 +213,59 @@ export function useDeletePayrollOpeningBalance() {
   });
 }
 
+export function usePayrollPaySchedules() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_pay_schedules", org?.id],
+    enabled: Boolean(org?.id) && isAdmin(role),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_pay_schedules")
+        .select("*")
+        .eq("org_id", org!.id)
+        .order("created_at", { ascending: true });
+      if (error) throw toThrownError(error, "Could not load pay schedules");
+      return (data ?? []) as PayrollPayScheduleRow[];
+    },
+  });
+}
+
+export function useUpsertPayrollPaySchedule() {
+  const { org } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id?: string;
+      restaurant_id: string;
+      frequency: PayFrequency;
+      anchor_period_start: string;
+      check_lag_days: number;
+      taxes_via_provider: boolean;
+    }) => {
+      const orgId = requireOrg(org?.id);
+      const payload = {
+        org_id: orgId,
+        restaurant_id: input.restaurant_id,
+        frequency: input.frequency,
+        anchor_period_start: input.anchor_period_start,
+        check_lag_days: input.check_lag_days,
+        taxes_via_provider: input.taxes_via_provider,
+      };
+      if (input.id) {
+        const { error } = await supabase.from("payroll_pay_schedules").update(payload).eq("id", input.id);
+        if (error) throw toThrownError(error, "Could not save pay schedule");
+        return input.id;
+      }
+      const { data, error } = await supabase.from("payroll_pay_schedules").insert(payload).select("id").single();
+      if (error || !data) throw toThrownError(error, "Could not save pay schedule");
+      return data.id as string;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["payroll_pay_schedules"] });
+    },
+  });
+}
+
 export function usePayrollCloverNames() {
   const { org, role } = useAuth();
   return useQuery({
@@ -210,6 +291,7 @@ export function useUpsertPayrollCloverName() {
       id?: string;
       clover_name: string;
       employee_id: string | null;
+      restaurant_id: string | null;
       ignored: boolean;
     }) => {
       const orgId = requireOrg(org?.id);
@@ -217,6 +299,7 @@ export function useUpsertPayrollCloverName() {
         org_id: orgId,
         clover_name: input.clover_name.trim(),
         employee_id: input.ignored ? null : input.employee_id,
+        restaurant_id: input.restaurant_id,
         ignored: input.ignored,
       };
       if (input.id) {

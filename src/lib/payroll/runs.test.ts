@@ -14,6 +14,8 @@ import type {
   PayrollEmployeeProfileRow,
   PayrollEmployerSettingsRow,
   PayrollPayRateRow,
+  PayrollPayScheduleRow,
+  PayrollRestaurantSalaryRow,
 } from "../types";
 import type { PayrollRunWithChecks } from "../types";
 import { summarizeRun } from "./reports";
@@ -66,6 +68,11 @@ function employer(partial: Partial<PayrollEmployerSettingsRow> = {}): PayrollEmp
     daily_ot_mode: "rolling_24h",
     workweek_start_day: 0,
     time_zone: "America/Puerto_Rico",
+    punch_rounding: "none",
+    hourly_pay_rounding: "per_line",
+    meal_deduct_after_minutes: null,
+    meal_deduct_minutes: null,
+    meal_deduct_mode: "top_up",
     notes: null,
     ...timestamps,
     ...partial,
@@ -94,6 +101,8 @@ function profile(
     biweekly_exemption_override_cents: null,
     young_worker_exempt: false,
     additional_withholding_cents: 0,
+    fixed_swh_cents: null,
+    payment_method: null,
     r41_effective_date: null,
     notes: null,
     ...timestamps,
@@ -110,6 +119,33 @@ function rate(
     position: null,
     ...timestamps,
     ...partial,
+  };
+}
+
+function restaurantSalary(
+  partial: Partial<PayrollRestaurantSalaryRow> &
+    Pick<PayrollRestaurantSalaryRow, "id" | "employee_id" | "restaurant_id" | "salary_cents">,
+): PayrollRestaurantSalaryRow {
+  return {
+    org_id: "org-1",
+    ...timestamps,
+    ...partial,
+  };
+}
+
+function schedule(
+  restaurantId: string,
+  frequency: PayrollPayScheduleRow["frequency"] = "weekly",
+): PayrollPayScheduleRow {
+  return {
+    id: `sched-${restaurantId}`,
+    org_id: "org-1",
+    restaurant_id: restaurantId,
+    frequency,
+    anchor_period_start: "2026-10-12",
+    check_lag_days: 5,
+    taxes_via_provider: true,
+    ...timestamps,
   };
 }
 
@@ -213,6 +249,100 @@ describe("ytdFromHistory", () => {
     expect(amountOn(check, "SUT", "employer")).toBe(0);
     expect(amountOn(check, "FED-FUT", "employer")).toBe(0);
     expect(amountOn(check, "DIE")).toBe(0);
+  });
+
+  it("counts employee and employer sides of one check once, and two same-date restaurant checks separately", () => {
+    const oneCheck: YtdPriorCheckTax[] = [
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-kane",
+        runId: "run-kane",
+        status: "approved",
+        side: "employee",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-kane",
+        runId: "run-kane",
+        status: "approved",
+        side: "employer",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+    ];
+    expect(ytdFromHistory([], oneCheck, [], 2026).get("E1")?.taxableCents["FED-OASDI"]).toBe(100_000);
+
+    const twoRestaurantChecks: YtdPriorCheckTax[] = [
+      ...oneCheck,
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-semilla",
+        runId: "run-semilla",
+        status: "approved",
+        side: "employee",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+      {
+        employeeId: "E1",
+        taxYear: 2026,
+        checkDate: "2026-10-09",
+        checkId: "check-semilla",
+        runId: "run-semilla",
+        status: "approved",
+        side: "employer",
+        taxCode: "FED-OASDI",
+        taxableCents: 100_000,
+        amountCents: 6_200,
+      },
+    ];
+    const ytd = ytdFromHistory(
+      [
+        {
+          employeeId: "E1",
+          taxYear: 2026,
+          grossCents: 18_300_000,
+          taxes: [
+            {
+              taxCode: "FED-OASDI",
+              taxableCents: 18_300_000,
+              withheldCents: 1_134_600,
+              employerCents: 1_134_600,
+            },
+          ],
+        },
+      ],
+      twoRestaurantChecks,
+      [],
+      2026,
+    ).get("E1");
+    expect(ytd?.taxableCents["FED-OASDI"]).toBe(18_500_000);
+
+    const next = computeCheck(
+      explicitEmployee({
+        employeeId: "E1",
+        kind: "hourly",
+        amountCents: 100_000,
+        hoursHundredths: 1_000,
+        exemptionCents: 0,
+        openingYtd: ytd,
+      }),
+      FIXTURE_A_SETTINGS,
+      FIXTURE_A_CHECK_DATE,
+    );
+    expect(amountOn(next, "FED-OASDI")).toBe(0);
+    expect(amountOn(next, "FED-OASDI", "employer")).toBe(0);
   });
 });
 
@@ -410,6 +540,269 @@ describe("buildRunInput", () => {
     expect(built.errors).toEqual([]);
     const preview = previewPayrollRun(built);
     expect(preview.checks[0]?.grossCents).toBe(14_000);
+  });
+
+  it("scopes hours, salary, and frequency to a restaurant schedule", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: restaurantA,
+      schedules: [
+        {
+          id: "sched-a",
+          org_id: "org-1",
+          restaurant_id: restaurantA,
+          frequency: "weekly",
+          anchor_period_start: "2026-10-12",
+          check_lag_days: 5,
+          taxes_via_provider: true,
+          created_at: timestamps.created_at,
+          updated_at: timestamps.updated_at,
+        },
+      ],
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({ id: "p1", employee_id: "E1" }),
+        profile({
+          id: "p2",
+          employee_id: "E2",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantB,
+        }),
+        profile({
+          id: "p3",
+          employee_id: "E3",
+          salary_cents: 200_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [
+        rate({ id: "r1", employee_id: "E1", rate_cents: 1500, effective_from: "2026-01-01" }),
+        rate({ id: "r2", employee_id: "E2", rate_cents: 1200, effective_from: "2026-01-01" }),
+      ],
+      timeEntries: [
+        {
+          id: "te-a",
+          employee_id: "E1",
+          restaurant_id: restaurantA,
+          position: "Cook",
+          started_at: localIso("2026-10-13", "09:00:00"),
+          ended_at: localIso("2026-10-13", "13:00:00"),
+        },
+        {
+          id: "te-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          position: "Cook",
+          started_at: localIso("2026-10-14", "09:00:00"),
+          ended_at: localIso("2026-10-14", "17:00:00"),
+        },
+        {
+          id: "te-e2",
+          employee_id: "E2",
+          restaurant_id: restaurantA,
+          position: "Cook",
+          started_at: localIso("2026-10-15", "09:00:00"),
+          ended_at: localIso("2026-10-15", "13:00:00"),
+        },
+      ],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.settings.payFrequency).toBe("weekly");
+    const salariedElsewhere = built.input.employees.find((row) => row.employeeId === "E2");
+    expect(salariedElsewhere?.salary).toBeUndefined();
+    expect(salariedElsewhere?.hourlyWeeks?.[0]?.regularHoursHundredths).toBe(400);
+    expect(built.settingsSnapshot?.restaurantId).toBe(restaurantA);
+    expect(built.input.employees.map((row) => row.employeeId).sort()).toEqual(["E1", "E2", "E3"]);
+    expect(built.shifts.every((shift) => shift.classId === restaurantA)).toBe(true);
+  });
+
+  it("pays the profile salary at A and the restaurant salary at B without double counting", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const shared = {
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock" as const,
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({
+          id: "p1",
+          employee_id: "E1",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [
+        { ...shift({ id: "s-a", employeeId: "E1", ymd: "2026-10-13", start: "09:00:00", end: "13:00:00" }), classId: restaurantA },
+        { ...shift({ id: "s-b", employeeId: "E1", ymd: "2026-10-14", start: "09:00:00", end: "13:00:00" }), classId: restaurantB },
+      ],
+    };
+    const runA = buildRunInput({
+      ...shared,
+      restaurantId: restaurantA,
+      schedules: [schedule(restaurantA)],
+    });
+    const runB = buildRunInput({
+      ...shared,
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+    });
+    expect(runA.errors).toEqual([]);
+    expect(runB.errors).toEqual([]);
+    expect(runA.input.employees).toHaveLength(1);
+    expect(runB.input.employees).toHaveLength(1);
+    expect(runA.input.employees[0]?.salary).toMatchObject({ amountCents: 190_000, classId: restaurantA });
+    expect(runB.input.employees[0]?.salary).toMatchObject({ amountCents: 80_000, classId: restaurantB });
+    expect(runA.input.employees[0]?.hourlyWeeks).toBeUndefined();
+    expect(runB.input.employees[0]?.hourlyWeeks).toBeUndefined();
+  });
+
+  it("includes a restaurant-salary employee with no shifts", () => {
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+      employerSettingsRows: [employer()],
+      profiles: [profile({ id: "p1", employee_id: "E1", salary_cents: null })],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.employees).toHaveLength(1);
+    expect(built.input.employees[0]?.salary).toMatchObject({ amountCents: 80_000, classId: restaurantB });
+    expect(built.input.employees[0]?.salary?.hoursHundredths).toBe(4_000);
+  });
+
+  it("leaves org-wide salary behaviour unchanged and warns about restaurant salaries", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-25",
+      hoursSource: "time_clock",
+      employerSettingsRows: [employer()],
+      profiles: [
+        profile({
+          id: "p1",
+          employee_id: "E1",
+          salary_cents: 190_000,
+          default_restaurant_id: restaurantA,
+        }),
+      ],
+      payRates: [],
+      restaurantSalaries: [
+        restaurantSalary({
+          id: "rs-b",
+          employee_id: "E1",
+          restaurant_id: restaurantB,
+          salary_cents: 80_000,
+        }),
+      ],
+      shifts: [],
+    });
+    expect(built.errors).toEqual([]);
+    expect(built.input.employees).toHaveLength(1);
+    expect(built.input.employees[0]?.salary).toMatchObject({
+      amountCents: 190_000,
+      classId: restaurantA,
+      hoursHundredths: 8_000,
+    });
+    expect(built.warnings).toContain("Restaurant salaries for E1 are only paid in restaurant runs");
+  });
+
+  it("errors when a restaurant run has no pay schedule", () => {
+    const built = buildRunInput({
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock",
+      restaurantId: "11111111-1111-4111-8111-111111111111",
+      schedules: [],
+      employerSettingsRows: [employer()],
+      profiles: [],
+      payRates: [],
+      shifts: [],
+    });
+    expect(built.errors.some((row) => row.includes("No pay schedule"))).toBe(true);
+  });
+
+  it("allocates weekly overtime across restaurants so restaurant runs sum to the org-wide check", () => {
+    const restaurantA = "11111111-1111-4111-8111-111111111111";
+    const restaurantB = "22222222-2222-4222-8222-222222222222";
+    const days = [
+      { id: "s1", ymd: "2026-10-12", classId: restaurantA },
+      { id: "s2", ymd: "2026-10-13", classId: restaurantA },
+      { id: "s3", ymd: "2026-10-14", classId: restaurantA },
+      { id: "s4", ymd: "2026-10-15", classId: restaurantB },
+      { id: "s5", ymd: "2026-10-16", classId: restaurantB },
+      { id: "s6", ymd: "2026-10-17", classId: restaurantB },
+    ];
+    const shifts = days.map((row) => ({
+      ...shift({ id: row.id, employeeId: "E1", ymd: row.ymd, start: "09:00:00", end: "17:00:00" }),
+      classId: row.classId,
+    }));
+    const shared = {
+      checkDate: FIXTURE_A_CHECK_DATE,
+      periodStart: "2026-10-12",
+      periodEnd: "2026-10-18",
+      hoursSource: "time_clock" as const,
+      employerSettingsRows: [employer({ pay_frequency: "weekly" })],
+      profiles: [profile({ id: "p1", employee_id: "E1" })],
+      payRates: [rate({ id: "r1", employee_id: "E1", rate_cents: 1000, effective_from: "2026-01-01" })],
+      shifts,
+    };
+    const orgWide = previewPayrollRun(buildRunInput(shared));
+    const runA = buildRunInput({
+      ...shared,
+      restaurantId: restaurantA,
+      schedules: [schedule(restaurantA)],
+    });
+    const runB = buildRunInput({
+      ...shared,
+      restaurantId: restaurantB,
+      schedules: [schedule(restaurantB)],
+    });
+    const previewA = previewPayrollRun(runA);
+    const previewB = previewPayrollRun(runB);
+    expect(orgWide.errors).toEqual([]);
+    expect(previewA.errors).toEqual([]);
+    expect(previewB.errors).toEqual([]);
+    expect(orgWide.checks[0]?.grossCents).toBe(52_000);
+    expect((previewA.checks[0]?.grossCents ?? 0) + (previewB.checks[0]?.grossCents ?? 0)).toBe(52_000);
+    expect(runA.shifts.every((row) => row.classId === restaurantA)).toBe(true);
+    expect(runB.shifts.every((row) => row.classId === restaurantB)).toBe(true);
+    expect(previewA.checks[0]?.earnings.every((line) => line.classId === restaurantA)).toBe(true);
+    expect(previewB.checks[0]?.earnings.every((line) => line.classId === restaurantB)).toBe(true);
+    expect(previewA.earningsByKind.find((row) => row.kind === "overtime")?.hoursHundredths ?? 0).toBe(0);
+    expect(previewB.earningsByKind.find((row) => row.kind === "overtime")?.hoursHundredths).toBe(800);
   });
 });
 
@@ -688,6 +1081,8 @@ describe("payrollYtdBasisFromRpc", () => {
           employee_id: "E1",
           tax_year: 2026,
           check_date: "2026-10-09",
+          check_id: "check-1",
+          run_id: "run-1",
           status: "approved",
           side: "employee",
           tax_code: "FED-OASDI",
@@ -700,12 +1095,17 @@ describe("payrollYtdBasisFromRpc", () => {
           employee_id: "E1",
           tax_year: 2026,
           check_date: "2026-10-09",
+          check_id: "check-1",
+          run_id: "run-1",
           status: "approved",
           gross_cents: 500,
         },
       ],
     });
     expect(snapshot.revision).toBe("abc");
+    expect(snapshot.prior_check_taxes[0]?.checkId).toBe("check-1");
+    expect(snapshot.prior_check_taxes[0]?.runId).toBe("run-1");
+    expect(snapshot.prior_gross[0]?.checkId).toBe("check-1");
     const ytd = ytdFromHistory(
       openingBalancesForYtd(snapshot.opening_balances),
       snapshot.prior_check_taxes,
@@ -728,6 +1128,7 @@ function storedRun(partial: Partial<PayrollRunWithChecks> = {}): PayrollRunWithC
   return {
     id: "run-1",
     org_id: "org-1",
+    restaurant_id: null,
     period_start: "2026-10-12",
     period_end: "2026-10-25",
     check_date: FIXTURE_A_CHECK_DATE,

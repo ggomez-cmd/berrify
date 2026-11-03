@@ -48,6 +48,9 @@ export type PunchRounding = "none" | "hundredth_hour";
 export type MealDeductionPolicy = {
   afterSeconds: number;
   deductSeconds: number;
+  // "top_up" (default) deducts the lunch minus any break already taken; "skip_if_break" deducts the
+  // whole lunch only when the day has no break of 6 minutes or more.
+  mode?: "top_up" | "skip_if_break";
 };
 
 export type HoursPolicy = {

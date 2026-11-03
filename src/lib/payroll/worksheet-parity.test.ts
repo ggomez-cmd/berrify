@@ -19,6 +19,7 @@ type FixturePeriod = {
   end: string;
   periodsPerYear: number;
   taxesViaAlchavo: boolean;
+  mealDeductMode?: "top_up" | "skip_if_break";
 };
 
 type FixtureEmployee = {
@@ -121,6 +122,7 @@ function employerRow(restaurant: string, period: FixturePeriod): PayrollEmployer
     hourly_pay_rounding: "period",
     meal_deduct_after_minutes: 360,
     meal_deduct_minutes: 30,
+    meal_deduct_mode: period.mealDeductMode ?? "top_up",
     notes: null,
     ...timestamps,
   };
@@ -149,6 +151,7 @@ function profileRow(employee: FixtureEmployee): PayrollEmployeeProfileRow {
     young_worker_exempt: false,
     additional_withholding_cents: 0,
     fixed_swh_cents: employee.fixedSwhCents,
+    payment_method: null,
     r41_effective_date: null,
     notes: null,
     ...timestamps,

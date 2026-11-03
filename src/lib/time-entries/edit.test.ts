@@ -15,6 +15,7 @@ const approvedWindow = {
   period_start: "2026-10-01",
   period_end: "2026-10-08",
   check_date: "2026-10-09",
+  restaurant_id: null,
   time_zone: zone,
   from: "2026-09-23T04:00:00.000Z",
   until: "2026-10-09T04:00:00.000Z",
@@ -258,6 +259,19 @@ describe("approvedCheckDateForShift", () => {
     expect(approvedCheckDateForShift(localIso("2026-09-30", "22:00"), [approvedWindow])).toBe("2026-10-09");
     expect(approvedCheckDateForShift(localIso("2026-09-22", "22:00"), [approvedWindow])).toBeNull();
     expect(approvedCheckDateForShift("2026-10-09T04:00:00.000Z", [approvedWindow])).toBeNull();
+  });
+
+  it("locks another restaurant only for employees on the approved restaurant run", () => {
+    const kaneWindow = {
+      ...approvedWindow,
+      restaurant_id: "rest-kane",
+      employee_ids: ["emp-shared"],
+    };
+    const started = localIso("2026-10-01", "22:00");
+    expect(approvedCheckDateForShift(started, [kaneWindow], "rest-kane", "emp-semilla-only")).toBe("2026-10-09");
+    expect(approvedCheckDateForShift(started, [kaneWindow], "rest-semilla", "emp-shared")).toBe("2026-10-09");
+    expect(approvedCheckDateForShift(started, [kaneWindow], "rest-semilla", "emp-semilla-only")).toBeNull();
+    expect(approvedCheckDateForShift(started, [kaneWindow], null, "emp-semilla-only")).toBe("2026-10-09");
   });
 });
 

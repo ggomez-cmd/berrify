@@ -4,6 +4,14 @@ export function formatCents(cents: number): string {
   return formatMoney(cents / 100);
 }
 
+export function restaurantScopeLabel(
+  restaurantId: string | null | undefined,
+  restaurantNames: Readonly<Record<string, string>>,
+): string {
+  if (!restaurantId) return "All restaurants";
+  return restaurantNames[restaurantId] ?? restaurantId;
+}
+
 export function formatHoursHundredths(hundredths: number): string {
   return (hundredths / 100).toFixed(2);
 }

@@ -6,8 +6,9 @@ import { CloverNamesPanel } from "./CloverNamesPanel";
 import { EmployeesPanel } from "./EmployeesPanel";
 import { EmployerSettingsPanel } from "./EmployerSettingsPanel";
 import { OpeningBalancesPanel } from "./OpeningBalancesPanel";
+import { PaySchedulesPanel } from "./PaySchedulesPanel";
 
-type SetupTab = "employer" | "employees" | "balances" | "clover";
+type SetupTab = "employer" | "schedules" | "employees" | "balances" | "clover";
 
 export function PayrollSetupPage() {
   const { role } = useAuth();
@@ -25,13 +26,14 @@ export function PayrollSetupPage() {
   return (
     <div>
       <p className="mb-4 max-w-3xl text-sm text-muted">
-        Employer tax settings, employee withholding, opening year-to-date, and Clover name maps for the
-        Puerto Rico payroll engine. Dollar amounts are stored as integer cents.
+        Employer tax settings, restaurant pay schedules, employee withholding, opening year-to-date, and
+        Clover name maps for the Puerto Rico payroll engine. Dollar amounts are stored as integer cents.
       </p>
       <div className="mb-4">
         <PageTabs
           items={[
             { id: "employer", label: "Employer settings" },
+            { id: "schedules", label: "Pay schedules" },
             { id: "employees", label: "Employees" },
             { id: "balances", label: "Opening balances" },
             { id: "clover", label: "Clover names" },
@@ -41,6 +43,7 @@ export function PayrollSetupPage() {
         />
       </div>
       {tab === "employer" ? <EmployerSettingsPanel /> : null}
+      {tab === "schedules" ? <PaySchedulesPanel /> : null}
       {tab === "employees" ? <EmployeesPanel /> : null}
       {tab === "balances" ? <OpeningBalancesPanel /> : null}
       {tab === "clover" ? <CloverNamesPanel /> : null}

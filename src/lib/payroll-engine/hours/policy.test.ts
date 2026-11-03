@@ -228,6 +228,79 @@ describe("automatic lunch deduction", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  describe("skip_if_break mode", () => {
+    const skipIfBreak = { ...mealDeduction, mode: "skip_if_break" as const };
+
+    it("deducts nothing when the day has a gap of 6 minutes or more", () => {
+      const result = applyHoursPolicy(
+        [
+          shift({ id: "a", ymd: "2026-10-08", start: "11:00:00", end: "15:00:00" }),
+          shift({ id: "b", ymd: "2026-10-08", start: "15:06:00", end: "19:00:00" }),
+        ],
+        { timeZone: TZ, punchRounding: "hundredth_hour", mealDeduction: skipIfBreak },
+      );
+      expect(workedSeconds(result.shifts[0]!) + workedSeconds(result.shifts[1]!)).toBe(4 * 3600 + 3.9 * 3600);
+      expect(result.lunchDeductions).toEqual([]);
+    });
+
+    it("deducts the whole lunch when the only gap is under 6 minutes", () => {
+      const result = applyHoursPolicy(
+        [
+          shift({ id: "a", ymd: "2026-10-08", start: "11:00:00", end: "15:00:00" }),
+          shift({ id: "b", ymd: "2026-10-08", start: "15:01:00", end: "19:00:00" }),
+        ],
+        { timeZone: TZ, punchRounding: "hundredth_hour", mealDeduction: skipIfBreak },
+      );
+      expect(result.lunchDeductions).toEqual([{ employeeId: "E1", ymd: "2026-10-08", seconds: 1800 }]);
+    });
+
+    it("deducts nothing when a 10-minute unpaid break was taken inside the shift", () => {
+      const result = applyHoursPolicy(
+        [
+          shift({
+            id: "s1",
+            ymd: "2026-10-09",
+            start: "10:00:00",
+            end: "18:00:00",
+            breaks: [
+              {
+                startedAt: localIso("2026-10-09", "13:45:00"),
+                endedAt: localIso("2026-10-09", "13:55:00"),
+                type: "rest",
+                paid: false,
+              },
+            ],
+          }),
+        ],
+        { timeZone: TZ, punchRounding: "hundredth_hour", mealDeduction: skipIfBreak },
+      );
+      expect(result.lunchDeductions).toEqual([]);
+    });
+
+    it("deducts the whole lunch when the only break is paid", () => {
+      const result = applyHoursPolicy(
+        [
+          shift({
+            id: "s1",
+            ymd: "2026-10-09",
+            start: "10:00:00",
+            end: "18:00:00",
+            breaks: [
+              {
+                startedAt: localIso("2026-10-09", "13:45:00"),
+                endedAt: localIso("2026-10-09", "14:00:00"),
+                type: "rest",
+                paid: true,
+              },
+            ],
+          }),
+        ],
+        { timeZone: TZ, punchRounding: "hundredth_hour", mealDeduction: skipIfBreak },
+      );
+      expect(result.lunchDeductions).toEqual([{ employeeId: "E1", ymd: "2026-10-09", seconds: 1800 }]);
+    });
+  });
+
   it("spills a deduction into the previous shift and never goes below zero", () => {
     const long: WorkedShift = {
       id: "long",
