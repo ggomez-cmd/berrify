@@ -189,14 +189,24 @@ export function PayrollRunEditorPage({ runId }: { runId?: string }) {
   }, [org, periodEnd, periodStart, settingsQuery.data, workweekStartTime]);
 
   // Anyone can receive tips (the worksheet pays tips to staff it doesn't treat as tipped), so list everyone
-  // at this restaurant, tipped staff first. Tipped staff from other restaurants stay listed too.
+  // at this restaurant, tipped staff first. Tipped staff from other restaurants, and anyone who already
+  // has a tip entered (e.g. from a saved draft), stay listed too so no paid tip is hidden.
   const tipProfiles = useMemo(() => {
+    const withTips = new Set(
+      Object.entries(tips)
+        .filter(([, value]) => value.trim() !== "")
+        .map(([key]) => key.split("\t")[0]),
+    );
     const rows = (profilesQuery.data ?? []).filter(
-      (row) => !restaurantId || row.is_tipped || row.default_restaurant_id === restaurantId,
+      (row) =>
+        !restaurantId ||
+        row.is_tipped ||
+        row.default_restaurant_id === restaurantId ||
+        withTips.has(row.employee_id),
     );
     const label = (row: (typeof rows)[number]) => names[row.employee_id] ?? row.employee_number ?? row.employee_id;
     return rows.sort((a, b) => Number(b.is_tipped) - Number(a.is_tipped) || label(a).localeCompare(label(b)));
-  }, [names, profilesQuery.data, restaurantId]);
+  }, [names, profilesQuery.data, restaurantId, tips]);
 
   const calculationSource = useMemo<PayrollCalculationSource>(
     () => ({

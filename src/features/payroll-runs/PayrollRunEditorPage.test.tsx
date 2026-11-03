@@ -130,6 +130,14 @@ describe("PayrollRunEditorPage", () => {
         .getAllByLabelText(/^Tips for /)
         .map((input) => input.getAttribute("aria-label")!.replace(/^Tips for (\w+),.*$/, "$1"));
       expect([...new Set(rows)]).toEqual(["Cruz", "Ana", "Dora"]);
+
+      expect(screen.queryAllByLabelText(/^Tips for Bea/)).toHaveLength(0);
+
+      // A tip already entered (org-wide here) keeps its row after switching to a restaurant they aren't at.
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "" } });
+      fireEvent.change(screen.getAllByLabelText(/^Tips for Bea/)[0]!, { target: { value: "10" } });
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "r-harbor" } });
+      expect(screen.getAllByLabelText(/^Tips for Bea/)[0]).toHaveValue("10");
     } finally {
       fixtures.employees = [];
       fixtures.profiles = [];
