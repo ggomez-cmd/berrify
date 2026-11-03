@@ -39,12 +39,17 @@ const harborSchedule = {
   updated_at: "2026-01-01T00:00:00.000Z",
 };
 
+const fixtures = vi.hoisted(() => ({
+  employees: [] as Array<{ id: string; full_name: string }>,
+  profiles: [] as Array<{ employee_id: string; employee_number: string | null; is_tipped: boolean; default_restaurant_id: string | null }>,
+}));
+
 function ok<T>(data: T) {
   return { data, isLoading: false, isSuccess: true, isFetching: false, error: null };
 }
 
 vi.mock("../employees/hooks", () => ({
-  useEmployees: () => ok([]),
+  useEmployees: () => ok(fixtures.employees),
 }));
 
 vi.mock("../invoices/hooks", () => ({
@@ -57,7 +62,7 @@ vi.mock("../invoices/hooks", () => ({
 
 vi.mock("../payroll-setup/hooks", () => ({
   usePayrollEmployerSettings: () => ok([]),
-  usePayrollEmployeeProfiles: () => ok([]),
+  usePayrollEmployeeProfiles: () => ok(fixtures.profiles),
   usePayrollPayRates: () => ok([]),
   usePayrollRestaurantSalaries: () => ok([]),
   usePayrollCloverNames: () => ok([]),
@@ -97,6 +102,46 @@ describe("PayrollRunEditorPage", () => {
     expect(screen.getByLabelText("Period end")).toHaveValue(expected.periodEnd);
     expect(screen.getByLabelText("Check date")).toHaveValue(expected.checkDate);
     expect(screen.getByRole("heading", { name: "Harbor" })).toBeInTheDocument();
+  });
+
+  it("lists everyone at the restaurant for tips, tipped staff first", () => {
+    fixtures.employees = [
+      { id: "e-ana", full_name: "Ana" },
+      { id: "e-bea", full_name: "Bea" },
+      { id: "e-cruz", full_name: "Cruz" },
+      { id: "e-dora", full_name: "Dora" },
+    ];
+    fixtures.profiles = [
+      { employee_id: "e-ana", employee_number: null, is_tipped: false, default_restaurant_id: "r-harbor" },
+      { employee_id: "e-bea", employee_number: null, is_tipped: false, default_restaurant_id: "r-inlet" },
+      { employee_id: "e-cruz", employee_number: null, is_tipped: true, default_restaurant_id: "r-inlet" },
+      { employee_id: "e-dora", employee_number: null, is_tipped: false, default_restaurant_id: "r-harbor" },
+    ];
+    try {
+      render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter>
+            <PayrollRunEditorPage />
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "r-harbor" } });
+      const rows = screen
+        .getAllByLabelText(/^Tips for /)
+        .map((input) => input.getAttribute("aria-label")!.replace(/^Tips for (\w+),.*$/, "$1"));
+      expect([...new Set(rows)]).toEqual(["Cruz", "Ana", "Dora"]);
+
+      expect(screen.queryAllByLabelText(/^Tips for Bea/)).toHaveLength(0);
+
+      // A tip already entered (org-wide here) keeps its row after switching to a restaurant they aren't at.
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "" } });
+      fireEvent.change(screen.getAllByLabelText(/^Tips for Bea/)[0]!, { target: { value: "10" } });
+      fireEvent.change(screen.getByLabelText("Restaurant"), { target: { value: "r-harbor" } });
+      expect(screen.getAllByLabelText(/^Tips for Bea/)[0]).toHaveValue("10");
+    } finally {
+      fixtures.employees = [];
+      fixtures.profiles = [];
+    }
   });
 
   it("prefills from the employer's local date, not UTC, in the evening", () => {
