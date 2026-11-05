@@ -168,7 +168,7 @@ export function PayStub({
             {check.employeeWithholdings.length === 0 ? (
               <tr className="border-t border-line">
                 <td className="py-1 pr-2 text-muted" colSpan={3}>
-                  {check.payType === "cash" ? "Sin deducciones (pago en efectivo)" : "Sin deducciones"}
+                  Sin deducciones
                 </td>
               </tr>
             ) : null}

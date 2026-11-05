@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { PayrollCheck, TaxCode } from "../../lib/payroll-engine/types";
 import { PayStub } from "./PayStub";
+import { payStubChecks as stubChecks } from "../../lib/payroll/reports";
 
 const codes = (values: Partial<Record<TaxCode, number>>): Record<TaxCode, number> => ({
   DIE: 0,
@@ -131,19 +132,28 @@ describe("PayStub explanation", () => {
 });
 
 describe("PayStub without withholdings", () => {
-  it("says there are no deductions for a cash check instead of leaving the table empty", () => {
+  it("says there are no deductions instead of leaving the table empty", () => {
     render(
       <PayStub
-        check={{ ...check, payType: "cash", employeeWithholdings: [], employeeDeductionCents: 0, netCents: 83000 }}
+        check={{ ...check, employeeWithholdings: [], employeeDeductionCents: 0, netCents: 83000 }}
         employerName="Berrify LLC"
         employeeName="Ana Prueba"
-        paymentMethod="Efectivo"
+        paymentMethod="Cheque"
         workplace={null}
         periodStart="2026-10-19"
         periodEnd="2026-11-01"
       />,
     );
-    expect(screen.getByText("Sin deducciones (pago en efectivo)")).toBeInTheDocument();
+    expect(screen.getByText("Sin deducciones")).toBeInTheDocument();
     expect(screen.queryByText("Cómo se calculó su pago")).not.toBeInTheDocument();
+  });
+});
+
+describe("stubChecks", () => {
+  it("leaves cash employees out, including on a single-employee stub", () => {
+    const cash: PayrollCheck = { ...check, employeeId: "e-cash", payType: "cash" };
+    expect(stubChecks([check, cash]).map((c) => c.employeeId)).toEqual(["e-ana"]);
+    expect(stubChecks([check, cash], "e-cash")).toEqual([]);
+    expect(stubChecks([check, cash], "e-ana").map((c) => c.employeeId)).toEqual(["e-ana"]);
   });
 });
