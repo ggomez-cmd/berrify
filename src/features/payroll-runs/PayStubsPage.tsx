@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
-import { payStubChecks } from "../../lib/payroll/reports";
+import { payStubChecks, payStubFileName } from "../../lib/payroll/reports";
 import { resultFromStoredRun } from "../../lib/payroll/runs";
 import { isAdmin } from "../../lib/schedule";
 import type { PayrollEmployeeProfileRow } from "../../lib/types";
@@ -31,6 +31,29 @@ export function PayStubsPage() {
     return map;
   }, [profilesQuery.data]);
 
+  const run = runQuery.data;
+  const restaurantName = run?.restaurant_id
+    ? (restaurantsQuery.data?.find((restaurant) => restaurant.id === run.restaurant_id)?.name ?? null)
+    : null;
+  const fileName = run
+    ? payStubFileName({
+        restaurantName,
+        periodStart: run.period_start,
+        periodEnd: run.period_end,
+        employeeName: employeeId ? names[employeeId] : null,
+      })
+    : null;
+
+  // Browsers use the page title as the default name for "Save as PDF".
+  useEffect(() => {
+    if (!fileName) return;
+    const previous = document.title;
+    document.title = fileName;
+    return () => {
+      document.title = previous;
+    };
+  }, [fileName]);
+
   if (!isAdmin(role)) {
     return <p className="text-sm text-muted">Pay stubs are limited to admins.</p>;
   }
@@ -41,10 +64,6 @@ export function PayStubsPage() {
   const result = resultFromStoredRun(runQuery.data);
   const canExport = runQuery.data.status === "approved" && result.errors.length === 0;
   const checks = payStubChecks(result.checks, employeeId);
-  const restaurantId = runQuery.data.restaurant_id;
-  const workplace = restaurantId
-    ? (restaurantsQuery.data?.find((restaurant) => restaurant.id === restaurantId)?.name ?? null)
-    : null;
 
   if (!canExport) {
     return (
@@ -78,7 +97,7 @@ export function PayStubsPage() {
             employeeName={names[check.employeeId] ?? check.employeeId}
             employeeNumber={profile?.employee_number ?? undefined}
             paymentMethod={paymentMethodLabel(profile)}
-            workplace={workplace}
+            workplace={restaurantName}
             periodStart={runQuery.data.period_start.slice(0, 10)}
             periodEnd={runQuery.data.period_end.slice(0, 10)}
           />

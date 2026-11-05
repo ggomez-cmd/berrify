@@ -273,3 +273,21 @@ export function costPerBusinessCsv(
 export function payStubChecks(checks: readonly PayrollCheck[], employeeId?: string): PayrollCheck[] {
   return checks.filter((check) => check.payType !== "cash" && (!employeeId || check.employeeId === employeeId));
 }
+
+// Default file name when stubs are saved as PDF, e.g. "Paystubs_Lelas_10-19_al_11-01-26".
+export function payStubFileName(input: {
+  restaurantName?: string | null;
+  periodStart: string;
+  periodEnd: string;
+  employeeName?: string | null;
+}): string {
+  const part = (value: string) => value.trim().replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_");
+  const [, startMonth, startDay] = input.periodStart.slice(0, 10).split("-");
+  const [endYear, endMonth, endDay] = input.periodEnd.slice(0, 10).split("-");
+  return [
+    "Paystubs",
+    ...(input.restaurantName ? [part(input.restaurantName)] : []),
+    `${startMonth}-${startDay}_al_${endMonth}-${endDay}-${endYear!.slice(2)}`,
+    ...(input.employeeName ? [part(input.employeeName)] : []),
+  ].join("_");
+}

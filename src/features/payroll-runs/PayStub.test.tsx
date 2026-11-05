@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { PayrollCheck, TaxCode } from "../../lib/payroll-engine/types";
 import { PayStub } from "./PayStub";
-import { payStubChecks as stubChecks } from "../../lib/payroll/reports";
+import { payStubChecks as stubChecks, payStubFileName } from "../../lib/payroll/reports";
 
 const codes = (values: Partial<Record<TaxCode, number>>): Record<TaxCode, number> => ({
   DIE: 0,
@@ -155,5 +155,17 @@ describe("stubChecks", () => {
     expect(stubChecks([check, cash]).map((c) => c.employeeId)).toEqual(["e-ana"]);
     expect(stubChecks([check, cash], "e-cash")).toEqual([]);
     expect(stubChecks([check, cash], "e-ana").map((c) => c.employeeId)).toEqual(["e-ana"]);
+  });
+});
+
+describe("payStubFileName", () => {
+  it("follows the worksheet naming", () => {
+    expect(payStubFileName({ restaurantName: "Harbor", periodStart: "2026-10-19", periodEnd: "2026-11-01" })).toBe(
+      "Paystubs_Harbor_10-19_al_11-01-26",
+    );
+    expect(
+      payStubFileName({ restaurantName: "Harbor Rum Bar", periodStart: "2026-12-28", periodEnd: "2027-01-10", employeeName: "Ana Prueba" }),
+    ).toBe("Paystubs_Harbor_Rum_Bar_12-28_al_01-10-27_Ana_Prueba");
+    expect(payStubFileName({ periodStart: "2026-10-19T00:00:00Z", periodEnd: "2026-11-01" })).toBe("Paystubs_10-19_al_11-01-26");
   });
 });
