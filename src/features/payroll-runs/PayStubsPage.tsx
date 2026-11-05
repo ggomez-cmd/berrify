@@ -86,7 +86,8 @@ export function PayStubsPage() {
 }
 
 function paymentMethodLabel(check: PayrollCheck, profile: PayrollEmployeeProfileRow | undefined): string {
-  if (check.payType === "cash" || profile?.pay_type === "cash") return "Efectivo";
+  // The check keeps its pay type; the payment method only lives on the current profile.
+  if (check.payType === "cash") return "Efectivo";
   switch (profile?.payment_method) {
     case "ach":
       return "Depósito directo";

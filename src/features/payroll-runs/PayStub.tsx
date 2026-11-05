@@ -48,9 +48,11 @@ function stubEarnings(check: PayrollCheck): StubEarning[] {
 function howCalculated(check: PayrollCheck): string {
   const amount = (code: TaxCode) => check.employeeWithholdings.find((line) => line.code === code)?.amountCents;
   const parts: string[] = [];
-  const oasdi = amount("FED-OASDI");
-  if (oasdi !== undefined) {
-    parts.push(`Seguro Social: 6.2% de su gross (${formatCents(check.grossCents)} × 6.2% = ${formatCents(oasdi)}).`);
+  const oasdi = check.employeeWithholdings.find((line) => line.code === "FED-OASDI");
+  if (oasdi) {
+    // Only wages under the annual Social Security limit are taxed, so use the taxable amount, not gross.
+    const base = oasdi.taxableCents === check.grossCents ? "su gross" : "su salario sujeto a Seguro Social";
+    parts.push(`Seguro Social: 6.2% de ${base} (${formatCents(oasdi.taxableCents)} × 6.2% = ${formatCents(oasdi.amountCents)}).`);
   }
   const medicare = amount("FED-MED");
   if (medicare !== undefined) parts.push(`Medicare: 1.45% (${formatCents(medicare)}).`);
@@ -59,7 +61,7 @@ function howCalculated(check: PayrollCheck): string {
   const sdi = amount("DIE");
   if (sdi !== undefined) parts.push(`SDI (seguro por incapacidad): 0.3% (${formatCents(sdi)}).`);
   if (amount("SWH") !== undefined) {
-    parts.push("Retención PR: método anualizado de Hacienda; es un adelanto de su contribución del año.");
+    parts.push("Retención PR: es un adelanto de su contribución sobre ingresos del año; cuando radique la planilla se compara con lo que le toca.");
   }
   return parts.join(" ");
 }

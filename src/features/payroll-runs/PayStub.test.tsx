@@ -105,3 +105,27 @@ describe("PayStub", () => {
     expect(screen.getByText(/Seguro Social: 6\.2% de su gross \(\$830\.00 × 6\.2% = \$51\.46\)/)).toBeInTheDocument();
   });
 });
+
+describe("PayStub explanation", () => {
+  it("uses Social Security taxable wages when the check crosses the annual limit", () => {
+    const capped: PayrollCheck = {
+      ...check,
+      employeeWithholdings: [{ code: "FED-OASDI", taxableCents: 50000, amountCents: 3100 }],
+    };
+    render(
+      <PayStub
+        check={capped}
+        employerName="Berrify LLC"
+        employeeName="Ana Prueba"
+        paymentMethod="Cheque"
+        workplace={null}
+        periodStart="2026-10-19"
+        periodEnd="2026-11-01"
+      />,
+    );
+    expect(
+      screen.getByText(/Seguro Social: 6\.2% de su salario sujeto a Seguro Social \(\$500\.00 × 6\.2% = \$31\.00\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Lugar de trabajo/)).not.toBeInTheDocument();
+  });
+});
