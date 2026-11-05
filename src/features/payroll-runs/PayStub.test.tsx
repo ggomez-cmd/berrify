@@ -129,3 +129,21 @@ describe("PayStub explanation", () => {
     expect(screen.queryByText(/Lugar de trabajo/)).not.toBeInTheDocument();
   });
 });
+
+describe("PayStub without withholdings", () => {
+  it("says there are no deductions for a cash check instead of leaving the table empty", () => {
+    render(
+      <PayStub
+        check={{ ...check, payType: "cash", employeeWithholdings: [], employeeDeductionCents: 0, netCents: 83000 }}
+        employerName="Berrify LLC"
+        employeeName="Ana Prueba"
+        paymentMethod="Efectivo"
+        workplace={null}
+        periodStart="2026-10-19"
+        periodEnd="2026-11-01"
+      />,
+    );
+    expect(screen.getByText("Sin deducciones (pago en efectivo)")).toBeInTheDocument();
+    expect(screen.queryByText("Cómo se calculó su pago")).not.toBeInTheDocument();
+  });
+});
