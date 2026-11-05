@@ -5,10 +5,12 @@ import { Button } from "../../components/ui/button";
 import { resultFromStoredRun } from "../../lib/payroll/runs";
 import type { PayrollCheck } from "../../lib/payroll-engine/types";
 import { isAdmin } from "../../lib/schedule";
+import type { PayrollEmployeeProfileRow } from "../../lib/types";
 import { useEmployees } from "../employees/hooks";
+import { useRestaurants } from "../invoices/hooks";
 import { usePayrollEmployeeProfiles } from "../payroll-setup/hooks";
-import { formatCents, formatHoursHundredths } from "./format";
 import { usePayrollRun } from "./hooks";
+import { PayStub } from "./PayStub";
 
 export function PayStubsPage() {
   const { runId, employeeId } = useParams();
@@ -16,17 +18,16 @@ export function PayStubsPage() {
   const runQuery = usePayrollRun(runId);
   const employeesQuery = useEmployees();
   const profilesQuery = usePayrollEmployeeProfiles();
+  const restaurantsQuery = useRestaurants();
 
   const names = useMemo(() => {
     const map: Record<string, string> = {};
     for (const row of employeesQuery.data ?? []) map[row.id] = row.full_name;
     return map;
   }, [employeesQuery.data]);
-  const numbers = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const row of profilesQuery.data ?? []) {
-      if (row.employee_number) map[row.employee_id] = row.employee_number;
-    }
+  const profiles = useMemo(() => {
+    const map: Record<string, PayrollEmployeeProfileRow> = {};
+    for (const row of profilesQuery.data ?? []) map[row.employee_id] = row;
     return map;
   }, [profilesQuery.data]);
 
@@ -40,6 +41,10 @@ export function PayStubsPage() {
   const result = resultFromStoredRun(runQuery.data);
   const canExport = runQuery.data.status === "approved" && result.errors.length === 0;
   const checks = employeeId ? result.checks.filter((check) => check.employeeId === employeeId) : result.checks;
+  const restaurantId = runQuery.data.restaurant_id;
+  const workplace = restaurantId
+    ? (restaurantsQuery.data?.find((restaurant) => restaurant.id === restaurantId)?.name ?? null)
+    : null;
 
   if (!canExport) {
     return (
@@ -60,103 +65,37 @@ export function PayStubsPage() {
         </Link>
         <Button onClick={() => window.print()}>{employeeId ? "Print stub" : "Print all stubs"}</Button>
       </div>
-      {checks.map((check) => (
-        <PayStub
-          key={check.employeeId}
-          check={check}
-          employerName={org?.name ?? "Employer"}
-          employeeName={names[check.employeeId] ?? check.employeeId}
-          employeeNumber={numbers[check.employeeId]}
-          periodStart={runQuery.data.period_start.slice(0, 10)}
-          periodEnd={runQuery.data.period_end.slice(0, 10)}
-        />
-      ))}
+      {checks.map((check) => {
+        const profile = profiles[check.employeeId];
+        return (
+          <PayStub
+            key={check.employeeId}
+            check={check}
+            employerName={org?.name ?? "Employer"}
+            employeeName={names[check.employeeId] ?? check.employeeId}
+            employeeNumber={profile?.employee_number ?? undefined}
+            paymentMethod={paymentMethodLabel(check, profile)}
+            workplace={workplace}
+            periodStart={runQuery.data.period_start.slice(0, 10)}
+            periodEnd={runQuery.data.period_end.slice(0, 10)}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function PayStub({
-  check,
-  employerName,
-  employeeName,
-  employeeNumber,
-  periodStart,
-  periodEnd,
-}: {
-  check: PayrollCheck;
-  employerName: string;
-  employeeName: string;
-  employeeNumber?: string;
-  periodStart: string;
-  periodEnd: string;
-}) {
-  return (
-    <article className="pay-stub mb-8 rounded-2xl border border-line bg-white p-6">
-      <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Pay stub</p>
-      <h2 className="mt-1 text-lg font-semibold tracking-tight text-ink">{employerName}</h2>
-      <p className="mt-2 text-sm text-ink">
-        {employeeName}
-        {employeeNumber ? ` · #${employeeNumber}` : ""}
-      </p>
-      <p className="text-sm text-muted">
-        Period {periodStart} – {periodEnd} · Check date {check.checkDate}
-      </p>
-      <table className="mt-4 w-full text-left text-sm">
-        <thead>
-          <tr className="text-xs font-medium uppercase tracking-wide text-muted">
-            <th className="py-2">Earnings</th>
-            <th className="py-2">Hours</th>
-            <th className="py-2">Rate</th>
-            <th className="py-2">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {check.earnings.map((line, index) => (
-            <tr key={`${line.kind}-${index}`} className="border-t border-line">
-              <td className="py-2">{line.kind}</td>
-              <td className="py-2">{formatHoursHundredths(line.hoursHundredths)}</td>
-              <td className="py-2">{line.rateCents == null ? "—" : formatCents(line.rateCents)}</td>
-              <td className="py-2">{formatCents(line.amountCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <table className="mt-4 w-full text-left text-sm">
-        <thead>
-          <tr className="text-xs font-medium uppercase tracking-wide text-muted">
-            <th className="py-2">Withholding</th>
-            <th className="py-2">This check</th>
-            <th className="py-2">YTD</th>
-          </tr>
-        </thead>
-        <tbody>
-          {check.employeeWithholdings.map((line) => (
-            <tr key={line.code} className="border-t border-line">
-              <td className="py-2">{line.code}</td>
-              <td className="py-2">{formatCents(line.amountCents)}</td>
-              <td className="py-2">{formatCents(check.closingYtd.withheldCents[line.code] ?? 0)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-xs font-medium text-muted">Gross</dt>
-          <dd className="font-semibold">{formatCents(check.grossCents)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted">Deductions</dt>
-          <dd className="font-semibold">{formatCents(check.employeeDeductionCents)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted">Net</dt>
-          <dd className="font-semibold">{formatCents(check.netCents)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted">YTD gross</dt>
-          <dd className="font-semibold">{formatCents(check.closingYtd.grossCents)}</dd>
-        </div>
-      </dl>
-    </article>
-  );
+function paymentMethodLabel(check: PayrollCheck, profile: PayrollEmployeeProfileRow | undefined): string {
+  // The check keeps its pay type; the payment method only lives on the current profile.
+  if (check.payType === "cash") return "Efectivo";
+  switch (profile?.payment_method) {
+    case "ach":
+      return "Depósito directo";
+    case "check":
+      return "Cheque";
+    case "cash":
+      return "Efectivo";
+    default:
+      return "—";
+  }
 }
