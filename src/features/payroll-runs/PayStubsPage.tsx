@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
+import { payStubChecks } from "../../lib/payroll/reports";
 import { resultFromStoredRun } from "../../lib/payroll/runs";
-import type { PayrollCheck } from "../../lib/payroll-engine/types";
 import { isAdmin } from "../../lib/schedule";
 import type { PayrollEmployeeProfileRow } from "../../lib/types";
 import { useEmployees } from "../employees/hooks";
@@ -40,7 +40,7 @@ export function PayStubsPage() {
 
   const result = resultFromStoredRun(runQuery.data);
   const canExport = runQuery.data.status === "approved" && result.errors.length === 0;
-  const checks = employeeId ? result.checks.filter((check) => check.employeeId === employeeId) : result.checks;
+  const checks = payStubChecks(result.checks, employeeId);
   const restaurantId = runQuery.data.restaurant_id;
   const workplace = restaurantId
     ? (restaurantsQuery.data?.find((restaurant) => restaurant.id === restaurantId)?.name ?? null)
@@ -65,6 +65,9 @@ export function PayStubsPage() {
         </Link>
         <Button onClick={() => window.print()}>{employeeId ? "Print stub" : "Print all stubs"}</Button>
       </div>
+      {checks.length === 0 ? (
+        <p className="text-sm text-muted">No pay stubs: cash employees are paid by the restaurant and do not get one.</p>
+      ) : null}
       {checks.map((check) => {
         const profile = profiles[check.employeeId];
         return (
@@ -74,7 +77,7 @@ export function PayStubsPage() {
             employerName={org?.name ?? "Employer"}
             employeeName={names[check.employeeId] ?? check.employeeId}
             employeeNumber={profile?.employee_number ?? undefined}
-            paymentMethod={paymentMethodLabel(check, profile)}
+            paymentMethod={paymentMethodLabel(profile)}
             workplace={workplace}
             periodStart={runQuery.data.period_start.slice(0, 10)}
             periodEnd={runQuery.data.period_end.slice(0, 10)}
@@ -85,9 +88,7 @@ export function PayStubsPage() {
   );
 }
 
-function paymentMethodLabel(check: PayrollCheck, profile: PayrollEmployeeProfileRow | undefined): string {
-  // The check keeps its pay type; the payment method only lives on the current profile.
-  if (check.payType === "cash") return "Efectivo";
+function paymentMethodLabel(profile: PayrollEmployeeProfileRow | undefined): string {
   switch (profile?.payment_method) {
     case "ach":
       return "Depósito directo";

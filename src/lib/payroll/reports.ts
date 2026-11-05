@@ -268,3 +268,8 @@ export function costPerBusinessCsv(
   }
   return `${lines.join("\n")}\n`;
 }
+
+// Cash employees are paid by the restaurant, so they get no Berrify pay stub.
+export function payStubChecks(checks: readonly PayrollCheck[], employeeId?: string): PayrollCheck[] {
+  return checks.filter((check) => check.payType !== "cash" && (!employeeId || check.employeeId === employeeId));
+}
