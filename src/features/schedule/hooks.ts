@@ -22,6 +22,7 @@ export function useShifts() {
 
 export type ShiftInput = {
   employee_id: string | null;
+  restaurant_id: string | null;
   position: Station;
   starts_at: string;
   ends_at: string;
@@ -39,6 +40,7 @@ export function useUpsertShift() {
       const payload = {
         org_id: org.id,
         employee_id: values.employee_id,
+        restaurant_id: values.restaurant_id,
         position: values.position,
         starts_at: values.starts_at,
         ends_at: values.ends_at,
@@ -76,13 +78,20 @@ export function useDeleteShift() {
 export function usePublishWeek() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (ids: string[]) => {
-      if (ids.length === 0) return;
-      const { error } = await supabase.from("staff_shifts").update({ status: "published" }).in("id", ids);
+    // restaurantId null publishes across restaurants. The server rechecks each draft's restaurant
+    // and returns how many it published, so a stale board can't publish a draft that moved.
+    mutationFn: async ({ ids, restaurantId }: { ids: string[]; restaurantId: string | null }) => {
+      if (ids.length === 0) return 0;
+      const { data, error } = await supabase.rpc("publish_shifts", {
+        p_ids: ids,
+        p_restaurant_id: restaurantId,
+      });
       if (error) throw error;
+      return data as number;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["shifts"] });
+      void qc.invalidateQueries({ queryKey: ["employees"] });
     },
   });
 }

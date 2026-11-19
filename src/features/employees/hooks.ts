@@ -12,7 +12,10 @@ export function useEmployees() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc("list_employees_full");
       if (error) throw error;
-      return ((data ?? []) as Employee[]).sort((a, b) => a.full_name.localeCompare(b.full_name));
+      // The RPC returns every org the caller manages; keep the active one.
+      return ((data ?? []) as Employee[])
+        .filter((e) => e.org_id === org!.id)
+        .sort((a, b) => a.full_name.localeCompare(b.full_name));
     },
   });
 }
@@ -48,6 +51,7 @@ export type EmployeeInput = {
   email: string;
   phone: string;
   position: Station;
+  home_restaurant_id: string | null;
   login_role: LoginRole;
   hourly_rate: number;
   active: boolean;
@@ -66,6 +70,7 @@ export function useUpsertEmployee() {
         email: values.email || null,
         phone: values.phone || null,
         position: values.position,
+        home_restaurant_id: values.home_restaurant_id,
         login_role: values.login_role,
         hourly_rate: values.hourly_rate,
         active: values.active,

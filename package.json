@@ -24,6 +24,7 @@
     "db:fill": "tsx scripts/fill-demo-data.ts",
     "verify:db": "tsx scripts/verify-db.ts",
     "verify:time-clock": "tsx scripts/verify-time-clock.ts",
+    "verify:publish-shifts": "tsx scripts/verify-publish-shifts.ts",
     "verify:authz": "tsx scripts/verify-authz.ts",
     "auth:email-templates": "tsx scripts/apply-auth-email-templates.ts",
     "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",

@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Avatar } from "../../components/ui/avatar";
@@ -8,8 +8,9 @@ import { Button } from "../../components/ui/button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatMoney } from "../../lib/format";
-import { isAdmin } from "../../lib/schedule";
+import { groupEmployeesByRestaurant, isAdmin } from "../../lib/schedule";
 import type { Employee } from "../../lib/types";
+import { useRestaurants } from "../invoices/hooks";
 import { EmployeeDialog } from "./EmployeeDialog";
 import { useDeleteEmployee, useEmployees, useRotateInvite } from "./hooks";
 
@@ -17,6 +18,7 @@ export function EmployeesPage() {
   const { role } = useAuth();
   const { data: employees = [], isLoading, error } = useEmployees();
   const remove = useDeleteEmployee();
+  const { data: restaurants = [] } = useRestaurants();
   const rotateInvite = useRotateInvite();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -29,6 +31,7 @@ export function EmployeesPage() {
       `${e.full_name} ${e.email ?? ""} ${e.position}`.toLowerCase().includes(q),
     );
   }, [employees, search]);
+  const groups = useMemo(() => groupEmployeesByRestaurant(filtered, restaurants), [filtered, restaurants]);
 
   if (!isAdmin(role)) {
     return <Navigate to="/schedule" replace />;
@@ -83,84 +86,93 @@ export function EmployeesPage() {
                 </Td>
               </tr>
             ) : (
-              filtered.map((employee) => (
-                <tr key={employee.id} className="hover:bg-paper">
-                  <Td>
-                    <div className="flex items-center gap-3">
-                      <Avatar name={employee.full_name} />
-                      <div>
-                        <div className="font-medium">{employee.full_name}</div>
-                        <div className="text-xs text-muted">{employee.email ?? "No email"}</div>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td>{employee.position}</Td>
-                  <Td>{employee.login_role === "manager" ? "Manager" : "Staff"}</Td>
-                  <Td>{employee.phone ?? "—"}</Td>
-                  <Td>{formatMoney(employee.hourly_rate)}</Td>
-                  <Td>
-                    <Badge tone={employee.user_id ? "ok" : "neutral"} dot>
-                      {employee.user_id ? "Linked" : "Invite pending"}
-                    </Badge>
-                  </Td>
-                  <Td>
-                    {employee.user_id ? (
-                      <span className="text-muted">—</span>
-                    ) : employee.invite_code ? (
-                      <div className="flex items-center gap-1">
-                        <code className="rounded bg-paper px-1.5 py-0.5 text-[11px]">
-                          {employee.invite_code.slice(0, 8)}…
-                        </code>
-                        <Button
-                          variant="subtle"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(employee.invite_code ?? "");
-                          }}
-                        >
-                          Copy
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          onClick={() => {
-                            void rotateInvite.mutateAsync(employee.id);
-                          }}
-                        >
-                          Rotate
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted">Add an email</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <Badge tone={employee.active ? "ok" : "neutral"} dot>
-                      {employee.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </Td>
-                  <Td>
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="subtle"
-                        onClick={() => {
-                          setEditing(employee);
-                          setOpen(true);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="subtle"
-                        onClick={() => {
-                          if (window.confirm(`Remove ${employee.full_name} from the roster?`)) {
-                            void remove.mutateAsync(employee.id);
-                          }
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </Td>
-                </tr>
+              groups.map((group) => (
+                <Fragment key={group.restaurant?.id ?? "none"}>
+                  <tr>
+                    <Td colSpan={9} className="bg-paper text-xs font-medium uppercase tracking-wide text-ink">
+                      {group.restaurant?.name ?? "No restaurant"} · {group.employees.length}
+                    </Td>
+                  </tr>
+                  {group.employees.map((employee) => (
+                    <tr key={employee.id} className="hover:bg-paper">
+                      <Td>
+                        <div className="flex items-center gap-3">
+                          <Avatar name={employee.full_name} />
+                          <div>
+                            <div className="font-medium">{employee.full_name}</div>
+                            <div className="text-xs text-muted">{employee.email ?? "No email"}</div>
+                          </div>
+                        </div>
+                      </Td>
+                      <Td>{employee.position}</Td>
+                      <Td>{employee.login_role === "manager" ? "Manager" : "Staff"}</Td>
+                      <Td>{employee.phone ?? "—"}</Td>
+                      <Td>{formatMoney(employee.hourly_rate)}</Td>
+                      <Td>
+                        <Badge tone={employee.user_id ? "ok" : "neutral"} dot>
+                          {employee.user_id ? "Linked" : "Invite pending"}
+                        </Badge>
+                      </Td>
+                      <Td>
+                        {employee.user_id ? (
+                          <span className="text-muted">—</span>
+                        ) : employee.invite_code ? (
+                          <div className="flex items-center gap-1">
+                            <code className="rounded bg-paper px-1.5 py-0.5 text-[11px]">
+                              {employee.invite_code.slice(0, 8)}…
+                            </code>
+                            <Button
+                              variant="subtle"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(employee.invite_code ?? "");
+                              }}
+                            >
+                              Copy
+                            </Button>
+                            <Button
+                              variant="subtle"
+                              onClick={() => {
+                                void rotateInvite.mutateAsync(employee.id);
+                              }}
+                            >
+                              Rotate
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted">Add an email</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <Badge tone={employee.active ? "ok" : "neutral"} dot>
+                          {employee.active ? "Active" : "Inactive"}
+                        </Badge>
+                      </Td>
+                      <Td>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="subtle"
+                            onClick={() => {
+                              setEditing(employee);
+                              setOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="subtle"
+                            onClick={() => {
+                              if (window.confirm(`Remove ${employee.full_name} from the roster?`)) {
+                                void remove.mutateAsync(employee.id);
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </Td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))
             )}
           </tbody>
