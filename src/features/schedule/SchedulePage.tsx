@@ -80,8 +80,8 @@ export function SchedulePage() {
       : (restaurants[0]?.id ?? ALL_RESTAURANTS);
   const restaurant = restaurants.find((r) => r.id === restaurantId) ?? null;
   const boardShifts = useMemo(
-    () => shiftsForRestaurant(weekShifts, employees, restaurantId),
-    [weekShifts, employees, restaurantId],
+    () => shiftsForRestaurant(weekShifts, restaurantId),
+    [weekShifts, restaurantId],
   );
   // Home crew, plus anyone from another restaurant who is covering a shift here this week.
   const boardEmployees = useMemo(() => {
@@ -214,6 +214,7 @@ export function SchedulePage() {
                 weekDays={weekDays}
                 shifts={boardShifts}
                 hours={employeeWeekHours(boardShifts, employee.id)}
+                canAdd={boardReady && employee.active}
                 onCreate={(day) =>
                   setDialog({
                     shift: null,
@@ -231,6 +232,7 @@ export function SchedulePage() {
               weekDays={weekDays}
               shifts={boardShifts}
               hours={null}
+              canAdd={boardReady}
               onCreate={(day) =>
                 setDialog({
                   shift: null,
@@ -296,6 +298,7 @@ function EmployeeRow({
   weekDays,
   shifts,
   hours,
+  canAdd,
   onCreate,
   onEdit,
 }: {
@@ -303,11 +306,10 @@ function EmployeeRow({
   weekDays: Date[];
   shifts: ShiftWithEmployee[];
   hours: number | null;
+  canAdd: boolean;
   onCreate: (day: Date) => void;
   onEdit: (shift: Shift) => void;
 }) {
-  // Inactive people stay visible for shifts they already have, but get no new ones.
-  const canAdd = employee ? employee.active : true;
   const name = employee?.full_name ?? "Open shifts";
   return (
     <tr className="align-top">

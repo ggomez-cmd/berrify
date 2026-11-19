@@ -78,8 +78,8 @@ export function useDeleteShift() {
 export function usePublishWeek() {
   const qc = useQueryClient();
   return useMutation({
-    // restaurantId null publishes across restaurants. The server rechecks each draft's restaurant
-    // and returns how many it published, so a stale board can't publish a draft that moved.
+    // restaurantId null publishes across restaurants. The server rechecks restaurant and draft
+    // status and returns how many it published.
     mutationFn: async ({ ids, restaurantId }: { ids: string[]; restaurantId: string | null }) => {
       if (ids.length === 0) return 0;
       const { data, error } = await supabase.rpc("publish_shifts", {

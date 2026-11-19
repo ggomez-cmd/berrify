@@ -92,7 +92,7 @@ The activity feed is built from real invoices, low-stock items, today’s shifts
 
 Schedule is the weekly staff board, one restaurant at a time. Managers draft and publish shifts. Staff only see **published** shifts assigned to them, plus who else is on that day.
 
-Each employee has a home restaurant (set on **Employees**). A restaurant’s board lists its home crew, plus anyone from another restaurant who is covering a shift there that week. A shift belongs to the restaurant it was created under. Older shifts saved without a restaurant follow their employee’s home restaurant.
+Each employee has a home restaurant (set on **Employees**). A restaurant’s board lists its home crew, plus anyone from another restaurant who is covering a shift there that week. A shift belongs to the restaurant it was created under, even if the employee later moves. Shifts saved without a restaurant (older shifts, and shifts for someone with no home restaurant created on **All restaurants**) show only on **All restaurants**.
 
 Shifts are either:
 
@@ -117,7 +117,7 @@ Hours on the board are decimal hours for that week (`4:00–10:00` = 6 hours). O
 7. Click a shift pill to edit or delete it. Editing does not move a shift to another restaurant.
    - Burgundy pill = published
    - Gray pill = draft
-8. When the week looks right, click **Publish** (for example **Publish Semilla**). That publishes the remaining drafts for that restaurant and the visible week only. Other restaurants’ drafts stay hidden until you publish them from their own tab. If a draft moved to another restaurant since the board loaded, Berrify skips it, says so, and refreshes the board.
+8. When the week looks right, click **Publish** (for example **Publish Semilla**). That publishes the remaining drafts for that restaurant and the visible week only. Other restaurants’ drafts stay hidden until you publish them from their own tab. If a draft changed since the board loaded, Berrify skips it, says so, and refreshes the board.
 
 The **Hours** column is the employee’s hours at this restaurant on this week’s board. Inactive employees still show for shifts they already have, but get no **+ Add**.
 

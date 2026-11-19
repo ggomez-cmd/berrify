@@ -140,7 +140,7 @@ export function ShiftDialog({
         id: shift?.id,
         values: {
           employee_id: values.employee_id || null,
-          // Edits keep the stored restaurant (null keeps following the employee's home); only new shifts take one.
+          // Edits keep the saved restaurant; only new shifts take one.
           restaurant_id: shift ? shift.restaurant_id : (boardRestaurantId ?? employeeHome),
           position: values.position,
           starts_at: range.starts_at,

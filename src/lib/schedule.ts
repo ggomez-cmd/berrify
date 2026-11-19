@@ -191,23 +191,10 @@ export const ALL_RESTAURANTS = "all";
 
 type EmployeeHome = Pick<Employee, "id" | "home_restaurant_id">;
 
-/** A shift belongs to its own restaurant, else to its employee's home restaurant. */
-export function shiftRestaurantId(
-  shift: Pick<Shift, "restaurant_id" | "employee_id">,
-  employees: EmployeeHome[],
-): string | null {
-  if (shift.restaurant_id) return shift.restaurant_id;
-  if (!shift.employee_id) return null;
-  return employees.find((e) => e.id === shift.employee_id)?.home_restaurant_id ?? null;
-}
-
-export function shiftsForRestaurant<T extends Pick<Shift, "restaurant_id" | "employee_id">>(
-  shifts: T[],
-  employees: EmployeeHome[],
-  restaurantId: string,
-): T[] {
+/** A shift belongs only to the restaurant saved on it, so moving an employee never moves their shifts. */
+export function shiftsForRestaurant<T extends Pick<Shift, "restaurant_id">>(shifts: T[], restaurantId: string): T[] {
   if (restaurantId === ALL_RESTAURANTS) return shifts;
-  return shifts.filter((s) => shiftRestaurantId(s, employees) === restaurantId);
+  return shifts.filter((s) => s.restaurant_id === restaurantId);
 }
 
 export function employeesForRestaurant<T extends EmployeeHome>(employees: T[], restaurantId: string): T[] {

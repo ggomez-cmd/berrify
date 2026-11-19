@@ -11,7 +11,6 @@ import {
   hoursBetween,
   isAdmin,
   isManager,
-  shiftRestaurantId,
   shiftsForRestaurant,
   shiftsOverlap,
   visibleShiftsForRole,
@@ -193,13 +192,6 @@ describe("restaurant grouping", () => {
     { id: "r3", name: "Empty" },
   ];
 
-  it("resolves a shift's restaurant from the shift, then the employee's home", () => {
-    expect(shiftRestaurantId({ restaurant_id: "r2", employee_id: "e1" }, employees)).toBe("r2");
-    expect(shiftRestaurantId({ restaurant_id: null, employee_id: "e1" }, employees)).toBe("r1");
-    expect(shiftRestaurantId({ restaurant_id: null, employee_id: null }, employees)).toBeNull();
-    expect(shiftRestaurantId({ restaurant_id: null, employee_id: "missing" }, employees)).toBeNull();
-  });
-
   it("filters shifts and employees to one restaurant, or keeps all", () => {
     const shifts = [
       { id: "a", restaurant_id: null, employee_id: "e1" },
@@ -208,8 +200,8 @@ describe("restaurant grouping", () => {
       { id: "d", restaurant_id: null, employee_id: "e2" },
       { id: "e", restaurant_id: null, employee_id: null },
     ];
-    expect(shiftsForRestaurant(shifts, employees, "r1").map((s) => s.id)).toEqual(["a", "b", "c"]);
-    expect(shiftsForRestaurant(shifts, employees, ALL_RESTAURANTS)).toHaveLength(5);
+    expect(shiftsForRestaurant(shifts, "r1").map((s) => s.id)).toEqual(["b", "c"]);
+    expect(shiftsForRestaurant(shifts, ALL_RESTAURANTS)).toHaveLength(5);
     expect(employeesForRestaurant(employees, "r2").map((e) => e.id)).toEqual(["e2"]);
     expect(employeesForRestaurant(employees, ALL_RESTAURANTS)).toHaveLength(4);
   });

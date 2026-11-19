@@ -94,10 +94,9 @@ try {
 
   await client.query("update public.employees set home_restaurant_id = $1 where id = $2", [north, emp.id]);
   const legacy = await draft(null);
-  await client.query("update public.employees set home_restaurant_id = $1 where id = $2", [south, emp.id]);
-  check("legacy draft after employee moved North to South, published from stale North tab", await publish(admin.user_id, [legacy], north), 0);
+  check("draft with no saved restaurant, from its employee's home tab", await publish(admin.user_id, [legacy], north), 0);
   check("its status", await status(legacy), "draft");
-  check("same legacy draft published from South", await publish(admin.user_id, [legacy], south), 1);
+  check("same draft from All restaurants", await publish(admin.user_id, [legacy], null), 1);
 
   const anywhere = await draft(south);
   check("All restaurants tab publishes any restaurant", await publish(admin.user_id, [anywhere], null), 1);
