@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_RESTAURANTS,
   atTimeOnDay,
   composeShiftRangeOnDay,
   employeeHasOverlap,
   employeeWeekHours,
+  employeesForRestaurant,
   filterShiftsForWeek,
+  groupEmployeesByRestaurant,
   hoursBetween,
   isAdmin,
   isManager,
+  shiftsForRestaurant,
   shiftsOverlap,
   visibleShiftsForRole,
   weekStart,
@@ -172,5 +176,39 @@ describe("composeShiftRangeOnDay", () => {
     expect(ends.getDate()).toBe(14);
     expect(ends.getHours()).toBe(2);
     expect(ends.getMinutes()).toBe(0);
+  });
+});
+
+describe("restaurant grouping", () => {
+  const employees = [
+    { id: "e1", home_restaurant_id: "r1" },
+    { id: "e2", home_restaurant_id: "r2" },
+    { id: "e3", home_restaurant_id: null },
+    { id: "e4", home_restaurant_id: "gone" },
+  ];
+  const restaurants = [
+    { id: "r1", name: "Semilla" },
+    { id: "r2", name: "Lelas" },
+    { id: "r3", name: "Empty" },
+  ];
+
+  it("filters shifts and employees to one restaurant, or keeps all", () => {
+    const shifts = [
+      { id: "a", restaurant_id: null, employee_id: "e1" },
+      { id: "b", restaurant_id: "r1", employee_id: null },
+      { id: "c", restaurant_id: "r1", employee_id: "e2" },
+      { id: "d", restaurant_id: null, employee_id: "e2" },
+      { id: "e", restaurant_id: null, employee_id: null },
+    ];
+    expect(shiftsForRestaurant(shifts, "r1").map((s) => s.id)).toEqual(["b", "c"]);
+    expect(shiftsForRestaurant(shifts, ALL_RESTAURANTS)).toHaveLength(5);
+    expect(employeesForRestaurant(employees, "r2").map((e) => e.id)).toEqual(["e2"]);
+    expect(employeesForRestaurant(employees, ALL_RESTAURANTS)).toHaveLength(4);
+  });
+
+  it("groups employees by restaurant order and puts the rest last", () => {
+    const groups = groupEmployeesByRestaurant(employees, restaurants);
+    expect(groups.map((g) => g.restaurant?.name ?? null)).toEqual(["Semilla", "Lelas", null]);
+    expect(groups[2].employees.map((e) => e.id)).toEqual(["e3", "e4"]);
   });
 });

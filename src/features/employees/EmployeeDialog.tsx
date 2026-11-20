@@ -5,6 +5,7 @@ import { Input, Select } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { STATIONS } from "../../lib/constants";
 import { isValidClockPin } from "../../lib/pin";
+import { useRestaurants } from "../invoices/hooks";
 import type { Employee, LoginRole, Station } from "../../lib/types";
 import { useSetClockPin, useUpsertEmployee, type EmployeeInput } from "./hooks";
 
@@ -13,6 +14,7 @@ const empty: EmployeeInput = {
   email: "",
   phone: "",
   position: "Server",
+  home_restaurant_id: null,
   login_role: "staff",
   hourly_rate: 0,
   active: true,
@@ -29,6 +31,7 @@ export function EmployeeDialog({
 }) {
   const upsert = useUpsertEmployee();
   const setPin = useSetClockPin();
+  const { data: restaurants = [] } = useRestaurants();
   const [values, setValues] = useState<EmployeeInput>(empty);
   const [clockPin, setClockPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export function EmployeeDialog({
         email: employee.email ?? "",
         phone: employee.phone ?? "",
         position: employee.position,
+        home_restaurant_id: employee.home_restaurant_id,
         login_role: employee.login_role === "manager" ? "manager" : "staff",
         hourly_rate: Number(employee.hourly_rate),
         active: employee.active,
@@ -74,7 +78,7 @@ export function EmployeeDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={employee ? "Edit account" : "Create account"}
-      description="Admins set station, pay, and whether this person is a manager or staff. They sign up with this email and the invite code."
+      description="Admins set restaurant, station, pay, and whether this person is a manager or staff. They sign up with this email and the invite code."
     >
       <form id="employee-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
         <div className="col-span-2">
@@ -102,6 +106,22 @@ export function EmployeeDialog({
             onChange={(e) => setValues((v) => ({ ...v, phone: e.target.value }))}
           />
         </Field>
+        <div className="col-span-2">
+          <Field label="Restaurant" htmlFor="emp-restaurant">
+            <Select
+              id="emp-restaurant"
+              value={values.home_restaurant_id ?? ""}
+              onChange={(e) => setValues((v) => ({ ...v, home_restaurant_id: e.target.value || null }))}
+            >
+              <option value="">No restaurant</option>
+              {restaurants.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <Field label="Station" htmlFor="emp-position">
           <Select
             id="emp-position"

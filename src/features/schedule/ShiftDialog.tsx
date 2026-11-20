@@ -5,12 +5,13 @@ import { Input, Select, Textarea } from "../../components/ui/input";
 import { Field } from "../../components/ui/label";
 import { STATIONS } from "../../lib/constants";
 import {
+  ALL_RESTAURANTS,
   composeShiftRangeOnDay,
   employeeHasOverlap,
   formatLockedShiftDay,
   localDayFromYmd,
 } from "../../lib/schedule";
-import type { Employee, Shift, ShiftStatus, Station } from "../../lib/types";
+import type { Employee, Restaurant, Shift, ShiftStatus, Station } from "../../lib/types";
 import { toDatetimeLocal, useDeleteShift, useUpsertShift } from "./hooks";
 
 type Draft = {
@@ -47,6 +48,8 @@ export function ShiftDialog({
   defaultEnds,
   defaultEmployeeId,
   lockDay = false,
+  restaurants,
+  restaurantId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -57,6 +60,9 @@ export function ShiftDialog({
   defaultEnds?: string;
   defaultEmployeeId?: string | null;
   lockDay?: boolean;
+  restaurants: Array<Pick<Restaurant, "id" | "name">>;
+  /** Selected board restaurant, or ALL_RESTAURANTS. */
+  restaurantId: string;
 }) {
   const upsert = useUpsertShift();
   const remove = useDeleteShift();
@@ -72,6 +78,11 @@ export function ShiftDialog({
   const [error, setError] = useState<string | null>(null);
   const dateLocked = Boolean(shift) || lockDay;
   const employeeLocked = !shift && lockDay;
+  const boardRestaurantId = restaurantId === ALL_RESTAURANTS ? null : restaurantId;
+  const boardRestaurant = restaurants.find((r) => r.id === boardRestaurantId) ?? null;
+  const activeEmployees = employees.filter((e) => e.active);
+  const crew = boardRestaurant ? activeEmployees.filter((e) => e.home_restaurant_id === boardRestaurant.id) : activeEmployees;
+  const otherCrew = boardRestaurant ? activeEmployees.filter((e) => e.home_restaurant_id !== boardRestaurant.id) : [];
 
   useEffect(() => {
     if (!open) return;
@@ -123,11 +134,14 @@ export function ShiftDialog({
       setError("Start and end times are required");
       return;
     }
+    const employeeHome = employees.find((e) => e.id === values.employee_id)?.home_restaurant_id ?? null;
     try {
       await upsert.mutateAsync({
         id: shift?.id,
         values: {
           employee_id: values.employee_id || null,
+          // Edits keep the saved restaurant; only new shifts take one.
+          restaurant_id: shift ? shift.restaurant_id : (boardRestaurantId ?? employeeHome),
           position: values.position,
           starts_at: range.starts_at,
           ends_at: range.ends_at,
@@ -145,7 +159,7 @@ export function ShiftDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={shift ? "Edit shift" : "Add shift"}
+      title={`${shift ? "Edit shift" : "Add shift"}${boardRestaurant ? ` · ${boardRestaurant.name}` : ""}`}
       description="Drafts stay hidden from staff until you publish."
     >
       <form id="shift-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
@@ -166,13 +180,22 @@ export function ShiftDialog({
               }}
             >
               <option value="">Open / unassigned</option>
-              {employees
-                .filter((e) => e.active)
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.full_name} · {e.position}
-                  </option>
-                ))}
+              {otherCrew.length === 0 ? (
+                crew.map((e) => <EmployeeOption key={e.id} employee={e} />)
+              ) : (
+                <>
+                  <optgroup label={boardRestaurant?.name ?? ""}>
+                    {crew.map((e) => (
+                      <EmployeeOption key={e.id} employee={e} />
+                    ))}
+                  </optgroup>
+                  <optgroup label="Other restaurants">
+                    {otherCrew.map((e) => (
+                      <EmployeeOption key={e.id} employee={e} />
+                    ))}
+                  </optgroup>
+                </>
+              )}
             </Select>
           </Field>
         </div>
@@ -274,5 +297,13 @@ export function ShiftDialog({
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+function EmployeeOption({ employee }: { employee: Employee }) {
+  return (
+    <option value={employee.id}>
+      {employee.full_name} · {employee.position}
+    </option>
   );
 }

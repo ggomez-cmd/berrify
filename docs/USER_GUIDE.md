@@ -90,7 +90,9 @@ The activity feed is built from real invoices, low-stock items, today’s shifts
 
 ### What it does
 
-Schedule is the weekly staff board. Managers draft and publish shifts. Staff only see **published** shifts assigned to them, plus who else is on that day.
+Schedule is the weekly staff board, one restaurant at a time. Managers draft and publish shifts. Staff only see **published** shifts assigned to them, plus who else is on that day.
+
+Each employee has a home restaurant (set on **Employees**). A restaurant’s board lists its home crew, plus anyone from another restaurant who is covering a shift there that week. A shift belongs to the restaurant it was created under, even if the employee later moves. Shifts saved without a restaurant (older shifts, and shifts for someone with no home restaurant created on **All restaurants**) show only on **All restaurants**.
 
 Shifts are either:
 
@@ -102,28 +104,29 @@ Hours on the board are decimal hours for that week (`4:00–10:00` = 6 hours). O
 ### How managers use it
 
 1. Open **Schedule**.
-2. Use the arrows or **This week** to change the week. The center chip shows the date range.
-3. Click **+ Add** in a cell, or **Add shift**, to create a shift. Defaults are typically 4:00–10:00 PM (open shifts 5:00–11:00 PM).
-4. In the dialog set:
-   - **Employee** — or leave **Open / unassigned**
+2. Pick a restaurant from the tabs at the top. Berrify remembers your last tab. **All restaurants** shows every shift, as the board did before restaurants were added.
+3. Use the arrows or **This week** to change the week. The center chip shows the date range.
+4. Click **+ Add** in a cell, or **Add shift**, to create a shift. Defaults are typically 4:00–10:00 PM (open shifts 5:00–11:00 PM).
+5. In the dialog set:
+   - **Employee** — that restaurant’s crew is listed first, then **Other restaurants** for cover shifts. Or leave **Open / unassigned**
    - **Station** — Server, Cook, Bartender, Host, Dish, Manager, Other
    - **Status** — Draft or Published
    - **Starts / Ends**
    - **Note** (optional)
-5. Save. A warning appears if that employee already has an overlapping shift.
-6. Click a shift pill to edit or delete it.
+6. Save. The shift is saved under the restaurant tab you are on (on **All restaurants**, under the employee’s home restaurant). A warning appears if that employee already has an overlapping shift at any restaurant.
+7. Click a shift pill to edit or delete it. Editing does not move a shift to another restaurant.
    - Burgundy pill = published
    - Gray pill = draft
-7. When the week looks right, click **Publish week**. That publishes every remaining draft for the visible week.
+8. When the week looks right, click **Publish** (for example **Publish Semilla**). That publishes the remaining drafts for that restaurant and the visible week only. Other restaurants’ drafts stay hidden until you publish them from their own tab. If a draft changed since the board loaded, Berrify skips it, says so, and refreshes the board.
 
-The **Hours** column is the employee’s total hours on this week’s board.
+The **Hours** column is the employee’s hours at this restaurant on this week’s board. Inactive employees still show for shifts they already have, but get no **+ Add**.
 
 ### How staff use it
 
 1. Open **Schedule**.
 2. Page by week.
-3. Each day card shows your published shifts (time, station, note).
-4. If you have a shift that day, **Also on** lists coworkers published the same day.
+3. Each day card shows your published shifts (time, restaurant, station, note).
+4. If you have a shift that day, **Also on** lists coworkers published the same day at the same restaurant.
 
 You cannot create, edit, or publish shifts as staff.
 
@@ -149,6 +152,8 @@ You can only punch if:
    - Working → **Start break** or **Clock out**
    - On break → **End break**
 4. **Recent punches** groups those events into daily rows (clock in, break, clock out).
+
+When you clock in, Berrify links the punch to your published shift, and that decides which restaurant the hours count toward. A shift you are already inside wins. Otherwise it picks the shift starting nearest your punch, within 2 hours before its start or after its end. With no matching shift, hours go to your home restaurant.
 
 Invalid actions stay disabled. You cannot clock in twice, or clock out while on break, without a manager force-out or a recorded missing punch.
 
@@ -208,18 +213,19 @@ Time Clock has no pay period, payroll export, or employee timesheet approval yet
 
 ### What it does
 
-Employees is where admins create accounts: name, station (job), app access (manager or staff), phone, hourly rate, whether a login is linked, and active/inactive.
+Employees is where admins create accounts: name, restaurant, station (job), app access (manager or staff), phone, hourly rate, whether a login is linked, and active/inactive.
 
 A roster row can exist **before** the person has an account. **Login = Linked** means `user_id` is set. **Invite pending** means they are on the roster but have not signed in with that email yet.
 
 ### How to use it
 
-1. Open **Employees**.
+1. Open **Employees**. The roster is grouped by restaurant, with **No restaurant** last.
 2. Search the roster by name, email, or station.
 3. Click **Add account**. Fill:
    - Full name (required)
    - Email (use the address they will sign in with)
    - Phone
+   - **Restaurant** — their home restaurant. It decides which Schedule tab they appear on.
    - Station
    - **App access** — Manager or Staff
    - Hourly rate

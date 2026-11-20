@@ -3,8 +3,11 @@ import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
+import { PageTabs } from "../../components/ui/page-tabs";
 import {
   addDays,
+  ALL_RESTAURANTS,
+  employeesForRestaurant,
   employeeHasOverlap,
   employeeWeekHours,
   eachDayOfWeek,
@@ -13,15 +16,35 @@ import {
   formatWeekLabel,
   isManager,
   sameDay,
+  shiftsForRestaurant,
   statusLabel,
   weekStart,
   atTimeOnDay,
 } from "../../lib/schedule";
 import { cn } from "../../lib/cn";
-import type { Employee, Shift, ShiftWithEmployee } from "../../lib/types";
+import type { Employee, Restaurant, Shift, ShiftWithEmployee } from "../../lib/types";
 import { useEmployees, useMyEmployee } from "../employees/hooks";
+import { useRestaurants } from "../invoices/hooks";
 import { ShiftDialog } from "./ShiftDialog";
 import { usePublishWeek, useShifts } from "./hooks";
+
+const RESTAURANT_KEY = "berrify.schedule.restaurant";
+
+function readSavedRestaurant(): string | null {
+  try {
+    return window.localStorage.getItem(RESTAURANT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveRestaurant(id: string) {
+  try {
+    window.localStorage.setItem(RESTAURANT_KEY, id);
+  } catch {
+    // Remembering the tab is a convenience only.
+  }
+}
 
 type DraftTarget = {
   shift: Shift | null;
@@ -34,24 +57,47 @@ type DraftTarget = {
 export function SchedulePage() {
   const { role } = useAuth();
   const manager = isManager(role);
-  const { data: employees = [] } = useEmployees();
+  const employeesQuery = useEmployees();
+  const employees = useMemo(() => employeesQuery.data ?? [], [employeesQuery.data]);
   const { data: myEmployee } = useMyEmployee();
   const { data: shifts = [], isLoading, error } = useShifts();
+  const restaurantsQuery = useRestaurants();
+  const restaurants = useMemo(() => restaurantsQuery.data ?? [], [restaurantsQuery.data]);
+  const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const publish = usePublishWeek();
+  const [pickedRestaurant, setPickedRestaurant] = useState<string | null>(readSavedRestaurant);
   const [cursor, setCursor] = useState(() => weekStart(new Date()));
   const [dialog, setDialog] = useState<DraftTarget | null>(null);
 
   const weekDays = useMemo(() => eachDayOfWeek(cursor), [cursor]);
   const weekShifts = useMemo(() => filterShiftsForWeek(shifts, cursor), [shifts, cursor]);
-  const activeEmployees = useMemo(() => employees.filter((e) => e.active), [employees]);
-  const drafts = weekShifts.filter((s) => s.status === "draft");
-  const overlapCount = weekShifts.filter((s) => employeeHasOverlap(weekShifts, s)).length;
+  // Until restaurants and the roster load, the board can't tell which shifts belong where.
+  const boardReady = restaurantsQuery.isSuccess && employeesQuery.isSuccess;
+  const boardError = restaurantsQuery.error ?? employeesQuery.error;
+  const restaurantId =
+    pickedRestaurant && (pickedRestaurant === ALL_RESTAURANTS || restaurants.some((r) => r.id === pickedRestaurant))
+      ? pickedRestaurant
+      : (restaurants[0]?.id ?? ALL_RESTAURANTS);
+  const restaurant = restaurants.find((r) => r.id === restaurantId) ?? null;
+  const boardShifts = useMemo(
+    () => shiftsForRestaurant(weekShifts, restaurantId),
+    [weekShifts, restaurantId],
+  );
+  // Home crew, plus anyone from another restaurant who is covering a shift here this week.
+  const boardEmployees = useMemo(() => {
+    const crew = new Set(employeesForRestaurant(employees.filter((e) => e.active), restaurantId).map((e) => e.id));
+    for (const s of boardShifts) if (s.employee_id) crew.add(s.employee_id);
+    return employees.filter((e) => crew.has(e.id));
+  }, [employees, boardShifts, restaurantId]);
+  const drafts = boardShifts.filter((s) => s.status === "draft");
+  const overlapCount = boardShifts.filter((s) => employeeHasOverlap(weekShifts, s)).length;
 
   if (!manager) {
     return (
       <StaffSchedule
         weekDays={weekDays}
         weekShifts={weekShifts}
+        restaurants={restaurants}
         myEmployeeId={myEmployee?.id ?? null}
         cursor={cursor}
         setCursor={setCursor}
@@ -63,11 +109,25 @@ export function SchedulePage() {
 
   return (
     <div className="space-y-4">
+      {restaurants.length > 0 ? (
+        <PageTabs
+          items={[
+            ...restaurants.map((r) => ({ id: r.id, label: r.name })),
+            { id: ALL_RESTAURANTS, label: "All restaurants" },
+          ]}
+          value={restaurantId}
+          onChange={(id) => {
+            setPickedRestaurant(id);
+            saveRestaurant(id);
+          }}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <WeekPager cursor={cursor} setCursor={setCursor} />
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
+            disabled={!boardReady}
             onClick={() =>
               setDialog({
                 shift: null,
@@ -79,20 +139,45 @@ export function SchedulePage() {
             Add shift
           </Button>
           <Button
-            disabled={drafts.length === 0 || publish.isPending}
-            onClick={() => void publish.mutateAsync(drafts.map((s) => s.id))}
+            disabled={!boardReady || drafts.length === 0 || publish.isPending}
+            onClick={() => {
+              setPublishNotice(null);
+              void publish
+                .mutateAsync({
+                  ids: drafts.map((s) => s.id),
+                  restaurantId: restaurant ? restaurant.id : null,
+                })
+                .then((count) => {
+                  const skipped = drafts.length - count;
+                  if (skipped > 0) {
+                    setPublishNotice(
+                      `${skipped} draft${skipped === 1 ? "" : "s"} changed since the board loaded and ${skipped === 1 ? "was" : "were"} not published. The board has been refreshed.`,
+                    );
+                  }
+                });
+            }}
           >
-            {publish.isPending ? "Publishing…" : `Publish week (${drafts.length} draft)`}
+            {publish.isPending
+              ? "Publishing…"
+              : `Publish ${restaurant ? restaurant.name : "week"} (${drafts.length} draft)`}
           </Button>
         </div>
       </div>
 
       {overlapCount > 0 ? (
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
-          {overlapCount} overlapping shift{overlapCount === 1 ? "" : "s"} this week.
+          {overlapCount} overlapping shift{overlapCount === 1 ? "" : "s"} this week
+          {restaurant ? ` at ${restaurant.name}` : ""}.
         </p>
       ) : null}
 
+      {publishNotice ? (
+        <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn" role="status">
+          {publishNotice}
+        </p>
+      ) : null}
+      {publish.error ? <p className="text-sm text-danger">{publish.error.message}</p> : null}
+      {boardError ? <p className="text-sm text-danger">{boardError.message}</p> : null}
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading schedule…</p> : null}
 
@@ -115,13 +200,21 @@ export function SchedulePage() {
             </tr>
           </thead>
           <tbody>
-            {activeEmployees.map((employee) => (
+            {boardEmployees.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="border-t border-line py-10 text-center text-muted">
+                  No employees at {restaurant?.name ?? "this restaurant"} yet. Set their restaurant on the Employees page.
+                </td>
+              </tr>
+            ) : null}
+            {boardEmployees.map((employee) => (
               <EmployeeRow
                 key={employee.id}
                 employee={employee}
                 weekDays={weekDays}
-                shifts={weekShifts}
-                hours={employeeWeekHours(weekShifts, employee.id)}
+                shifts={boardShifts}
+                hours={employeeWeekHours(boardShifts, employee.id)}
+                canAdd={boardReady && employee.active}
                 onCreate={(day) =>
                   setDialog({
                     shift: null,
@@ -137,8 +230,9 @@ export function SchedulePage() {
             <EmployeeRow
               employee={null}
               weekDays={weekDays}
-              shifts={weekShifts}
+              shifts={boardShifts}
               hours={null}
+              canAdd={boardReady}
               onCreate={(day) =>
                 setDialog({
                   shift: null,
@@ -166,6 +260,8 @@ export function SchedulePage() {
         defaultEnds={dialog?.ends}
         defaultEmployeeId={dialog?.employeeId}
         lockDay={dialog?.lockDay ?? false}
+        restaurants={restaurants}
+        restaurantId={restaurantId}
       />
     </div>
   );
@@ -202,6 +298,7 @@ function EmployeeRow({
   weekDays,
   shifts,
   hours,
+  canAdd,
   onCreate,
   onEdit,
 }: {
@@ -209,6 +306,7 @@ function EmployeeRow({
   weekDays: Date[];
   shifts: ShiftWithEmployee[];
   hours: number | null;
+  canAdd: boolean;
   onCreate: (day: Date) => void;
   onEdit: (shift: Shift) => void;
 }) {
@@ -246,13 +344,15 @@ function EmployeeRow({
                   </div>
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => onCreate(day)}
-                className="rounded-lg px-2 py-1 text-left text-[11px] text-muted hover:bg-paper hover:text-ink"
-              >
-                + Add
-              </button>
+              {canAdd ? (
+                <button
+                  type="button"
+                  onClick={() => onCreate(day)}
+                  className="rounded-lg px-2 py-1 text-left text-[11px] text-muted hover:bg-paper hover:text-ink"
+                >
+                  + Add
+                </button>
+              ) : null}
             </div>
           </td>
         );
@@ -267,6 +367,7 @@ function EmployeeRow({
 function StaffSchedule({
   weekDays,
   weekShifts,
+  restaurants,
   myEmployeeId,
   cursor,
   setCursor,
@@ -275,6 +376,7 @@ function StaffSchedule({
 }: {
   weekDays: Date[];
   weekShifts: ShiftWithEmployee[];
+  restaurants: Array<Pick<Restaurant, "id" | "name">>;
   myEmployeeId: string | null;
   cursor: Date;
   setCursor: (d: Date) => void;
@@ -290,12 +392,15 @@ function StaffSchedule({
       {isLoading ? <p className="text-sm text-muted">Loading your shifts…</p> : null}
       {weekDays.map((day) => {
         const dayMine = mine.filter((s) => sameDay(s.starts_at, day));
+        // Older shifts have no restaurant; staff can't see homes, so those stay unscoped.
+        const myRestaurants = new Set(dayMine.map((s) => s.restaurant_id));
         const others = weekShifts.filter(
           (s) =>
             s.status === "published" &&
             s.employee_id !== myEmployeeId &&
             sameDay(s.starts_at, day) &&
-            dayMine.length > 0,
+            dayMine.length > 0 &&
+            (myRestaurants.has(null) || s.restaurant_id === null || myRestaurants.has(s.restaurant_id)),
         );
         return (
           <Card key={day.toISOString()}>
@@ -311,6 +416,11 @@ function StaffSchedule({
                     <span className="inline-flex rounded-xl bg-wine px-2.5 py-1 text-xs font-medium text-white">
                       {formatTimeRange(s.starts_at, s.ends_at)}
                     </span>
+                    {s.restaurant_id ? (
+                      <span className="ml-2 font-medium">
+                        {restaurants.find((r) => r.id === s.restaurant_id)?.name}
+                      </span>
+                    ) : null}
                     <span className="ml-2 text-muted">{s.position}</span>
                     {s.note ? <span className="ml-2 text-muted">· {s.note}</span> : null}
                   </li>

@@ -1,4 +1,4 @@
-import type { MembershipRole, Shift, ShiftStatus, Station } from "./types";
+import type { Employee, MembershipRole, Restaurant, Shift, ShiftStatus, Station } from "./types";
 
 export function isAdmin(role: MembershipRole | null): boolean {
   return role === "admin";
@@ -185,4 +185,38 @@ export function composeShiftRangeOnDay(
     ends = addDays(ends, 1);
   }
   return { starts_at: starts.toISOString(), ends_at: ends.toISOString() };
+}
+
+export const ALL_RESTAURANTS = "all";
+
+type EmployeeHome = Pick<Employee, "id" | "home_restaurant_id">;
+
+/** A shift belongs only to the restaurant saved on it, so moving an employee never moves their shifts. */
+export function shiftsForRestaurant<T extends Pick<Shift, "restaurant_id">>(shifts: T[], restaurantId: string): T[] {
+  if (restaurantId === ALL_RESTAURANTS) return shifts;
+  return shifts.filter((s) => s.restaurant_id === restaurantId);
+}
+
+export function employeesForRestaurant<T extends EmployeeHome>(employees: T[], restaurantId: string): T[] {
+  if (restaurantId === ALL_RESTAURANTS) return employees;
+  return employees.filter((e) => e.home_restaurant_id === restaurantId);
+}
+
+export type EmployeeGroup<T> = { restaurant: Pick<Restaurant, "id" | "name"> | null; employees: T[] };
+
+/** Restaurants in the given order, then employees with no or an unknown restaurant. Empty groups are dropped. */
+export function groupEmployeesByRestaurant<T extends EmployeeHome>(
+  employees: T[],
+  restaurants: Array<Pick<Restaurant, "id" | "name">>,
+): EmployeeGroup<T>[] {
+  const known = new Set(restaurants.map((r) => r.id));
+  const groups: EmployeeGroup<T>[] = restaurants.map((restaurant) => ({
+    restaurant,
+    employees: employees.filter((e) => e.home_restaurant_id === restaurant.id),
+  }));
+  groups.push({
+    restaurant: null,
+    employees: employees.filter((e) => !e.home_restaurant_id || !known.has(e.home_restaurant_id)),
+  });
+  return groups.filter((g) => g.employees.length > 0);
 }
