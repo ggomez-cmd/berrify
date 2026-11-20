@@ -19,8 +19,11 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 | **Staff** | Line staff with a linked employee row | Schedule (own published shifts) and Time Clock (Clock in / Clock out). They punch on the tablet kiosk only after a manager or admin opens it. |
 | **Manager** | Day-to-day operator | Dashboard, schedule editing, Time Clock attendance, inventory, invoices, and suppliers. Cannot create accounts or edit pay. |
 | **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
+| **Kiosk** | Shared tablet login (no employee row) | **Kiosk** only. Staff punch on it with their clock PIN. It cannot open any other page or read employee, shift, or pay data. |
 
 Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movements, or Kiosk. Those routes send them to Schedule.
+
+A kiosk login always lands on Kiosk. Every other route sends it back to Kiosk, and it has no sidebar.
 
 ### How to use it
 
@@ -199,9 +202,11 @@ Sets organization clock rules:
 
 Click **Save settings**.
 
-### Kiosk (manager / admin)
+### Kiosk (manager / admin / kiosk login)
 
 Open **Kiosk** from the sidebar on the shared tablet. Staff do not see this item. They enter their clock PIN on that screen to punch. Leave the kiosk with the admin exit PIN.
+
+A tablet can instead sign in with a **kiosk login**, which opens straight to this screen. Leaving the kiosk on a kiosk login (admin exit PIN, if one is set) signs the tablet out. Berrify support sets up kiosk logins; they cannot be created from Employees.
 
 Time Clock has no pay period, payroll export, or employee timesheet approval yet.
 

@@ -21,7 +21,7 @@ import type { InvoicePaymentKind } from "./invoice-payment";
 
 export type LoginRole = "manager" | "staff";
 
-export type MembershipRole = "admin" | LoginRole;
+export type MembershipRole = "admin" | LoginRole | "kiosk";
 
 export type MovementReason = "purchase" | "usage" | "adjustment" | "waste";
 
