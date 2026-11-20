@@ -239,6 +239,23 @@ try {
   );
   const kioskRole = (await client.query<{ role: string }>("select role from public.memberships where user_id = $1", [kiosk])).rows[0].role;
   check("kiosk membership role unchanged", kioskRole, "kiosk");
+  check(
+    "kiosk login cannot gain a second membership",
+    failed(await attempt("insert into public.memberships (user_id, org_id, role) values ($1, $2, 'admin')", [kiosk, away.org_id])),
+    true,
+  );
+  check(
+    "a login with another membership cannot become kiosk",
+    failed(await attempt("insert into public.memberships (user_id, org_id, role) values ($1, $2, 'kiosk')", [home.admin_id, away.org_id])),
+    true,
+  );
+  await client.query("update public.employees set user_id = $1 where id = $2", [staff, home.emp_id]);
+  check(
+    "a staff login linked to an employee cannot be turned into kiosk",
+    failed(await attempt("update public.memberships set role = 'kiosk' where user_id = $1 and org_id = $2", [staff, home.org_id])),
+    true,
+  );
+  await client.query("update public.employees set user_id = null where id = $1", [home.emp_id]);
 
   console.log("-- other roles unchanged");
   await asUser(home.admin_id, async () => {

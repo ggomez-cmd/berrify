@@ -160,6 +160,44 @@ grant execute on function public.kiosk_confirm_exit(text) to authenticated;
 -- Keep kiosk memberships kiosk
 -- ---------------------------------------------------------------------------
 
+-- A kiosk membership is the account's only membership, and its login has no
+-- employee row. Otherwise a leftover admin membership (signup bootstraps one)
+-- or an old employee link would keep access the kiosk login must not have.
+create or replace function public.guard_kiosk_membership()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.role = 'kiosk' then
+    if exists (
+      select 1 from public.memberships m
+      where m.user_id = new.user_id and m.org_id <> new.org_id
+    ) then
+      raise exception 'A kiosk login must have no other memberships';
+    end if;
+    if exists (select 1 from public.employees e where e.user_id = new.user_id) then
+      raise exception 'A kiosk login cannot be linked to an employee';
+    end if;
+  elsif exists (
+    select 1 from public.memberships m
+    where m.user_id = new.user_id and m.org_id <> new.org_id and m.role = 'kiosk'
+  ) then
+    raise exception 'A kiosk login must have no other memberships';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.guard_kiosk_membership() from public, anon, authenticated;
+
+drop trigger if exists memberships_guard_kiosk on public.memberships;
+create trigger memberships_guard_kiosk
+  before insert or update of role, user_id, org_id
+  on public.memberships
+  for each row execute function public.guard_kiosk_membership();
+
 create or replace function public.sync_employee_login_role()
 returns trigger
 language plpgsql
@@ -172,7 +210,6 @@ begin
       select 1
       from public.memberships m
       where m.user_id = new.user_id
-        and m.org_id = new.org_id
         and m.role = 'kiosk'
     ) then
       raise exception 'A kiosk login cannot be linked to an employee';
