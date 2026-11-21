@@ -208,6 +208,8 @@ Open **Kiosk** from the sidebar on the shared tablet. Staff do not see this item
 
 A tablet can instead sign in with a **kiosk login**, which opens straight to this screen. Leaving the kiosk on a kiosk login (admin exit PIN, if one is set) signs the tablet out. Berrify support sets up kiosk logins; they cannot be created from Employees.
 
+After 5 wrong PINs within 10 minutes (clock PINs and the exit PIN count together), the tablet's login is locked out of every PIN check, even a correct one, until the 10 minutes pass. The screen shows "Too many wrong PINs. Try again in N minutes." A correct PIN does not reset the count.
+
 Time Clock has no pay period, payroll export, or employee timesheet approval yet.
 
 ---

@@ -52,6 +52,13 @@ function failed(result: { rows: Record<string, unknown>[] } | { error: string })
   return "error" in result;
 }
 
+// Kiosk PIN RPCs return { error } for a wrong PIN instead of raising (0039).
+function pinRejected(result: { rows: Record<string, unknown>[] } | { error: string }): boolean {
+  if ("error" in result) return true;
+  const r = result.rows[0]?.r as { error?: unknown } | null | undefined;
+  return typeof r?.error === "string";
+}
+
 async function rowCount(sql: string, params: unknown[] = []): Promise<number | string> {
   const result = await attempt(sql, params);
   if ("error" in result) return `error (${result.error})`;
@@ -144,7 +151,7 @@ try {
       home.emp_id,
     );
     const punch = await attempt(
-      "select (public.kiosk_record_clock_event($1, 'clock_in', $2, null)).employee_id as id",
+      "select public.kiosk_record_clock_event($1, 'clock_in', $2, null)->>'employee_id' as id",
       [homePin, randomUUID()],
     );
     check("kiosk_record_clock_event clocks that employee in", "error" in punch ? outcome(punch) : punch.rows[0].id, home.emp_id);
@@ -153,17 +160,17 @@ try {
     check("kiosk_confirm_exit with the admin PIN", outcome(await attempt("select public.kiosk_confirm_exit($1)", [exitPin])), "ok (1 rows)");
     check(
       "kiosk_confirm_exit with a wrong PIN fails",
-      failed(await attempt("select public.kiosk_confirm_exit($1)", [awayPin])),
+      pinRejected(await attempt("select public.kiosk_confirm_exit($1) as r", [awayPin])),
       true,
     );
   });
 
   console.log("-- kiosk login: another org");
   await asUser(kiosk, async () => {
-    check("kiosk_unlock with another org's PIN fails", failed(await attempt("select public.kiosk_unlock($1)", [awayPin])), true);
+    check("kiosk_unlock with another org's PIN fails", pinRejected(await attempt("select public.kiosk_unlock($1) as r", [awayPin])), true);
     check(
       "kiosk_record_clock_event with another org's PIN fails",
-      failed(await attempt("select public.kiosk_record_clock_event($1, 'clock_in', $2, null)", [awayPin, randomUUID()])),
+      pinRejected(await attempt("select public.kiosk_record_clock_event($1, 'clock_in', $2, null) as r", [awayPin, randomUUID()])),
       true,
     );
   });
