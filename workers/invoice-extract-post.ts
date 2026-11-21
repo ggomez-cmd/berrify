@@ -1,7 +1,7 @@
 import type { ExtractedInvoice, ExtractedSku, ExpenseLine, InvoiceCategory } from "../src/lib/invoice-extract";
 import { isThinOcrText } from "../src/lib/ocr-thin";
 import { boundFetch } from "./bound-fetch";
-import { parseImageDataUrl, requireSession, type OcrPostEnv } from "./ocr-post";
+import { parseImageDataUrl, requireOrgManager, type OcrPostEnv } from "./ocr-post";
 
 export const GEMINI_FLASH_MODEL = "gemini-3.6-flash";
 
@@ -232,7 +232,7 @@ export async function handleInvoiceExtractPost(
   env: InvoiceExtractEnv,
   fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
-  const denied = await requireSession(request, env, fetchImpl);
+  const denied = await requireOrgManager(request, env, fetchImpl);
   if (denied) return denied;
 
   const apiKey = env.GEMINI_API_KEY?.trim();

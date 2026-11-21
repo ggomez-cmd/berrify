@@ -1,4 +1,5 @@
 import { createWorker } from "tesseract.js";
+import { ORG_ID_HEADER } from "./api-org";
 import { toRasterDataUrl } from "./invoice-image";
 import { supabase } from "./supabase";
 import { downscaleForVision } from "./vision-jpeg";
@@ -17,6 +18,8 @@ export type OcrResult = {
 
 export type OcrImageOptions = {
   engine?: OcrEngine;
+  /** Organization the call is for; the worker requires an admin or manager of it. */
+  orgId?: string | null;
   fetchImpl?: typeof fetch;
   getAccessToken?: () => Promise<string | null>;
   fallback?: (image: string) => Promise<OcrResult>;
@@ -123,6 +126,7 @@ async function ocrImageWithVision(
     const token = await getAccessToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
+    if (options.orgId) headers[ORG_ID_HEADER] = options.orgId;
     const response = await fetchImpl("/api/ocr", {
       method: "POST",
       headers,

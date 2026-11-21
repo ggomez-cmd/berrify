@@ -5,6 +5,7 @@ import {
   type ExtractedInvoice,
   type VendorAlias,
 } from "./invoice-extract";
+import { ORG_ID_HEADER } from "./api-org";
 import { isPdfAttachment, toRasterDataUrl } from "./invoice-image";
 import { isThinOcrText } from "./ocr-thin";
 import { supabase } from "./supabase";
@@ -44,6 +45,8 @@ export type ExtractInvoicesAfterOcrInput = {
   accountRules: AccountRule[];
   skuAliases?: SkuAlias[];
   examples?: InvoiceExtractExample[];
+  /** Organization the call is for; the worker requires an admin or manager of it. */
+  orgId?: string | null;
   fetchImpl?: typeof fetch;
   getAccessToken?: () => Promise<string | null>;
 };
@@ -112,6 +115,7 @@ export async function extractInvoicesAfterOcr(
     const token = await getAccessToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
+    if (input.orgId) headers[ORG_ID_HEADER] = input.orgId;
 
     const body: Record<string, unknown> = {
       ocr_text: input.ocrText,
