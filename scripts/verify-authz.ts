@@ -252,7 +252,7 @@ try {
   assert(managerSuppliers.length > 0, "manager list_suppliers_full returned no rows");
 
   const staffKioskUnlock = await asAuthenticated(staffId, async () =>
-    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_unlock('2580')) as r`)),
+    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_unlock_v2('2580')) as r`)),
   );
   assert(staffKioskUnlock, "staff can unlock the kiosk");
 

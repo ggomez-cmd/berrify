@@ -1,35 +1,43 @@
 -- Kiosk PIN attempt limit. A signed-in tablet session (kiosk login, manager
--- or admin) gets 5 wrong PINs per 10 minutes, counted across kiosk_unlock,
--- kiosk_record_clock_event and kiosk_confirm_exit together. Once 5 wrong PINs
--- fall inside the last 10 minutes, every PIN check is refused, even a correct
--- PIN, until the oldest of those 5 is 10 minutes old.
+-- or admin) gets 5 wrong PINs per 10 minutes, counted across unlock, punch
+-- and exit PIN checks together. Once 5 wrong PINs fall inside the last 10
+-- minutes, every PIN check is refused, even a correct PIN, until the oldest
+-- of those 5 is 10 minutes old.
 --
 -- A wrong PIN used to raise, which rolled back anything the call wrote, so a
--- failure could never be recorded. The three RPCs now record the failure and
--- return {"error": "Invalid PIN"} instead of raising. On success
--- kiosk_unlock returns the same object as before, kiosk_record_clock_event
--- returns the clock_events row as jsonb, and kiosk_confirm_exit returns
--- {"ok": true}. Other errors (not signed in, PIN format, not authorized,
--- locked out, punch rules) still raise; none of them are PIN guesses.
+-- failure could never be recorded. The new RPCs kiosk_unlock_v2,
+-- kiosk_record_clock_event_v2 and kiosk_confirm_exit_v2 record the failure
+-- and return {"error": "Invalid PIN"} instead of raising. On success
+-- kiosk_unlock_v2 returns the object kiosk_unlock used to, the punch returns
+-- the clock_events row as jsonb, and the exit check returns {"ok": true}.
+-- Other errors (not signed in, PIN format, not authorized, locked out, punch
+-- rules) still raise; none of them are PIN guesses.
+--
+-- The old names kiosk_unlock, kiosk_record_clock_event and kiosk_confirm_exit
+-- now always raise "The kiosk was updated. Reload this page." without
+-- checking the PIN. A tablet still running the old app must not read the new
+-- {"error"} result as success (a wrong exit PIN would leave the kiosk), and
+-- the old names must not be a way around the limit.
 --
 -- A correct PIN does not clear earlier failures. On a shared tablet the next
 -- person's correct PIN must not wipe a guesser's tally, and anyone who knows
 -- one PIN could otherwise reset the budget between guesses.
 --
--- One guess is checked against every organization the caller belongs to, so
--- a failure is recorded for each of the caller's organizations and the
--- budget is per login. Other logins are unaffected. kiosk_pin_failures stores
--- no PIN, has RLS on with no policies, and only the security definer
--- functions below read or write it.
+-- The budget is per login: one guess is checked against every organization
+-- the caller belongs to, and each failed check stores exactly one row,
+-- however many memberships the login has. Other logins are unaffected.
+-- kiosk_pin_failures stores no PIN, has RLS on with no policies, and only the
+-- security definer functions below read or write it.
 --
--- Deploy the frontend that reads the new return shapes with this migration.
+-- list_employees_full no longer returns clock_pin_hash, so a manager cannot
+-- take the bcrypt hashes offline and guess 4-digit PINs around the limit.
+--
 -- Apply with `npm run db:apply -- 0039_kiosk_pin_attempt_limit.sql`.
 -- Check with `npm run verify:kiosk-pin-limit`.
 
 create table if not exists public.kiosk_pin_failures (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users (id) on delete cascade,
-  org_id uuid not null references public.organizations (id) on delete cascade,
   check_kind text not null check (check_kind in ('unlock', 'punch', 'exit')),
   failed_at timestamptz not null default now()
 );
@@ -88,10 +96,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.kiosk_pin_failures (user_id, org_id, check_kind)
-  select auth.uid(), m.org_id, p_kind
-  from public.memberships m
-  where m.user_id = auth.uid();
+  insert into public.kiosk_pin_failures (user_id, check_kind)
+  values (auth.uid(), p_kind);
 
   delete from public.kiosk_pin_failures
   where user_id = auth.uid()
@@ -148,10 +154,10 @@ revoke all on function public.kiosk_employee_for_pin(text, text) from public, an
 drop function if exists public.kiosk_employee_for_pin(text);
 
 -- ---------------------------------------------------------------------------
--- Kiosk RPCs
+-- Kiosk RPCs (v2: wrong PIN returns {"error"})
 -- ---------------------------------------------------------------------------
 
-create or replace function public.kiosk_unlock(pin text)
+create or replace function public.kiosk_unlock_v2(pin text)
 returns jsonb
 language plpgsql
 volatile
@@ -182,12 +188,10 @@ begin
 end;
 $$;
 
-revoke all on function public.kiosk_unlock(text) from public, anon;
-grant execute on function public.kiosk_unlock(text) to authenticated;
+revoke all on function public.kiosk_unlock_v2(text) from public, anon;
+grant execute on function public.kiosk_unlock_v2(text) to authenticated;
 
-drop function if exists public.kiosk_record_clock_event(text, text, uuid, text);
-
-create function public.kiosk_record_clock_event(
+create or replace function public.kiosk_record_clock_event_v2(
   pin text,
   event_type text,
   client_event_id uuid,
@@ -224,12 +228,10 @@ begin
 end;
 $$;
 
-revoke all on function public.kiosk_record_clock_event(text, text, uuid, text) from public, anon;
-grant execute on function public.kiosk_record_clock_event(text, text, uuid, text) to authenticated;
+revoke all on function public.kiosk_record_clock_event_v2(text, text, uuid, text) from public, anon;
+grant execute on function public.kiosk_record_clock_event_v2(text, text, uuid, text) to authenticated;
 
-drop function if exists public.kiosk_confirm_exit(text);
-
-create function public.kiosk_confirm_exit(pin text)
+create or replace function public.kiosk_confirm_exit_v2(pin text)
 returns jsonb
 language plpgsql
 volatile
@@ -259,7 +261,112 @@ begin
 end;
 $$;
 
+revoke all on function public.kiosk_confirm_exit_v2(text) from public, anon;
+grant execute on function public.kiosk_confirm_exit_v2(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Old names fail closed for tablets still running the previous app
+-- ---------------------------------------------------------------------------
+
+create or replace function public.kiosk_unlock(pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'The kiosk was updated. Reload this page.';
+end;
+$$;
+
+revoke all on function public.kiosk_unlock(text) from public, anon;
+grant execute on function public.kiosk_unlock(text) to authenticated;
+
+create or replace function public.kiosk_record_clock_event(
+  pin text,
+  event_type text,
+  client_event_id uuid,
+  note text default null
+)
+returns public.clock_events
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'The kiosk was updated. Reload this page.';
+end;
+$$;
+
+revoke all on function public.kiosk_record_clock_event(text, text, uuid, text) from public, anon;
+grant execute on function public.kiosk_record_clock_event(text, text, uuid, text) to authenticated;
+
+create or replace function public.kiosk_confirm_exit(pin text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'The kiosk was updated. Reload this page.';
+end;
+$$;
+
 revoke all on function public.kiosk_confirm_exit(text) from public, anon;
 grant execute on function public.kiosk_confirm_exit(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- list_employees_full: explicit columns, no clock_pin_hash
+-- ---------------------------------------------------------------------------
+
+-- invite_code stays: managers copy it from Employees to invite a new login.
+drop function if exists public.list_employees_full();
+
+create function public.list_employees_full()
+returns table (
+  id uuid,
+  org_id uuid,
+  user_id uuid,
+  full_name text,
+  email text,
+  phone text,
+  "position" text,
+  hourly_rate numeric,
+  active boolean,
+  created_at timestamptz,
+  updated_at timestamptz,
+  home_restaurant_id uuid,
+  invite_code text,
+  login_role text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    e.id,
+    e.org_id,
+    e.user_id,
+    e.full_name,
+    e.email,
+    e.phone,
+    e.position,
+    e.hourly_rate,
+    e.active,
+    e.created_at,
+    e.updated_at,
+    e.home_restaurant_id,
+    e.invite_code,
+    e.login_role
+  from public.employees e
+  where public.has_org_role(e.org_id, array['owner', 'manager']);
+$$;
+
+revoke all on function public.list_employees_full() from public, anon;
+grant execute on function public.list_employees_full() to authenticated;
 
 notify pgrst, 'reload schema';

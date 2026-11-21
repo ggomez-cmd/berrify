@@ -28,7 +28,7 @@ function throwIfPinError<T>(data: T | { error: string }): T {
 export function useKioskUnlock() {
   return useMutation({
     mutationFn: async (pin: string) => {
-      const { data, error } = await supabase.rpc("kiosk_unlock", { pin });
+      const { data, error } = await supabase.rpc("kiosk_unlock_v2", { pin });
       if (error) throw error;
       return throwIfPinError(data as KioskUnlock | { error: string });
     },
@@ -38,7 +38,7 @@ export function useKioskUnlock() {
 export function useKioskPunch() {
   return useMutation({
     mutationFn: async (input: { pin: string; event_type: ClockEventType }) => {
-      const { data, error } = await supabase.rpc("kiosk_record_clock_event", {
+      const { data, error } = await supabase.rpc("kiosk_record_clock_event_v2", {
         pin: input.pin,
         event_type: input.event_type,
         client_event_id: newClientEventId(),
@@ -64,7 +64,7 @@ export function useKioskExitRequired() {
 export function useKioskConfirmExit() {
   return useMutation({
     mutationFn: async (pin: string) => {
-      const { data, error } = await supabase.rpc("kiosk_confirm_exit", { pin });
+      const { data, error } = await supabase.rpc("kiosk_confirm_exit_v2", { pin });
       if (error) throw error;
       throwIfPinError(data as { ok: true } | { error: string });
     },

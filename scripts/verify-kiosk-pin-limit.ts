@@ -53,10 +53,10 @@ async function pinCall(sql: string, params: unknown[] = []): Promise<string> {
   return r && typeof r.error === "string" ? r.error : "ok";
 }
 
-const unlock = (pin: string) => pinCall("select public.kiosk_unlock($1) as r", [pin]);
+const unlock = (pin: string) => pinCall("select public.kiosk_unlock_v2($1) as r", [pin]);
 const punch = (pin: string, event: string) =>
-  pinCall("select public.kiosk_record_clock_event($1, $2, $3, null) as r", [pin, event, randomUUID()]);
-const confirmExit = (pin: string) => pinCall("select public.kiosk_confirm_exit($1) as r", [pin]);
+  pinCall("select public.kiosk_record_clock_event_v2($1, $2, $3, null) as r", [pin, event, randomUUID()]);
+const confirmExit = (pin: string) => pinCall("select public.kiosk_confirm_exit_v2($1) as r", [pin]);
 
 // Reads as the connection owner, then goes back to the impersonated role if any.
 async function failureCount(userId: string): Promise<number> {
@@ -71,6 +71,13 @@ async function failureCount(userId: string): Promise<number> {
   } finally {
     if (roles[0].r === "authenticated") await client.query("set local role authenticated");
   }
+}
+
+async function eventCount(employeeId: string): Promise<number> {
+  const { rows } = await client.query<{ n: string }>("select count(*) as n from public.clock_events where employee_id = $1", [
+    employeeId,
+  ]);
+  return Number(rows[0].n);
 }
 
 async function backdate(userId: string, by: string) {
@@ -155,7 +162,7 @@ try {
      from pg_class c where c.oid = 'public.kiosk_pin_failures'::regclass`,
   );
   check("RLS enabled on kiosk_pin_failures", meta[0].rls, true);
-  check("kiosk_pin_failures stores no PIN", meta[0].cols, "id,user_id,org_id,check_kind,failed_at");
+  check("kiosk_pin_failures stores no PIN", meta[0].cols, "id,user_id,check_kind,failed_at");
   for (const role of ["authenticated", "anon"]) {
     const { rows } = await client.query<{ any: boolean }>(
       `select has_table_privilege($1, 'public.kiosk_pin_failures', 'select')
@@ -171,10 +178,7 @@ try {
     check(
       "kiosk cannot write kiosk_pin_failures",
       "error" in
-        (await attempt("insert into public.kiosk_pin_failures (user_id, org_id, check_kind) values ($1, $2, 'unlock')", [
-          kiosk,
-          home.org_id,
-        ])),
+        (await attempt("insert into public.kiosk_pin_failures (user_id, check_kind) values ($1, 'unlock')", [kiosk])),
       true,
     );
     for (const fn of [
@@ -217,11 +221,6 @@ try {
     [kiosk],
   );
   check("failures recorded by check", kinds.rows[0].k, "exit,punch,unlock,unlock,unlock");
-  const orgs = await client.query<{ n: string }>(
-    "select count(*) as n from public.kiosk_pin_failures where user_id = $1 and org_id <> $2",
-    [kiosk, home.org_id],
-  );
-  check("failures recorded against the kiosk's org", Number(orgs.rows[0].n), 0);
 
   console.log("-- locked out after the limit, even with correct PINs");
   await asUser(kiosk, async () => {
@@ -283,6 +282,82 @@ try {
     check("bad PIN format raises", await unlock("12"), "PIN must be 4 to 8 digits");
   });
   check("format error not counted", await failureCount(kiosk2), 1);
+
+  console.log("-- old RPC names fail closed without checking the PIN");
+  const legacy = "The kiosk was updated. Reload this page.";
+  const legacyUser = await tempUser(home.org_id, "kiosk");
+  const eventsBeforeLegacy = await eventCount(home.emp_id);
+  await asUser(legacyUser, async () => {
+    for (const pinValue of [homePin, wrongPin]) {
+      check(`kiosk_unlock(${pinValue === homePin ? "right" : "wrong"} PIN) raises`, await pinCall("select public.kiosk_unlock($1) as r", [pinValue]), legacy);
+      check(
+        `kiosk_record_clock_event(${pinValue === homePin ? "right" : "wrong"} PIN) raises`,
+        await pinCall("select (public.kiosk_record_clock_event($1, 'clock_out', $2, null)).id as r", [pinValue, randomUUID()]),
+        legacy,
+      );
+    }
+    check("kiosk_confirm_exit(right PIN) raises", await pinCall("select public.kiosk_confirm_exit($1) as r", [exitPin]), legacy);
+    check("kiosk_confirm_exit(wrong PIN) raises", await pinCall("select public.kiosk_confirm_exit($1) as r", [wrongPin]), legacy);
+  });
+  check("old names record no failures", await failureCount(legacyUser), 0);
+  check("old punch name wrote no clock event", await eventCount(home.emp_id), eventsBeforeLegacy);
+
+  console.log("-- a login with 3 memberships gets 5 wrong PINs, not 5 per membership");
+  const multi = await tempUser(home.org_id, "manager");
+  for (let i = 0; i < 2; i += 1) {
+    const { rows: orgRows } = await client.query<{ id: string }>(
+      "insert into public.organizations (name) values ($1) returning id",
+      [`kiosk-pin-verify ${randomUUID()}`],
+    );
+    await client.query("insert into public.memberships (user_id, org_id, role) values ($1, $2, 'manager')", [multi, orgRows[0].id]);
+  }
+  const memberships = await client.query<{ n: string }>("select count(*) as n from public.memberships where user_id = $1", [multi]);
+  check("multi-org login has 3 memberships", Number(memberships.rows[0].n), 3);
+  await asUser(multi, async () => {
+    for (let i = 1; i <= 4; i += 1) check(`multi-org wrong PIN #${i}`, await unlock(wrongPin), "Invalid PIN");
+  });
+  check("one row per failed check", await failureCount(multi), 4);
+  await asUser(multi, async () => {
+    check("multi-org login not locked after 4", await unlock(homePin), "ok");
+    check("multi-org wrong PIN #5", await unlock(wrongPin), "Invalid PIN");
+    check("multi-org login locked after 5", await unlock(homePin), LOCKED);
+  });
+
+  console.log("-- managers cannot read PIN hashes");
+  await asUser(manager, async () => {
+    const listed = await attempt("select * from public.list_employees_full() where id = $1", [home.emp_id]);
+    check("manager still lists the employee", "error" in listed ? listed.error : listed.rows.length, 1);
+    const columns = "error" in listed ? [] : Object.keys(listed.rows[0] ?? {});
+    check("list_employees_full has no clock_pin_hash", columns.includes("clock_pin_hash"), false);
+    check("list_employees_full keeps invite_code for invites", columns.includes("invite_code"), true);
+    check(
+      "list_employees_full clock_pin_hash column does not exist",
+      "error" in (await attempt("select clock_pin_hash from public.list_employees_full()")),
+      true,
+    );
+    const rowJson = await attempt("select bool_or(to_jsonb(l) ? 'clock_pin_hash') as has from public.list_employees_full() l");
+    check("no listed row carries clock_pin_hash", "error" in rowJson ? rowJson.error : rowJson.rows[0].has, false);
+    check(
+      "direct select of employees.clock_pin_hash denied",
+      "error" in (await attempt("select clock_pin_hash from public.employees where id = $1", [home.emp_id])),
+      true,
+    );
+    check(
+      "whole-row select of employees denied",
+      "error" in (await attempt("select to_jsonb(e) from public.employees e where id = $1", [home.emp_id])),
+      true,
+    );
+    check(
+      "filtering employees on clock_pin_hash denied",
+      "error" in (await attempt("select id from public.employees where clock_pin_hash is not null")),
+      true,
+    );
+    check(
+      "direct select of memberships.kiosk_exit_pin_hash denied",
+      "error" in (await attempt("select kiosk_exit_pin_hash from public.memberships")),
+      true,
+    );
+  });
 } finally {
   await client.query("rollback").catch(() => undefined);
   await client.end();
