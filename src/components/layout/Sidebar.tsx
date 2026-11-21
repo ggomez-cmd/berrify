@@ -19,6 +19,7 @@ import {
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { cn } from "../../lib/cn";
+import { isKioskLogin } from "../../lib/kiosk";
 import { isAdmin, isManager } from "../../lib/schedule";
 import { BrandMark } from "../ui/brand-mark";
 import { SignOutButton } from "./SignOutButton";
@@ -98,10 +99,12 @@ export function Sidebar({
         { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
         { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
       ]
-    : [
-        { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
-        { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
-      ];
+    : isKioskLogin(role)
+      ? []
+      : [
+          { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
+          { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+        ];
 
   const operations: NavItem[] = manager
     ? [
