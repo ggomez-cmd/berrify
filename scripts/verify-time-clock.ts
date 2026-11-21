@@ -32,6 +32,13 @@ async function q<T extends Record<string, unknown>>(
   return client.query<T>(sql, params);
 }
 
+// Kiosk PIN RPCs return { error } for a wrong PIN instead of raising (0039).
+async function pinRpc(sql: string, params: unknown[] = []): Promise<void> {
+  const { rows } = await client.query<{ r: { error?: unknown } | null }>(sql, params);
+  const r = rows[0]?.r;
+  if (r && typeof r === "object" && typeof r.error === "string") throw new Error(r.error);
+}
+
 async function become(userId: string): Promise<void> {
   await client.query("reset role");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
@@ -497,18 +504,18 @@ try {
   assert(staffHash, "staff can select clock_pin_hash");
 
   const staffKioskUnlock = await asAuthenticated(staffId, async () =>
-    expectReject(() => q(`select public.kiosk_unlock('9999')`), /Not authorized/i),
+    expectReject(() => q(`select public.kiosk_unlock_v2('9999')`), /Not authorized/i),
   );
   assert(staffKioskUnlock, "staff can unlock the kiosk");
 
   const badPin = await asAuthenticated(ownerId, async () =>
-    expectReject(() => q(`select public.kiosk_unlock('0000')`), /Invalid PIN|PIN must be/i),
+    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_unlock_v2('0000')) as r`), /Invalid PIN|PIN must be/i),
   );
   assert(badPin, "wrong PIN unlocks the kiosk");
 
   const unlocked = await asAuthenticated(ownerId, async () => {
     const { rows } = await q<{ kiosk_unlock: { id: string; full_name: string; state: string } }>(
-      `select public.kiosk_unlock('9999') as kiosk_unlock`,
+      `select public.kiosk_unlock_v2('9999') as kiosk_unlock`,
     );
     return rows[0]?.kiosk_unlock;
   });
@@ -518,7 +525,7 @@ try {
 
   const kioskIn = await asAuthenticated(ownerId, async () => {
     const { rows } = await q<ClockEvent>(
-      `select * from public.kiosk_record_clock_event('9999', 'clock_in', $1::uuid, null)`,
+      `select e.* from jsonb_populate_record(null::public.clock_events, to_jsonb(public.kiosk_record_clock_event_v2('9999', 'clock_in', $1::uuid, null))) e`,
       [crypto.randomUUID()],
     );
     return rows[0];
@@ -550,7 +557,7 @@ try {
   assert(staffOwnerHash, "authenticated can select kiosk_exit_pin_hash");
 
   const employeePinExit = await asAuthenticated(cookUserId, async () =>
-    expectReject(() => q(`select public.kiosk_confirm_exit('9999')`), /Invalid PIN/i),
+    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_confirm_exit_v2('9999')) as r`), /Invalid PIN/i),
   );
   assert(employeePinExit, "employee clock PIN exits the kiosk");
 
@@ -561,7 +568,7 @@ try {
   assert(required === true, "kiosk_exit_required was false after owner set a PIN");
 
   await asAuthenticated(cookUserId, async () => {
-    await q(`select public.kiosk_confirm_exit('7777')`);
+    await q(`select public.kiosk_confirm_exit_v2('7777')`);
   });
 
   await become(cookUserId);

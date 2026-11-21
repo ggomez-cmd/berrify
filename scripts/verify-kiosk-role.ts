@@ -52,6 +52,13 @@ function failed(result: { rows: Record<string, unknown>[] } | { error: string })
   return "error" in result;
 }
 
+// Kiosk PIN RPCs return { error } for a wrong PIN instead of raising (0039).
+function pinRejected(result: { rows: Record<string, unknown>[] } | { error: string }): boolean {
+  if ("error" in result) return true;
+  const r = result.rows[0]?.r as { error?: unknown } | null | undefined;
+  return typeof r?.error === "string";
+}
+
 async function rowCount(sql: string, params: unknown[] = []): Promise<number | string> {
   const result = await attempt(sql, params);
   if ("error" in result) return `error (${result.error})`;
@@ -137,35 +144,46 @@ try {
 
   console.log("-- kiosk login: kiosk RPCs in its own org");
   await asUser(kiosk, async () => {
-    const unlock = await attempt("select public.kiosk_unlock($1) as r", [homePin]);
+    const unlock = await attempt("select public.kiosk_unlock_v2($1) as r", [homePin]);
     check(
       "kiosk_unlock finds its org's employee",
       "error" in unlock ? outcome(unlock) : (unlock.rows[0].r as { id: string }).id,
       home.emp_id,
     );
     const punch = await attempt(
-      "select (public.kiosk_record_clock_event($1, 'clock_in', $2, null)).employee_id as id",
+      "select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null)->>'employee_id' as id",
       [homePin, randomUUID()],
     );
     check("kiosk_record_clock_event clocks that employee in", "error" in punch ? outcome(punch) : punch.rows[0].id, home.emp_id);
     const required = await attempt("select public.kiosk_exit_required() as r");
     check("kiosk_exit_required sees the admin exit PIN", "error" in required ? outcome(required) : required.rows[0].r, true);
-    check("kiosk_confirm_exit with the admin PIN", outcome(await attempt("select public.kiosk_confirm_exit($1)", [exitPin])), "ok (1 rows)");
+    check("kiosk_confirm_exit with the admin PIN", outcome(await attempt("select public.kiosk_confirm_exit_v2($1)", [exitPin])), "ok (1 rows)");
     check(
       "kiosk_confirm_exit with a wrong PIN fails",
-      failed(await attempt("select public.kiosk_confirm_exit($1)", [awayPin])),
+      pinRejected(await attempt("select public.kiosk_confirm_exit_v2($1) as r", [awayPin])),
       true,
     );
   });
 
   console.log("-- kiosk login: another org");
   await asUser(kiosk, async () => {
-    check("kiosk_unlock with another org's PIN fails", failed(await attempt("select public.kiosk_unlock($1)", [awayPin])), true);
+    check("kiosk_unlock with another org's PIN fails", pinRejected(await attempt("select public.kiosk_unlock_v2($1) as r", [awayPin])), true);
     check(
       "kiosk_record_clock_event with another org's PIN fails",
-      failed(await attempt("select public.kiosk_record_clock_event($1, 'clock_in', $2, null)", [awayPin, randomUUID()])),
+      pinRejected(await attempt("select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null) as r", [awayPin, randomUUID()])),
       true,
     );
+  });
+
+  console.log("-- kiosk login: old RPC names fail closed (0039)");
+  await asUser(kiosk, async () => {
+    const legacy = "The kiosk was updated. Reload this page.";
+    const unlock = await attempt("select public.kiosk_unlock($1)", [homePin]);
+    check("kiosk_unlock raises", "error" in unlock ? unlock.error : "ok", legacy);
+    const punch = await attempt("select public.kiosk_record_clock_event($1, 'clock_out', $2, null)", [homePin, randomUUID()]);
+    check("kiosk_record_clock_event raises", "error" in punch ? punch.error : "ok", legacy);
+    const exit = await attempt("select public.kiosk_confirm_exit($1)", [exitPin]);
+    check("kiosk_confirm_exit raises", "error" in exit ? exit.error : "ok", legacy);
   });
 
   console.log("-- kiosk login: reads");
@@ -264,7 +282,7 @@ try {
     const s = await rowCount("select count(*) as n from public.staff_shifts where id = $1", [draftId]);
     check("admin reads the draft shift", s, 1);
     check("admin reads its organization", await rowCount("select count(*) as n from public.organizations where id = $1", [home.org_id]), 1);
-    const unlock = await attempt("select public.kiosk_unlock($1) as r", [homePin]);
+    const unlock = await attempt("select public.kiosk_unlock_v2($1) as r", [homePin]);
     check("admin kiosk_unlock still works", "error" in unlock ? outcome(unlock) : (unlock.rows[0].r as { id: string }).id, home.emp_id);
   });
   await asUser(staff, async () => {
@@ -272,7 +290,7 @@ try {
     check("staff reads employees (member-wide policy)", typeof n === "number" && n > 0, true);
     check("staff does not see the draft shift", await rowCount("select count(*) as n from public.staff_shifts where id = $1", [draftId]), 0);
     check("staff reads its organization", await rowCount("select count(*) as n from public.organizations where id = $1", [home.org_id]), 1);
-    const unlock = await attempt("select public.kiosk_unlock($1)", [homePin]);
+    const unlock = await attempt("select public.kiosk_unlock_v2($1)", [homePin]);
     check("staff kiosk_unlock still not authorized", "error" in unlock ? unlock.error : "ok", "Not authorized");
   });
 } finally {

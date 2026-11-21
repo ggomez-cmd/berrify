@@ -27,6 +27,7 @@
     "verify:shift-match": "tsx scripts/verify-shift-match.ts",
     "verify:publish-shifts": "tsx scripts/verify-publish-shifts.ts",
     "verify:kiosk-role": "tsx scripts/verify-kiosk-role.ts",
+    "verify:kiosk-pin-limit": "tsx scripts/verify-kiosk-pin-limit.ts",
     "verify:authz": "tsx scripts/verify-authz.ts",
     "auth:email-templates": "tsx scripts/apply-auth-email-templates.ts",
     "whatsapp:ingest": "tsx scripts/whatsapp-ingest.ts",

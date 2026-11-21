@@ -1,3 +1,4 @@
+import { ORG_ID_HEADER } from "../src/lib/api-org";
 import { MAX_INVOICE_IMAGE_BYTES } from "../src/lib/invoice-image";
 import { bytesToBase64, fitImageForVision, VISION_IMAGE_TOO_LARGE } from "../src/lib/vision-fit";
 import { boundFetch } from "./bound-fetch";
@@ -137,11 +138,11 @@ function decodeBase64(content: string): Uint8Array {
   return bytes;
 }
 
-export async function requireSession(
+async function sessionUser(
   request: Request,
   env: OcrPostEnv,
   fetchImpl: typeof fetch,
-): Promise<Response | null> {
+): Promise<{ userId: string } | Response> {
   if (!isSpaSameOrigin(request)) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -163,6 +164,70 @@ export async function requireSession(
   if (!response.ok) {
     return json({ error: "Unauthorized" }, 401);
   }
+  let userId: unknown;
+  try {
+    userId = ((await response.json()) as { id?: unknown } | null)?.id;
+  } catch {
+    userId = undefined;
+  }
+  if (typeof userId !== "string" || !userId) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  return { userId };
+}
+
+export async function requireSession(
+  request: Request,
+  env: OcrPostEnv,
+  fetchImpl: typeof fetch,
+): Promise<Response | null> {
+  const user = await sessionUser(request, env, fetchImpl);
+  return user instanceof Response ? user : null;
+}
+
+const ORG_ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+
+// Paid-provider endpoints: the caller must be an admin or manager of the
+// organization named in ORG_ID_HEADER. The role is read from memberships with
+// the service role, for the user the session token belongs to; no role the
+// client sends is trusted.
+export async function requireOrgManager(
+  request: Request,
+  env: OcrPostEnv,
+  fetchImpl: typeof fetch,
+): Promise<Response | null> {
+  const user = await sessionUser(request, env, fetchImpl);
+  if (user instanceof Response) return user;
+  const orgId = request.headers.get(ORG_ID_HEADER)?.trim() ?? "";
+  if (!ORG_ID_RE.test(orgId)) {
+    return json({ error: "Forbidden" }, 403);
+  }
+  const supabaseUrl = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const query = new URLSearchParams({
+    user_id: `eq.${user.userId}`,
+    org_id: `eq.${orgId}`,
+    role: "in.(admin,manager)",
+    select: "role",
+    limit: "1",
+  });
+  let rows: unknown;
+  try {
+    const response = await fetchImpl(`${supabaseUrl}/rest/v1/memberships?${query.toString()}`, {
+      headers: {
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return json({ error: "Forbidden" }, 403);
+    rows = await response.json();
+  } catch {
+    return json({ error: "Forbidden" }, 403);
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return json({ error: "Forbidden" }, 403);
+  }
   return null;
 }
 
@@ -171,7 +236,7 @@ export async function handleOcrPost(
   env: OcrPostEnv,
   fetchImpl: typeof fetch = boundFetch,
 ): Promise<Response> {
-  const denied = await requireSession(request, env, fetchImpl);
+  const denied = await requireOrgManager(request, env, fetchImpl);
   if (denied) return denied;
 
   const apiKey = env.GOOGLE_VISION_API_KEY?.trim();

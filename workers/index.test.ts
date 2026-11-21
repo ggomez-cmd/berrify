@@ -6,6 +6,7 @@ import {
   EMPTY_BOTTLE_TEXT_HELP,
   emptyCallbackData,
 } from "../src/lib/empty-bottle";
+import { ORG_ID_HEADER } from "../src/lib/api-org";
 import { VISION_IMAGE_BYTE_BUDGET, VISION_LONG_EDGE } from "../src/lib/invoice-image";
 import { bytesToBase64, VISION_IMAGE_TOO_LARGE } from "../src/lib/vision-fit";
 import { TELEGRAM_SECRET_HEADER } from "../src/lib/telegram-webhook";
@@ -47,15 +48,51 @@ const ocrEnv: WorkerEnv = {
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
 };
 
+const SESSION_USERS: Record<string, string> = {
+  "Bearer user-token": "user-1",
+  "Bearer manager-token": "user-manager",
+  "Bearer staff-token": "user-staff",
+  "Bearer kiosk-token": "user-kiosk",
+  "Bearer other-org-token": "user-other",
+};
+
+const MEMBERSHIPS = [
+  { user_id: "user-1", org_id: "org-1", role: "admin" },
+  { user_id: "user-manager", org_id: "org-1", role: "manager" },
+  { user_id: "user-staff", org_id: "org-1", role: "staff" },
+  { user_id: "user-kiosk", org_id: "org-1", role: "kiosk" },
+  { user_id: "user-other", org_id: "org-2", role: "admin" },
+];
+
+function eqParam(params: URLSearchParams, name: string): string | null {
+  const value = params.get(name);
+  return value?.startsWith("eq.") ? value.slice(3) : null;
+}
+
 function mockAuthFetch(inner?: typeof fetch): typeof fetch {
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url === "https://example.supabase.co/auth/v1/user") {
-      const auth = new Headers(init?.headers).get("Authorization");
-      if (auth === "Bearer user-token") {
-        return Response.json({ id: "user-1" });
-      }
+      const auth = new Headers(init?.headers).get("Authorization") ?? "";
+      const id = SESSION_USERS[auth];
+      if (id) return Response.json({ id });
       return new Response("Unauthorized", { status: 401 });
+    }
+    const parsed = new URL(url);
+    if (
+      parsed.origin === "https://example.supabase.co" &&
+      parsed.pathname === "/rest/v1/memberships" &&
+      parsed.searchParams.get("role")?.startsWith("in.")
+    ) {
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer service-role");
+      const roles = parsed.searchParams.get("role")!.slice(4, -1).split(",");
+      const userId = eqParam(parsed.searchParams, "user_id");
+      const orgId = eqParam(parsed.searchParams, "org_id");
+      return Response.json(
+        MEMBERSHIPS.filter((m) => m.user_id === userId && m.org_id === orgId && roles.includes(m.role)).map((m) => ({
+          role: m.role,
+        })),
+      );
     }
     if (inner) return inner(input, init);
     throw new Error(`unexpected fetch ${init?.method ?? "GET"} ${url}`);
@@ -71,6 +108,7 @@ function ocrInit(body: string, extra?: RequestInit): RequestInit {
       Origin: "https://berrify.example",
       Authorization: "Bearer user-token",
       "Content-Type": "application/json",
+      [ORG_ID_HEADER]: "org-1",
       ...(extra?.headers ?? {}),
     },
     body,
@@ -1425,6 +1463,75 @@ describe("Worker API", () => {
       body: JSON.stringify({ ocr_text: "FACTURA" }),
     });
     expect(response.status).toBe(401);
+  });
+
+  describe("paid provider endpoints require an admin or manager of the org", () => {
+    const providerEnv: WorkerEnv = { ...ocrEnv, GOOGLE_VISION_API_KEY: "vision-key", GEMINI_API_KEY: "gemini-key" };
+
+    function providerFetch() {
+      return vi.fn<typeof fetch>(async (input) => {
+        const url = String(input);
+        if (url.startsWith("https://vision.googleapis.com/")) {
+          return Response.json({ responses: [{ fullTextAnnotation: { text: "FACTURA 12.00", pages: [{ confidence: 0.9 }] } }] });
+        }
+        if (url.startsWith("https://generativelanguage.googleapis.com/")) {
+          const invoice = {
+            vendor_name: "Ballester",
+            qbo_vendor_name: null,
+            supplier_id: null,
+            invoice_number: "123",
+            invoice_date: "2026-08-13",
+            due_date: null,
+            terms: null,
+            subtotal: 12,
+            tax: 0,
+            total: 12,
+            lines: [],
+            expenses: [{ account: "50000 · Food Purchases", amount: 12, memo: "Food" }],
+          };
+          return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ invoices: [invoice] }) }] } }] });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      });
+    }
+
+    const endpoints = [
+      { path: "/api/ocr", body: { image: TINY_JPEG_DATA_URL } },
+      { path: "/api/invoice-extract", body: { ocr_text: "FACTURA 12.00" } },
+    ];
+
+    const callers: Array<{ name: string; token: string; org?: string; status: number }> = [
+      { name: "admin", token: "user-token", status: 200 },
+      { name: "manager", token: "manager-token", status: 200 },
+      { name: "staff", token: "staff-token", status: 403 },
+      { name: "kiosk", token: "kiosk-token", status: 403 },
+      { name: "admin of another org", token: "other-org-token", status: 403 },
+      { name: "admin naming no org", token: "user-token", org: "", status: 403 },
+    ];
+
+    for (const endpoint of endpoints) {
+      for (const caller of callers) {
+        it(`${endpoint.path}: ${caller.name} gets ${caller.status}`, async () => {
+          const provider = providerFetch();
+          const response = await api(
+            endpoint.path,
+            ocrInit(JSON.stringify(endpoint.body), {
+              headers: { Authorization: `Bearer ${caller.token}`, [ORG_ID_HEADER]: caller.org ?? "org-1" },
+            }),
+            providerEnv,
+            mockAuthFetch(provider),
+          );
+          if (caller.status === 403) {
+            expect(response.status).toBe(403);
+            await expect(response.json()).resolves.toEqual({ error: "Forbidden" });
+            expect(provider).not.toHaveBeenCalled();
+          } else {
+            expect(response.status).toBe(200);
+            expect(provider).toHaveBeenCalledTimes(1);
+          }
+        });
+      }
+    }
   });
 
   it("returns 503 for empty-bottle identify when Gemini is missing", async () => {

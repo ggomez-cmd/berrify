@@ -139,6 +139,7 @@ async function billsFromOcr(
   const aliases = toVendorAliases(vendorAliases);
   const rules = toAccountRules(accountRules);
   const { invoices: extracted, engine, error } = await extractInvoicesAfterOcr({
+    orgId: current.org_id,
     ocrText: text,
     image,
     confidence,
@@ -476,7 +477,7 @@ export function InvoiceReviewDialog({
           rotation: 0,
           engine: "pdf",
         }))
-      : ocrImage(image, { engine: getOcrEngine() });
+      : ocrImage(image, { engine: getOcrEngine(), orgId: invoice.org_id });
     void readText
       .then(async (ocr) => {
         setOcrText(ocr.text);

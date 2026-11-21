@@ -22,6 +22,13 @@ async function q<T extends Record<string, unknown>>(
   return client.query<T>(sql, params);
 }
 
+// Kiosk PIN RPCs return { error } for a wrong PIN instead of raising (0039).
+async function pinRpc(sql: string, params: unknown[] = []): Promise<void> {
+  const { rows } = await client.query<{ r: { error?: unknown } | null }>(sql, params);
+  const r = rows[0]?.r;
+  if (r && typeof r === "object" && typeof r.error === "string") throw new Error(r.error);
+}
+
 async function become(userId: string): Promise<void> {
   await client.query("reset role");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
@@ -245,7 +252,7 @@ try {
   assert(managerSuppliers.length > 0, "manager list_suppliers_full returned no rows");
 
   const staffKioskUnlock = await asAuthenticated(staffId, async () =>
-    expectReject(() => q(`select public.kiosk_unlock('2580')`)),
+    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_unlock_v2('2580')) as r`)),
   );
   assert(staffKioskUnlock, "staff can unlock the kiosk");
 

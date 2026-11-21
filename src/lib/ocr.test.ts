@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ORG_ID_HEADER } from "./api-org";
 import { getOcrEngine, ocrEngineNote, ocrImage, setOcrEngine, type OcrResult } from "./ocr";
 
 vi.mock("./supabase", () => ({
@@ -23,9 +24,10 @@ describe("ocrImage", () => {
       expect(String(input)).toBe("/api/ocr");
       expect(init?.method).toBe("POST");
       expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer user-token");
+      expect(new Headers(init?.headers).get(ORG_ID_HEADER)).toBe("org-1");
       return Response.json({ text: "VISION FACTURA", confidence: 88 });
     };
-    const result = await ocrImage("data:image/jpeg;base64,abc", { fetchImpl, fallback });
+    const result = await ocrImage("data:image/jpeg;base64,abc", { fetchImpl, fallback, orgId: "org-1" });
     expect(result).toEqual({
       text: "VISION FACTURA",
       confidence: 88,

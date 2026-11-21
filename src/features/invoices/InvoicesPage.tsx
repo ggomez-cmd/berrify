@@ -80,7 +80,7 @@ function statusTone(status: InvoiceWithSupplier["status"]) {
 }
 
 export function InvoicesPage() {
-  const { role } = useAuth();
+  const { org, role } = useAuth();
   const { data: invoices = [], isLoading, error, refetch: refetchInvoices } = useInvoices();
   const { data: qbJobs = [], refetch: refetchQbJobs } = useQuickbooksJobs();
   const { data: qbConnections = [] } = useQuickbooksConnections();
@@ -121,7 +121,7 @@ export function InvoicesPage() {
         ocr = { text, confidence: 100, rotation: 0, engine: "pdf" };
       } else {
         setMessage(ocrEngine === "tesseract" ? "Reading with Tesseract…" : "Reading with Vision…");
-        ocr = await ocrImage(data, { engine: ocrEngine });
+        ocr = await ocrImage(data, { engine: ocrEngine, orgId: org?.id });
       }
       const vendorAliases: VendorAlias[] = aliases.map((a) => ({
         match_text: a.match_text,
@@ -154,6 +154,7 @@ export function InvoicesPage() {
       );
       const { invoices: extracted, engine: extractEngine, error: extractError } =
         await extractInvoicesAfterOcr({
+        orgId: org?.id,
         ocrText,
         image: pdfUpload ? null : data,
         confidence: ocr.confidence,

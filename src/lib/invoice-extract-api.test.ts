@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ORG_ID_HEADER } from "./api-org";
 import { extractEngineNote, extractInvoicesAfterOcr } from "./invoice-extract-api";
 import { DEFAULT_ACCOUNT_RULES } from "./invoice-extract";
 
@@ -24,6 +25,7 @@ describe("extractInvoicesAfterOcr", () => {
       expect(String(input)).toBe("/api/invoice-extract");
       expect(init?.method).toBe("POST");
       expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer user-token");
+      expect(new Headers(init?.headers).get(ORG_ID_HEADER)).toBe("org-1");
       const body = JSON.parse(String(init?.body ?? "{}")) as { ocr_text?: string; image?: string };
       expect(body.ocr_text).toContain("BALLESTER HERMANOS");
       expect(body.image).toBeUndefined();
@@ -53,6 +55,7 @@ describe("extractInvoicesAfterOcr", () => {
       confidence: 90,
       vendorAliases: [],
       accountRules: DEFAULT_ACCOUNT_RULES,
+      orgId: "org-1",
       fetchImpl,
     });
     expect(result.engine).toBe("gemini");
