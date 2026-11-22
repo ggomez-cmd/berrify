@@ -25,6 +25,18 @@
 --
 -- Restaurants and organizations are unchanged.
 --
+-- record_clock_event (self punch) now also requires a current admin, manager
+-- or staff membership in the employee's org. A login removed from the org but
+-- still linked to an active employee can no longer punch.
+--
+-- Kiosk PIN functions (kiosk_unlock_v2, kiosk_record_clock_event_v2,
+-- kiosk_confirm_exit_v2, kiosk_exit_required) now refuse a caller who is not
+-- admin, manager or kiosk somewhere with "Not authorized", before any PIN is
+-- compared. That refusal is not counted against the PIN budget. PINs are
+-- only compared against orgs where the caller is admin, manager or kiosk, so
+-- a staff login gets the same answer for a right and a wrong PIN. Wrong PINs
+-- from authorized callers still count as before (0039).
+--
 -- Apply with `npm run db:apply -- 0040_staff_restaurant_scope.sql`.
 -- Check with `npm run verify:staff-scope`.
 
@@ -157,5 +169,179 @@ $$;
 
 revoke all on function public.list_whos_working() from public, anon;
 grant execute on function public.list_whos_working() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Self punch: the login must still belong to the employee's org
+-- ---------------------------------------------------------------------------
+
+create or replace function public.record_clock_event(
+  event_type text,
+  client_event_id uuid,
+  note text default null,
+  client_occurred_at timestamptz default null,
+  restaurant_id uuid default null, -- accepted, not authoritative; resolve shift then home then null
+  latitude double precision default null,
+  longitude double precision default null,
+  accuracy_m double precision default null,
+  source text default 'web'
+)
+returns public.clock_events
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_employee public.employees%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select * into v_employee
+  from public.employees
+  where user_id = auth.uid()
+  for update;
+
+  if not found then
+    raise exception 'No employee record for this user';
+  end if;
+  if not public.is_org_member(v_employee.org_id) then
+    raise exception 'Not authorized';
+  end if;
+  if not v_employee.active then
+    raise exception 'Employee is inactive';
+  end if;
+
+  return public.apply_clock_event(
+    v_employee,
+    event_type,
+    'employee',
+    coalesce(source, 'web'),
+    client_event_id,
+    note,
+    client_occurred_at,
+    now(),
+    latitude,
+    longitude,
+    accuracy_m,
+    auth.uid()
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Kiosk PIN functions: admin, manager or kiosk only, checked before any PIN
+-- ---------------------------------------------------------------------------
+
+create or replace function public.kiosk_assert_caller()
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+  if not exists (
+    select 1
+    from public.memberships m
+    where m.user_id = auth.uid()
+      and m.role in ('admin', 'manager', 'kiosk')
+  ) then
+    raise exception 'Not authorized';
+  end if;
+end;
+$$;
+
+revoke all on function public.kiosk_assert_caller() from public, anon, authenticated;
+
+create or replace function public.kiosk_employee_for_pin(p_pin text, p_kind text)
+returns public.employees
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_emp public.employees;
+begin
+  perform public.kiosk_assert_caller();
+  perform public.assert_clock_pin_format(p_pin);
+  perform public.kiosk_assert_pin_budget();
+
+  select e.*
+    into v_emp
+  from public.employees e
+  where e.active
+    and e.clock_pin_hash is not null
+    and public.has_org_role(e.org_id, array['admin', 'manager', 'kiosk'])
+    and e.clock_pin_hash = extensions.crypt(p_pin, e.clock_pin_hash)
+  limit 1;
+
+  if not found then
+    perform public.kiosk_record_pin_failure(p_kind);
+    return null;
+  end if;
+
+  return v_emp;
+end;
+$$;
+
+revoke all on function public.kiosk_employee_for_pin(text, text) from public, anon, authenticated;
+
+create or replace function public.kiosk_confirm_exit_v2(pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+begin
+  perform public.kiosk_assert_caller();
+  perform public.assert_clock_pin_format(pin);
+  perform public.kiosk_assert_pin_budget();
+
+  if not exists (
+    select 1
+    from public.memberships m
+    where m.role = 'admin'
+      and m.kiosk_exit_pin_hash is not null
+      and public.has_org_role(m.org_id, array['admin', 'manager', 'kiosk'])
+      and m.kiosk_exit_pin_hash = extensions.crypt(pin, m.kiosk_exit_pin_hash)
+  ) then
+    perform public.kiosk_record_pin_failure('exit');
+    return jsonb_build_object('error', 'Invalid PIN');
+  end if;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+revoke all on function public.kiosk_confirm_exit_v2(text) from public, anon;
+grant execute on function public.kiosk_confirm_exit_v2(text) to authenticated;
+
+create or replace function public.kiosk_exit_required()
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.kiosk_assert_caller();
+  return exists (
+    select 1
+    from public.memberships m
+    where m.role = 'admin'
+      and m.kiosk_exit_pin_hash is not null
+      and public.has_org_role(m.org_id, array['admin', 'manager', 'kiosk'])
+  );
+end;
+$$;
+
+revoke all on function public.kiosk_exit_required() from public, anon;
+grant execute on function public.kiosk_exit_required() to authenticated;
 
 notify pgrst, 'reload schema';

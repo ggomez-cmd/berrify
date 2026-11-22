@@ -323,6 +323,107 @@ try {
     check("list_whos_working returns nothing", await rowCount("select count(*) as n from public.list_whos_working()"), 0);
   });
 
+  console.log("-- self punch needs a current membership");
+  const s3 = await tempUser(home, "staff");
+  await employee(home, "Verify E5 punch", resA, s3);
+  await asUser(s3, async () => {
+    const punch = await attempt("select public.record_clock_event('clock_in', $1)", [randomUUID()]);
+    check("linked staff with membership can punch", "error" in punch ? punch.error : "ok", "ok");
+  });
+  await client.query("delete from public.memberships where user_id = $1", [s3]);
+  await asUser(s3, async () => {
+    const punch = await attempt("select public.record_clock_event('clock_out', $1)", [randomUUID()]);
+    check("after the membership is removed, punch is refused", "error" in punch ? punch.error : "ok", "Not authorized");
+  });
+
+  console.log("-- kiosk PIN functions");
+  const pin = () => String(10_000_000 + Math.floor(Math.random() * 89_999_999));
+  const e2Pin = pin();
+  const e3Pin = pin();
+  const exitPin = pin();
+  const wrongPin = pin();
+  await client.query(
+    "update public.employees set clock_pin_hash = extensions.crypt($1, extensions.gen_salt('bf')) where id = $2",
+    [e2Pin, e2],
+  );
+  await client.query(
+    "update public.employees set clock_pin_hash = extensions.crypt($1, extensions.gen_salt('bf')) where id = $2",
+    [e3Pin, e3],
+  );
+  await client.query(
+    "update public.memberships set kiosk_exit_pin_hash = extensions.crypt($1, extensions.gen_salt('bf')) where user_id = $2 and org_id = $3",
+    [exitPin, admin, home],
+  );
+  const failuresOf = async (userId: string) =>
+    Number((await client.query("select count(*) as n from public.kiosk_pin_failures where user_id = $1", [userId])).rows[0].n);
+  const answer = (r: { rows: Record<string, unknown>[] } | { error: string }) => {
+    if ("error" in r) return `raise: ${r.error}`;
+    const v = r.rows[0]?.r as Record<string, unknown> | boolean | null;
+    if (v && typeof v === "object") {
+      if (typeof v.error === "string") return `error: ${v.error}`;
+      if (typeof v.employee_id === "string") return `employee: ${v.employee_id}`;
+      if (typeof v.id === "string") return `id: ${v.id}`;
+      if (v.ok === true) return "ok";
+    }
+    return `value: ${String(v)}`;
+  };
+
+  for (const [label, userId] of [
+    ["staff S1", s1],
+    ["staff S0 (no employee)", s0],
+  ] as const) {
+    await asUser(userId, async () => {
+      const denied = "raise: Not authorized";
+      check(`${label} unlock, right PIN`, answer(await attempt("select public.kiosk_unlock_v2($1) as r", [e2Pin])), denied);
+      check(`${label} unlock, wrong PIN`, answer(await attempt("select public.kiosk_unlock_v2($1) as r", [wrongPin])), denied);
+      check(
+        `${label} kiosk punch, right PIN`,
+        answer(await attempt("select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null) as r", [e3Pin, randomUUID()])),
+        denied,
+      );
+      check(
+        `${label} kiosk punch, wrong PIN`,
+        answer(await attempt("select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null) as r", [wrongPin, randomUUID()])),
+        denied,
+      );
+      check(`${label} exit, right PIN`, answer(await attempt("select public.kiosk_confirm_exit_v2($1) as r", [exitPin])), denied);
+      check(`${label} exit, wrong PIN`, answer(await attempt("select public.kiosk_confirm_exit_v2($1) as r", [wrongPin])), denied);
+      check(`${label} kiosk_exit_required`, answer(await attempt("select public.kiosk_exit_required() as r")), denied);
+    });
+    check(`${label} refusals are not counted as PIN failures`, await failuresOf(userId), 0);
+  }
+
+  for (const [label, userId] of [
+    ["admin", admin],
+    ["manager", manager],
+    ["kiosk", kiosk],
+  ] as const) {
+    const before = await failuresOf(userId);
+    await asUser(userId, async () => {
+      check(`${label} unlock, right PIN`, answer(await attempt("select public.kiosk_unlock_v2($1) as r", [e2Pin])), `id: ${e2}`);
+      check(`${label} unlock, wrong PIN`, answer(await attempt("select public.kiosk_unlock_v2($1) as r", [wrongPin])), "error: Invalid PIN");
+      check(`${label} exit, right PIN`, answer(await attempt("select public.kiosk_confirm_exit_v2($1) as r", [exitPin])), "ok");
+      check(`${label} exit, wrong PIN`, answer(await attempt("select public.kiosk_confirm_exit_v2($1) as r", [wrongPin])), "error: Invalid PIN");
+      check(`${label} kiosk_exit_required`, answer(await attempt("select public.kiosk_exit_required() as r")), "value: true");
+    });
+    check(`${label} wrong PINs are counted`, (await failuresOf(userId)) - before, 2);
+  }
+  await asUser(kiosk, async () => {
+    check(
+      "kiosk punch with the right PIN clocks E3 in",
+      answer(await attempt("select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null) as r", [e3Pin, randomUUID()])),
+      `employee: ${e3}`,
+    );
+    check(
+      "kiosk punch with a wrong PIN",
+      answer(await attempt("select public.kiosk_record_clock_event_v2($1, 'clock_in', $2, null) as r", [wrongPin, randomUUID()])),
+      "error: Invalid PIN",
+    );
+  });
+  await asUser(awayStaff, async () => {
+    check("other org staff unlock with a home PIN", answer(await attempt("select public.kiosk_unlock_v2($1) as r", [e2Pin])), "raise: Not authorized");
+  });
+
   console.log("-- anon");
   await client.query("set local role anon");
   check(
