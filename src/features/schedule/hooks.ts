@@ -20,6 +20,24 @@ export function useShifts() {
   });
 }
 
+/** Staff: names of employees on shifts the caller can see in [from, to). Staff cannot read employees. */
+export function useShiftCoworkers(from: Date, to: Date) {
+  const { org } = useAuth();
+  return useQuery({
+    queryKey: ["shift_coworkers", org?.id, from.toISOString(), to.toISOString()],
+    enabled: Boolean(org?.id),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_shift_coworkers", {
+        p_from: from.toISOString(),
+        p_to: to.toISOString(),
+      });
+      if (error) throw error;
+      const rows = (data ?? []) as Array<{ employee_id: string; full_name: string }>;
+      return new Map(rows.map((r) => [r.employee_id, r.full_name]));
+    },
+  });
+}
+
 export type ShiftInput = {
   employee_id: string | null;
   restaurant_id: string | null;

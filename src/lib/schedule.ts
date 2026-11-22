@@ -220,3 +220,31 @@ export function groupEmployeesByRestaurant<T extends EmployeeHome>(
   });
   return groups.filter((g) => g.employees.length > 0);
 }
+
+type StaffDayShift = Pick<Shift, "employee_id" | "restaurant_id" | "starts_at" | "status">;
+
+/**
+ * Staff view: who else is on the days the caller works, at a restaurant the
+ * caller works at that day (any restaurant if one of the caller's shifts has
+ * none). Staff cannot read the employee list, so names come from
+ * list_shift_coworkers. An open shift reads "Open".
+ */
+export function staffAlsoOn(
+  weekShifts: StaffDayShift[],
+  day: Date,
+  myEmployeeId: string | null,
+  coworkerNames: ReadonlyMap<string, string>,
+): string[] {
+  if (!myEmployeeId) return [];
+  const published = weekShifts.filter((s) => s.status === "published" && sameDay(s.starts_at, day));
+  const mine = published.filter((s) => s.employee_id === myEmployeeId);
+  if (mine.length === 0) return [];
+  const myRestaurants = new Set(mine.map((s) => s.restaurant_id));
+  return published
+    .filter(
+      (s) =>
+        s.employee_id !== myEmployeeId &&
+        (myRestaurants.has(null) || s.restaurant_id === null || myRestaurants.has(s.restaurant_id)),
+    )
+    .map((s) => (s.employee_id ? (coworkerNames.get(s.employee_id) ?? "Coworker") : "Open"));
+}

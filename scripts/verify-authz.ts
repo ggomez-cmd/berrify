@@ -133,13 +133,17 @@ try {
   assert(staffRates, "staff can select employee wage/PII columns");
 
   const staffDirectory = await asAuthenticated(staffId, async () => {
-    const { rows } = await q<{ full_name: string }>(
-      `select full_name from public.employees where org_id = $1`,
+    const { rows } = await q<{ user_id: string | null }>(
+      `select user_id from public.employees where org_id = $1`,
       [orgId],
     );
     return rows;
   });
-  assert(staffDirectory.length > 0, "staff cannot select employee directory names");
+  // 0040: staff read only their own employee row.
+  assert(
+    staffDirectory.every((row) => row.user_id === staffId),
+    "staff can select other employees' rows",
+  );
 
   const staffEmployeeRpc = await asAuthenticated(staffId, async () => {
     const { rows } = await q<{ hourly_rate: number }>(`select hourly_rate from public.list_employees_full()`);
