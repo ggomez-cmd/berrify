@@ -13,6 +13,7 @@ import {
   isManager,
   shiftsForRestaurant,
   shiftsOverlap,
+  staffAlsoOn,
   visibleShiftsForRole,
   weekStart,
 } from "./schedule";
@@ -210,5 +211,50 @@ describe("restaurant grouping", () => {
     const groups = groupEmployeesByRestaurant(employees, restaurants);
     expect(groups.map((g) => g.restaurant?.name ?? null)).toEqual(["Semilla", "Lelas", null]);
     expect(groups[2].employees.map((e) => e.id)).toEqual(["e3", "e4"]);
+  });
+});
+
+describe("staffAlsoOn", () => {
+  const day = new Date(2031, 2, 3);
+  const at = (hour: number, d = 3) => new Date(2031, 2, d, hour).toISOString();
+  const names = new Map([
+    ["e2", "Ana"],
+    ["e3", "Luis"],
+  ]);
+  const shift = (employee_id: string | null, restaurant_id: string | null, starts_at = at(16)) => ({
+    employee_id,
+    restaurant_id,
+    starts_at,
+    status: "published" as const,
+  });
+
+  it("names coworkers at the restaurant I work that day", () => {
+    const shifts = [shift("me", "A"), shift("e2", "A", at(18)), shift("e3", "B")];
+    expect(staffAlsoOn(shifts, day, "me", names)).toEqual(["Ana"]);
+  });
+
+  it("labels open shifts and unnamed coworkers", () => {
+    const shifts = [shift("me", "A"), shift(null, "A"), shift("e9", "A")];
+    expect(staffAlsoOn(shifts, day, "me", names)).toEqual(["Open", "Coworker"]);
+  });
+
+  it("is empty on days I do not work, or with no employee", () => {
+    const shifts = [shift("e2", "A"), shift(null, "A")];
+    expect(staffAlsoOn(shifts, day, "me", names)).toEqual([]);
+    expect(staffAlsoOn(shifts, day, null, names)).toEqual([]);
+  });
+
+  it("ignores drafts and other days", () => {
+    const shifts = [
+      shift("me", "A"),
+      { ...shift("e2", "A"), status: "draft" as const },
+      shift("e3", "A", at(16, 4)),
+    ];
+    expect(staffAlsoOn(shifts, day, "me", names)).toEqual([]);
+  });
+
+  it("does not scope by restaurant when my shift has none", () => {
+    const shifts = [shift("me", null), shift("e2", "A"), shift("e3", "B")];
+    expect(staffAlsoOn(shifts, day, "me", names)).toEqual(["Ana", "Luis"]);
   });
 });

@@ -286,8 +286,12 @@ try {
     check("admin kiosk_unlock still works", "error" in unlock ? outcome(unlock) : (unlock.rows[0].r as { id: string }).id, home.emp_id);
   });
   await asUser(staff, async () => {
-    const n = await rowCount("select count(*) as n from public.employees where org_id = $1", [home.org_id]);
-    check("staff reads employees (member-wide policy)", typeof n === "number" && n > 0, true);
+    // 0040: staff read only their own employee row; this staff login has none.
+    check(
+      "staff without an employee row reads no employees",
+      await rowCount("select count(*) as n from public.employees where org_id = $1", [home.org_id]),
+      0,
+    );
     check("staff does not see the draft shift", await rowCount("select count(*) as n from public.staff_shifts where id = $1", [draftId]), 0);
     check("staff reads its organization", await rowCount("select count(*) as n from public.organizations where id = $1", [home.org_id]), 1);
     const unlock = await attempt("select public.kiosk_unlock_v2($1)", [homePin]);

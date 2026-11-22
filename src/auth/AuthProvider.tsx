@@ -1,4 +1,5 @@
 import type { Session } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   setPasswordRecoveryFlag,
@@ -7,6 +8,7 @@ import {
 import { supabase } from "../lib/supabase";
 import type { MembershipRole, Organization } from "../lib/types";
 import { AuthContext, type AuthState } from "./auth-context";
+import { createUserCacheGuard } from "./user-cache-guard";
 
 type MembershipRow = {
   role: MembershipRole;
@@ -14,7 +16,17 @@ type MembershipRow = {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const queryClient = useQueryClient();
+  const userCacheGuard = useMemo(() => createUserCacheGuard(queryClient), [queryClient]);
+  const [session, setSessionState] = useState<Session | null>(null);
+  // Clear cached queries before the new user's state renders.
+  const setSession = useCallback(
+    (next: Session | null) => {
+      userCacheGuard(next?.user.id ?? null);
+      setSessionState(next);
+    },
+    [userCacheGuard],
+  );
   const [org, setOrg] = useState<Organization | null>(null);
   const [role, setRole] = useState<MembershipRole | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,15 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [loadWorkspace]);
+  }, [loadWorkspace, setSession]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    setSession(null);
     setPasswordRecoveryFlag(false);
     setRecovery(false);
     setOrg(null);
     setRole(null);
-  }, []);
+  }, [setSession]);
 
   const value = useMemo<AuthState>(
     () => ({

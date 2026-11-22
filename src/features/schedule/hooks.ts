@@ -4,10 +4,11 @@ import { supabase } from "../../lib/supabase";
 import type { ShiftStatus, ShiftWithEmployee, Station } from "../../lib/types";
 
 export function useShifts() {
-  const { org } = useAuth();
+  const { org, user } = useAuth();
   return useQuery({
-    queryKey: ["shifts", org?.id],
-    enabled: Boolean(org?.id),
+    // What a login can read depends on who it is, so the cache is per user.
+    queryKey: ["shifts", org?.id, user?.id],
+    enabled: Boolean(org?.id && user?.id),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_shifts")
@@ -16,6 +17,24 @@ export function useShifts() {
         .order("starts_at");
       if (error) throw error;
       return (data ?? []) as ShiftWithEmployee[];
+    },
+  });
+}
+
+/** Staff: names of employees on shifts the caller can see in [from, to). Staff cannot read employees. */
+export function useShiftCoworkers(from: Date, to: Date) {
+  const { org, user } = useAuth();
+  return useQuery({
+    queryKey: ["shift_coworkers", org?.id, user?.id, from.toISOString(), to.toISOString()],
+    enabled: Boolean(org?.id && user?.id),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_shift_coworkers", {
+        p_from: from.toISOString(),
+        p_to: to.toISOString(),
+      });
+      if (error) throw error;
+      const rows = (data ?? []) as Array<{ employee_id: string; full_name: string }>;
+      return new Map(rows.map((r) => [r.employee_id, r.full_name]));
     },
   });
 }

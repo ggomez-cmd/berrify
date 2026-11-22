@@ -17,6 +17,7 @@ import {
   isManager,
   sameDay,
   shiftsForRestaurant,
+  staffAlsoOn,
   statusLabel,
   weekStart,
   atTimeOnDay,
@@ -26,9 +27,10 @@ import type { Employee, Restaurant, Shift, ShiftWithEmployee } from "../../lib/t
 import { useEmployees, useMyEmployee } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
 import { ShiftDialog } from "./ShiftDialog";
-import { usePublishWeek, useShifts } from "./hooks";
+import { usePublishWeek, useShiftCoworkers, useShifts } from "./hooks";
 
 const RESTAURANT_KEY = "berrify.schedule.restaurant";
+const NO_NAMES: ReadonlyMap<string, string> = new Map();
 
 function readSavedRestaurant(): string | null {
   try {
@@ -383,7 +385,11 @@ function StaffSchedule({
   isLoading: boolean;
   error: string | null;
 }) {
-  const mine = weekShifts.filter((s) => s.status === "published" && s.employee_id === myEmployeeId);
+  const mine = weekShifts.filter(
+    (s) => myEmployeeId !== null && s.status === "published" && s.employee_id === myEmployeeId,
+  );
+  const coworkersQuery = useShiftCoworkers(weekDays[0], addDays(weekDays[0], 7));
+  const coworkerNames = coworkersQuery.data ?? NO_NAMES;
 
   return (
     <div className="space-y-4">
@@ -392,16 +398,7 @@ function StaffSchedule({
       {isLoading ? <p className="text-sm text-muted">Loading your shifts…</p> : null}
       {weekDays.map((day) => {
         const dayMine = mine.filter((s) => sameDay(s.starts_at, day));
-        // Older shifts have no restaurant; staff can't see homes, so those stay unscoped.
-        const myRestaurants = new Set(dayMine.map((s) => s.restaurant_id));
-        const others = weekShifts.filter(
-          (s) =>
-            s.status === "published" &&
-            s.employee_id !== myEmployeeId &&
-            sameDay(s.starts_at, day) &&
-            dayMine.length > 0 &&
-            (myRestaurants.has(null) || s.restaurant_id === null || myRestaurants.has(s.restaurant_id)),
-        );
+        const others = staffAlsoOn(weekShifts, day, myEmployeeId, coworkerNames);
         return (
           <Card key={day.toISOString()}>
             <h2 className="mb-2 font-semibold">
@@ -429,7 +426,7 @@ function StaffSchedule({
             )}
             {others.length > 0 ? (
               <p className="mt-3 text-xs text-muted">
-                Also on: {others.map((s) => s.employees?.full_name ?? "Open").join(", ")}
+                Also on: {others.join(", ")}
               </p>
             ) : null}
           </Card>

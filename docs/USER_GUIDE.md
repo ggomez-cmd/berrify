@@ -16,7 +16,7 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 
 | Role | Who it is | Extra access |
 | --- | --- | --- |
-| **Staff** | Line staff with a linked employee row | Schedule (own published shifts) and Time Clock (Clock in / Clock out). They punch on the tablet kiosk only after a manager or admin opens it. |
+| **Staff** | Line staff with a linked employee row | Schedule (published shifts at their home restaurant, plus their own) and Time Clock (Clock in / Clock out). They read only their own employee record, not the employee list. They punch on the tablet kiosk only after a manager or admin opens it. |
 | **Manager** | Day-to-day operator | Dashboard, schedule editing, Time Clock attendance, inventory, invoices, and suppliers. Cannot create accounts or edit pay. |
 | **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
 | **Kiosk** | Shared tablet login (no employee row) | **Kiosk** only. Staff punch on it with their clock PIN. It cannot open any other page or read employee, shift, or pay data. |
@@ -132,6 +132,12 @@ The **Hours** column is the employee’s hours at this restaurant on this week�
 4. If you have a shift that day, **Also on** lists coworkers published the same day at the same restaurant.
 
 You cannot create, edit, or publish shifts as staff.
+
+What staff can see:
+
+- Published shifts at your home restaurant, plus your own published shifts at any restaurant (for example a cover at another location). Shifts at other restaurants and other employees’ shifts with no restaurant are hidden.
+- Only your own employee record. Staff cannot read the employee list; **Also on** shows only the names of coworkers on shifts you can already see.
+- If your login has no employee record, or your employee has no home restaurant, you see only your own shifts. Ask an admin to set your restaurant on **Employees**.
 
 ---
 
