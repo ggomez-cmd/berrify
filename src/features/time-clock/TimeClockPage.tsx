@@ -1,6 +1,5 @@
-import { Coffee, LogIn, LogOut, Pause } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
@@ -13,27 +12,19 @@ import { Table, THead, Td, Th } from "../../components/ui/table";
 import { formatDuration } from "../../lib/format";
 import { isValidClockPin } from "../../lib/pin";
 import { isAdmin, isManager } from "../../lib/schedule";
-import { cn } from "../../lib/cn";
 import { useSetOwnerKioskPin } from "../kiosk/hooks";
 import {
-  allowedEvents,
   CLOCK_EVENT_TYPES,
-  clockStateFromSession,
   formatInTimeZone,
   formatTimeInZone,
-  groupPunchRows,
   type ClockEventType,
-  type ClockState,
 } from "../../lib/time-clock";
-import { useEmployees, useMyEmployee } from "../employees/hooks";
+import { useEmployees } from "../employees/hooks";
 import {
   useManagerForceClockOut,
   useManagerRecordPunch,
-  useMyClockEvents,
-  useMyClockSession,
   useOrgClockEvents,
   useReconcileAttendance,
-  useRecordClockEvent,
   useResolveException,
   useTimeEntries,
   useTimeExceptions,
@@ -41,22 +32,7 @@ import {
   useWhosWorking,
 } from "./hooks";
 
-type Tab = "clock" | "working" | "attendance" | "activity" | "exceptions" | "settings";
-
-function stateLabel(state: ClockState): string {
-  switch (state) {
-    case "off_clock":
-      return "Off clock";
-    case "working":
-      return "Working / Clocked in";
-    case "on_break":
-      return "On break";
-    default: {
-      const exhaustive: never = state;
-      return exhaustive;
-    }
-  }
-}
+type Tab = "working" | "attendance" | "activity" | "exceptions" | "settings";
 
 function actionLabel(event: ClockEventType): string {
   switch (event) {
@@ -75,45 +51,22 @@ function actionLabel(event: ClockEventType): string {
   }
 }
 
-function punchCell(iso: string | null, timeZone: string): string {
-  return iso ? formatTimeInZone(iso, timeZone) : "—";
-}
-
-function eventIcon(event: ClockEventType) {
-  switch (event) {
-    case "clock_in":
-      return LogIn;
-    case "clock_out":
-      return LogOut;
-    case "break_start":
-      return Coffee;
-    case "break_end":
-      return Pause;
-    default: {
-      const exhaustive: never = event;
-      return exhaustive;
-    }
-  }
-}
-
 export function TimeClockPage() {
   const { role, org } = useAuth();
   const manager = isManager(role);
   const admin = isAdmin(role);
   const timeZone = org?.timezone ?? "America/Puerto_Rico";
-  const [tab, setTab] = useState<Tab>("clock");
+  const [tab, setTab] = useState<Tab>("working");
+
+  // Punches happen only at the kiosk. Staff see their completed shifts on My shifts.
+  if (!manager) return <Navigate to="/my-shifts" replace />;
 
   const tabs: Array<{ id: Tab; label: string }> = [
-    { id: "clock", label: "Clock" },
+    { id: "working", label: "Who’s working" },
+    { id: "attendance", label: "Attendance" },
+    { id: "activity", label: "Activity" },
+    { id: "exceptions", label: "Exceptions" },
   ];
-  if (manager) {
-    tabs.push(
-      { id: "working", label: "Who’s working" },
-      { id: "attendance", label: "Attendance" },
-      { id: "activity", label: "Activity" },
-      { id: "exceptions", label: "Exceptions" },
-    );
-  }
   if (admin) {
     tabs.push({ id: "settings", label: "Settings" });
   }
@@ -129,124 +82,11 @@ export function TimeClockPage() {
       ) : null}
       <PageTabs items={tabs} value={tab} onChange={setTab} />
 
-      {tab === "clock" ? <EmployeeClockPanel timeZone={timeZone} /> : null}
       {tab === "working" ? <WhosWorkingPanel manager={manager} timeZone={timeZone} /> : null}
       {tab === "attendance" && manager ? <AttendancePanel timeZone={timeZone} /> : null}
       {tab === "activity" && manager ? <ActivityPanel timeZone={timeZone} /> : null}
       {tab === "exceptions" && manager ? <ExceptionsPanel timeZone={timeZone} /> : null}
       {tab === "settings" && admin ? <SettingsPanel /> : null}
-    </div>
-  );
-}
-
-function EmployeeClockPanel({ timeZone }: { timeZone: string }) {
-  const me = useMyEmployee();
-  const sessionQuery = useMyClockSession();
-  const eventsQuery = useMyClockEvents();
-  const punch = useRecordClockEvent();
-  const state = clockStateFromSession(sessionQuery.data?.state ?? null);
-  const actions = allowedEvents(state);
-  const rows = groupPunchRows(eventsQuery.data ?? []);
-  const clockedInAt = sessionQuery.data?.clocked_in_at;
-
-  return (
-    <div className="space-y-4">
-      {!me.data && !me.isLoading ? (
-        <p className="text-sm text-danger">No employee record is linked to this login, so you cannot punch.</p>
-      ) : null}
-      {me.data && !me.data.active ? (
-        <p className="text-sm text-danger">This employee is inactive and cannot punch.</p>
-      ) : null}
-      {punch.error ? <p className="text-sm text-danger">{punch.error.message}</p> : null}
-      {sessionQuery.error ? <p className="text-sm text-danger">{sessionQuery.error.message}</p> : null}
-
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <span
-              className={cn(
-                "mt-1 size-2.5 rounded-full",
-                state === "working" ? "bg-ok" : state === "on_break" ? "bg-warn" : "bg-slate-300",
-              )}
-            />
-            <div>
-              <p className="text-lg font-semibold text-ink">{stateLabel(state)}</p>
-              {clockedInAt ? (
-                <p className="mt-1 text-sm text-muted">
-                  Clocked in {formatTimeInZone(clockedInAt, timeZone)}
-                  {sessionQuery.data?.break_started_at
-                    ? ` · Break started ${formatTimeInZone(sessionQuery.data.break_started_at, timeZone)}`
-                    : null}
-                </p>
-              ) : (
-                <p className="mt-1 text-sm text-muted">Ready to clock in</p>
-              )}
-            </div>
-          </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-            {CLOCK_EVENT_TYPES.map((event) => {
-              const enabled = actions.includes(event) && !punch.isPending && Boolean(me.data?.active);
-              const Icon = eventIcon(event);
-              return (
-                <Button
-                  key={event}
-                  className="w-full sm:w-auto"
-                  variant={
-                    (event === "clock_in" && state === "off_clock") ||
-                    (event === "clock_out" && state === "working")
-                      ? "primary"
-                      : "ghost"
-                  }
-                  disabled={!enabled}
-                  onClick={() => punch.mutate({ event_type: event })}
-                >
-                  {Icon ? <Icon className="size-4" /> : null}
-                  {punch.isPending && actions.includes(event) ? "Saving…" : actionLabel(event)}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </Card>
-
-      <div>
-        <h2 className="mb-3 font-semibold">Recent punches</h2>
-        {eventsQuery.isLoading ? <p className="text-sm text-muted">Loading…</p> : null}
-        {eventsQuery.error ? <p className="text-sm text-danger">{eventsQuery.error.message}</p> : null}
-        <Table>
-          <THead>
-            <tr>
-              <Th>Date</Th>
-              <Th>Clock in</Th>
-              <Th>Start break</Th>
-              <Th>End break</Th>
-              <Th>Clock out</Th>
-            </tr>
-          </THead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                <Td>
-                  {new Date(
-                    row.clockIn ?? row.breakStart ?? row.breakEnd ?? row.clockOut ?? 0,
-                  ).toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })}
-                </Td>
-                <Td>{punchCell(row.clockIn, timeZone)}</Td>
-                <Td>{punchCell(row.breakStart, timeZone)}</Td>
-                <Td>{punchCell(row.breakEnd, timeZone)}</Td>
-                <Td>{punchCell(row.clockOut, timeZone)}</Td>
-              </tr>
-            ))}
-            {rows.length === 0 && !eventsQuery.isLoading ? (
-              <tr>
-                <Td colSpan={5} className="py-8 text-center text-muted">
-                  No clock events yet.
-                </Td>
-              </tr>
-            ) : null}
-          </tbody>
-        </Table>
-      </div>
     </div>
   );
 }

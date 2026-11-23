@@ -265,11 +265,9 @@ try {
   });
 
   console.log("-- who's working");
-  await asUser(s1, async () => {
-    const punch = await attempt("select public.record_clock_event('clock_in', $1) as r", [randomUUID()]);
-    check("S1 can clock in", "error" in punch ? punch.error : "ok", "ok");
-  });
   await asUser(manager, async () => {
+    const punchE1 = await attempt("select public.manager_record_punch($1, 'clock_in', now(), 'verify', $2)", [e1, randomUUID()]);
+    check("manager clocks E1 in", "error" in punchE1 ? punchE1.error : "ok", "ok");
     const punch = await attempt("select public.manager_record_punch($1, 'clock_in', now(), 'verify', $2)", [e2, randomUUID()]);
     check("manager clocks E2 in", "error" in punch ? punch.error : "ok", "ok");
     check(
@@ -323,18 +321,19 @@ try {
     check("list_whos_working returns nothing", await rowCount("select count(*) as n from public.list_whos_working()"), 0);
   });
 
-  console.log("-- self punch needs a current membership");
+  console.log("-- punches only at the kiosk (0042)");
   const s3 = await tempUser(home, "staff");
   await employee(home, "Verify E5 punch", resA, s3);
-  await asUser(s3, async () => {
-    const punch = await attempt("select public.record_clock_event('clock_in', $1)", [randomUUID()]);
-    check("linked staff with membership can punch", "error" in punch ? punch.error : "ok", "ok");
-  });
-  await client.query("delete from public.memberships where user_id = $1", [s3]);
-  await asUser(s3, async () => {
-    const punch = await attempt("select public.record_clock_event('clock_out', $1)", [randomUUID()]);
-    check("after the membership is removed, punch is refused", "error" in punch ? punch.error : "ok", "Not authorized");
-  });
+  for (const [label, userId] of [
+    ["linked staff", s3],
+    ["manager", manager],
+    ["admin", admin],
+  ] as const) {
+    await asUser(userId, async () => {
+      const punch = await attempt("select public.record_clock_event('clock_in', $1)", [randomUUID()]);
+      check(`${label} self punch is refused`, "error" in punch ? punch.error : "ok", "Clock in and out at the kiosk.");
+    });
+  }
 
   console.log("-- kiosk PIN functions");
   const pin = () => String(10_000_000 + Math.floor(Math.random() * 89_999_999));

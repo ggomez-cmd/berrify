@@ -20,11 +20,13 @@ function newClientEventId(): string {
   return crypto.randomUUID();
 }
 
-export function useMyClockSession() {
+export function useMyClockSession(options: { refetchInterval?: number } = {}) {
   const { org, user } = useAuth();
   return useQuery({
     queryKey: ["clock_session", org?.id, user?.id],
     enabled: Boolean(org?.id && user?.id),
+    refetchInterval: options.refetchInterval,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const { data: employee, error: employeeError } = await supabase
         .from("employees")
@@ -41,60 +43,6 @@ export function useMyClockSession() {
         .maybeSingle();
       if (error) throw error;
       return (data as ClockSession | null) ?? null;
-    },
-  });
-}
-
-export function useMyClockEvents() {
-  const { org, user } = useAuth();
-  return useQuery({
-    queryKey: ["clock_events", org?.id, user?.id],
-    enabled: Boolean(org?.id && user?.id),
-    queryFn: async () => {
-      const { data: employee, error: employeeError } = await supabase
-        .from("employees")
-        .select("id")
-        .eq("org_id", org!.id)
-        .eq("user_id", user!.id)
-        .maybeSingle();
-      if (employeeError) throw employeeError;
-      if (!employee) return [];
-      const { data, error } = await supabase
-        .from("clock_events")
-        .select("*")
-        .eq("employee_id", employee.id)
-        .order("occurred_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return (data ?? []) as ClockEvent[];
-    },
-  });
-}
-
-export function useRecordClockEvent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { event_type: ClockEventType; note?: string }) => {
-      const { data, error } = await supabase.rpc("record_clock_event", {
-        event_type: input.event_type,
-        client_event_id: newClientEventId(),
-        note: input.note ?? null,
-        client_occurred_at: new Date().toISOString(),
-        restaurant_id: null,
-        latitude: null,
-        longitude: null,
-        accuracy_m: null,
-        source: "web",
-      });
-      if (error) throw error;
-      return data as ClockEvent;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["clock_session"] });
-      void qc.invalidateQueries({ queryKey: ["clock_events"] });
-      void qc.invalidateQueries({ queryKey: ["time_entries"] });
-      void qc.invalidateQueries({ queryKey: ["time_exceptions"] });
-      void qc.invalidateQueries({ queryKey: ["whos_working"] });
     },
   });
 }
@@ -344,6 +292,25 @@ export function useUpdateOrgClockSettings() {
     },
     onSuccess: () => {
       void qc.invalidateQueries();
+    },
+  });
+}
+
+/** The signed-in employee's completed shifts that started in [from, to). */
+export function useMyTimeEntries(employeeId: string | null, from: Date, to: Date) {
+  return useQuery({
+    queryKey: ["my_time_entries", employeeId, from.toISOString(), to.toISOString()],
+    enabled: Boolean(employeeId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("time_entries")
+        .select("*")
+        .eq("employee_id", employeeId!)
+        .gte("started_at", from.toISOString())
+        .lt("started_at", to.toISOString())
+        .order("started_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as TimeEntry[];
     },
   });
 }

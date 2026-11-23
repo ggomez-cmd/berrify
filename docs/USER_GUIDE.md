@@ -16,7 +16,7 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 
 | Role | Who it is | Extra access |
 | --- | --- | --- |
-| **Staff** | Line staff with a linked employee row | Schedule (published shifts at their home restaurant, plus their own) and Time Clock (Clock in / Clock out). They read only their own employee record, not the employee list. They punch on the tablet kiosk only after a manager or admin opens it. |
+| **Staff** | Line staff with a linked employee row | Schedule (the days they work, plus who else is on those days) and **My shifts** (their completed shifts and hours). They read only their own employee record, not the employee list. They clock in and out only on the tablet kiosk. |
 | **Manager** | Day-to-day operator | Dashboard, schedule editing, Time Clock attendance, inventory, invoices, and suppliers. Cannot create accounts or edit pay. |
 | **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
 | **Kiosk** | Shared tablet login (no employee row) | **Kiosk** only. Staff punch on it with their clock PIN. It cannot open any other page or read employee, shift, or pay data. |
@@ -42,7 +42,7 @@ A kiosk login always lands on Kiosk. Every other route sends it back to Kiosk, a
 
 The message is Berrify-branded (wine button, wordmark). Delivery still uses the project’s existing Supabase mail settings. Seed addresses such as `demo@berrify.local` do not receive mail.
 
-**Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use a staff seed account such as `server@berrify.local` to try Clock in / Clock out. Seed passwords live in the README, not on the sign-in screen.
+**Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use a staff seed account's clock PIN on the **Kiosk** to try clocking in and out. Seed passwords live in the README, not on the sign-in screen.
 
 ### Joining an existing restaurant (staff or manager)
 
@@ -131,7 +131,7 @@ The **Hours** column is the employee’s hours at this restaurant on this week�
 
 1. Open **Schedule**.
 2. Page by week.
-3. Each day card shows your published shifts (time, restaurant, station, note).
+3. Only the days you work are listed; days off are hidden. Each day card shows your published shifts (time, restaurant, station, note). A week with no shifts says **No published shifts for you this week.**
 4. If you have a shift that day, **Also on** lists coworkers published the same day at the same restaurant.
 
 You cannot create, edit, or publish shifts as staff.
@@ -150,24 +150,22 @@ What staff can see:
 
 Time Clock records live punches. Events are immutable (clock in, start break, end break, clock out). A live session exists only while someone is on the clock. Closed sessions become **time entries**. Problems become **exceptions**. The system never invents a clock-out.
 
-You can only punch if:
+**Everyone clocks in and out on the Kiosk** with their clock PIN. Nobody can punch from a phone or computer, managers and admins included. Managers fix a missed punch with **Record missing punch** or **Force clock out**. A manager cannot use those, or edit time entries, on their own record: an admin fixes a manager's time ("Ask an admin to change your own time.").
 
-- your login is linked to an **employee** row, and
-- that employee is **Active**
+An employee can only punch if they are **Active** and have a clock PIN.
 
-### Clock (everyone with an employee row)
+### My shifts (everyone with an employee row)
 
-1. Open **Time Clock** → **Clock**.
-2. Read the status: **Off clock**, **Working / Clocked in**, or **On break**.
-3. Use the allowed button only:
-   - Off clock → **Clock in**
-   - Working → **Start break** or **Clock out**
-   - On break → **End break**
-4. **Recent punches** groups those events into daily rows (clock in, break, clock out).
+1. Open **My shifts**.
+2. The top card says whether you are **On the clock**, **On break**, or **Off the clock**.
+3. Pick a week. Each completed shift shows the date, restaurant, station, clock in and out times, unpaid break, and hours worked. The week's total is at the top.
+4. **Under review** means a manager is checking that shift (for example a missed clock-out).
+
+Staff no longer see **Time Clock**; it is for managers and admins.
 
 When you clock in, Berrify links the punch to your published shift, and that decides which restaurant the hours count toward. A shift you are already inside wins. Otherwise it picks the shift starting nearest your punch, within 2 hours before its start or after its end. With no matching shift, hours go to your home restaurant.
 
-Invalid actions stay disabled. You cannot clock in twice, or clock out while on break, without a manager force-out or a recorded missing punch.
+The kiosk refuses invalid actions. You cannot clock in twice, or clock out while on break, without a manager force-out or a recorded missing punch.
 
 ### Who’s working (manager / admin)
 
@@ -439,7 +437,7 @@ Pink carbonless photos shot sideways usually need a human pass before export.
 ## Typical daily paths
 
 **Open the floor (staff)**  
-Sign in → Time Clock → Clock in → work → Start break / End break → Clock out. Check Schedule for today’s published shift.
+Check Schedule for today’s shift → clock in at the Kiosk with your PIN → breaks and clock out at the Kiosk. Check **My shifts** for your hours.
 
 **Open the floor (manager)**  
 Dashboard for low stock and coverage → Time Clock → Who’s working → Schedule if you still have drafts to publish.

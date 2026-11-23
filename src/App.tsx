@@ -14,6 +14,7 @@ import { PrivacyPage } from "./features/legal/PrivacyPage";
 import { TermsPage } from "./features/legal/TermsPage";
 import { QuickbooksPage } from "./features/quickbooks/QuickbooksPage";
 import { KioskPage } from "./features/kiosk/KioskPage";
+import { MyShiftsPage } from "./features/my-shifts/MyShiftsPage";
 import { SchedulePage } from "./features/schedule/SchedulePage";
 import { MovementsPage } from "./features/stock/MovementsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="time-clock" element={<TimeClockPage />} />
               <Route path="time-clock/shifts" element={<ReviewShiftsPage />} />
+              <Route path="my-shifts" element={<MyShiftsPage />} />
               <Route path="payroll" element={<PayrollPage />} />
               <Route path="payroll/setup" element={<PayrollSetupPage />} />
               <Route path="payroll/runs" element={<PayrollRunsPage />} />

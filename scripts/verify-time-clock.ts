@@ -63,12 +63,18 @@ async function punch(
   clientEventId: string,
   extras: { note?: string; restaurantId?: string | null } = {},
 ): Promise<ClockEvent> {
+  // Self punch is off (0042); drive the punch engine directly as the signed-in
+  // employee, the way the kiosk does. extras.restaurantId was never authoritative.
+  void extras.restaurantId;
   const { rows } = await q<ClockEvent>(
-    `select * from public.record_clock_event(
-      $1, $2::uuid, $3, now(), $4::uuid, null, null, null, 'web'
-    )`,
-    [eventType, clientEventId, extras.note ?? null, extras.restaurantId ?? null],
+    `select (public.apply_clock_event(
+      e, $1, 'employee', 'web', $2::uuid, $3, now(), now(), null, null, null, auth.uid()
+    )).*
+    from public.employees e
+    where e.user_id = auth.uid()`,
+    [eventType, clientEventId, extras.note ?? null],
   );
+  if (!rows[0]) throw new Error("No employee record for this user");
   return rows[0];
 }
 
@@ -571,9 +577,13 @@ try {
     await q(`select public.kiosk_confirm_exit_v2('7777')`);
   });
 
-  await become(cookUserId);
-  const selfPunch = await punch("clock_in", crypto.randomUUID()).catch(() => null);
-  assert(selfPunch === null || selfPunch.employee_id === marco.id, "record_clock_event punched someone other than the signed-in employee");
+  const selfPunchRefused = await asAuthenticated(cookUserId, () =>
+    expectReject(
+      () => q(`select public.record_clock_event('clock_in', $1::uuid)`, [crypto.randomUUID()]),
+      /Clock in and out at the kiosk/,
+    ),
+  );
+  assert(selfPunchRefused, "record_clock_event still punches outside the kiosk");
 
   await client.query("rollback");
 

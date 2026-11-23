@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ClipboardList,
   Clock,
+  History,
   LayoutDashboard,
   Lock,
   Receipt,
@@ -97,13 +98,14 @@ export function Sidebar({
         { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
         { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
         { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+        { to: "/my-shifts", label: "My shifts", icon: History, end: false },
         { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
       ]
     : isKioskLogin(role)
       ? []
       : [
           { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
-          { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
+          { to: "/my-shifts", label: "My shifts", icon: History, end: false },
         ];
 
   const operations: NavItem[] = manager
