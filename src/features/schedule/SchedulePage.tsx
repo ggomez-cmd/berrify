@@ -366,7 +366,7 @@ function EmployeeRow({
   );
 }
 
-function StaffSchedule({
+export function StaffSchedule({
   weekDays,
   weekShifts,
   restaurants,
@@ -396,34 +396,37 @@ function StaffSchedule({
       <WeekPager cursor={cursor} setCursor={setCursor} />
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading your shifts…</p> : null}
+      {!isLoading && !error && mine.length === 0 ? (
+        <Card>
+          <p className="text-sm text-muted">No published shifts for you this week.</p>
+        </Card>
+      ) : null}
       {weekDays.map((day) => {
         const dayMine = mine.filter((s) => sameDay(s.starts_at, day));
+        // Days off stay hidden so staff only scroll through the days they work.
+        if (dayMine.length === 0) return null;
         const others = staffAlsoOn(weekShifts, day, myEmployeeId, coworkerNames);
         return (
           <Card key={day.toISOString()}>
             <h2 className="mb-2 font-semibold">
               {day.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
             </h2>
-            {dayMine.length === 0 ? (
-              <p className="text-sm text-muted">No published shifts for you.</p>
-            ) : (
-              <ul className="space-y-2">
-                {dayMine.map((s) => (
-                  <li key={s.id} className="text-sm">
-                    <span className="inline-flex rounded-xl bg-wine px-2.5 py-1 text-xs font-medium text-white">
-                      {formatTimeRange(s.starts_at, s.ends_at)}
+            <ul className="space-y-2">
+              {dayMine.map((s) => (
+                <li key={s.id} className="text-sm">
+                  <span className="inline-flex rounded-xl bg-wine px-2.5 py-1 text-xs font-medium text-white">
+                    {formatTimeRange(s.starts_at, s.ends_at)}
+                  </span>
+                  {s.restaurant_id ? (
+                    <span className="ml-2 font-medium">
+                      {restaurants.find((r) => r.id === s.restaurant_id)?.name}
                     </span>
-                    {s.restaurant_id ? (
-                      <span className="ml-2 font-medium">
-                        {restaurants.find((r) => r.id === s.restaurant_id)?.name}
-                      </span>
-                    ) : null}
-                    <span className="ml-2 text-muted">{s.position}</span>
-                    {s.note ? <span className="ml-2 text-muted">· {s.note}</span> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
+                  ) : null}
+                  <span className="ml-2 text-muted">{s.position}</span>
+                  {s.note ? <span className="ml-2 text-muted">· {s.note}</span> : null}
+                </li>
+              ))}
+            </ul>
             {others.length > 0 ? (
               <p className="mt-3 text-xs text-muted">
                 Also on: {others.join(", ")}

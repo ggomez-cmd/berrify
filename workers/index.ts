@@ -1,4 +1,5 @@
 import { boundAssetFetch, boundFetch } from "./bound-fetch";
+import { handleEmployeeInvite } from "./employee-invite";
 import { handleEmptyBottleIdentifyPost } from "./empty-bottle-identify-post";
 import { handleInvoiceExtractPost } from "./invoice-extract-post";
 import { handleOcrPost } from "./ocr-post";
@@ -172,6 +173,9 @@ export async function handleApi(
       }
     }
   }
+
+  const invite = await handleEmployeeInvite(request, env, path, fetchImpl);
+  if (invite) return withSecurityHeaders(invite);
 
   const qbo = await handleQbo(request, env, path, fetchImpl);
   if (qbo) return withSecurityHeaders(qbo);

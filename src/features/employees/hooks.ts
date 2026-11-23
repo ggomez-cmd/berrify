@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/auth-context";
-import { isManager } from "../../lib/schedule";
+import { sendEmployeeInvite, type EmployeeLogin } from "../../lib/employee-invite";
+import { isAdmin, isManager } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import type { Employee, LoginRole, Station } from "../../lib/types";
 
@@ -103,16 +104,26 @@ export function useSetClockPin() {
   });
 }
 
-export function useRotateInvite() {
+export function useEmployeeLogins() {
+  const { org, role } = useAuth();
+  return useQuery({
+    queryKey: ["employee_logins", org?.id],
+    enabled: Boolean(org?.id) && isAdmin(role),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_employee_logins");
+      if (error) throw error;
+      return new Map(((data ?? []) as EmployeeLogin[]).map((row) => [row.employee_id, row]));
+    },
+  });
+}
+
+export function useSendInvite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { data, error } = await supabase.rpc("rotate_employee_invite", { target_id: id });
-      if (error) throw error;
-      return data as string;
-    },
-    onSuccess: () => {
+    mutationFn: (id: string) => sendEmployeeInvite(id),
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["employees"] });
+      void qc.invalidateQueries({ queryKey: ["employee_logins"] });
     },
   });
 }

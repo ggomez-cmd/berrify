@@ -8,7 +8,7 @@ Desktop bills from sideways invoice photos, backed by Supabase (Postgres + Auth
 
 How to use every screen: **[User guide](docs/USER_GUIDE.md)** · **[PDF with screenshots](docs/berrify-user-guide.pdf)**.
 
-**Production:** [https://berrify.app](https://berrify.app) (also [www.berrify.app](https://www.berrify.app) and [berrify.ggomez-fd2.workers.dev](https://berrify.ggomez-fd2.workers.dev)). Sign in with `demo@berrify.local` / `12345678` (manager) or `server@berrify.local` / `12345678` (staff). Add each origin under Supabase Auth → URL configuration → Redirect URLs, including `https://berrify.app/reset-password` and local `http://localhost:5173/reset-password`.
+**Production:** [https://berrify.app](https://berrify.app) (also [www.berrify.app](https://www.berrify.app) and [berrify.ggomez-fd2.workers.dev](https://berrify.ggomez-fd2.workers.dev)). Add each origin under Supabase Auth → URL configuration → Redirect URLs, including `https://berrify.app/reset-password`, `https://berrify.app/accept-invite` (and the `www` variants), and local `http://localhost:5173/reset-password` and `http://localhost:5173/accept-invite`.
 
 ## Stack
 
@@ -71,7 +71,7 @@ The wordmark is served from `https://berrify.app/email/berrify-wordmark.png`.
 | `npm run workers:dev` | Build the app and run it on Cloudflare Workers locally. |
 | `npm run workers:deploy` | Build and deploy the Worker (SPA + `/api`). |
 | `npm run whatsapp:ingest` | File + caption → same invoice pipeline (Business inbox). |
-| `npm run auth:email-templates` | Push the branded reset-password email to Supabase Auth. |
+| `npm run auth:email-templates` | Push the branded reset-password and invite emails to Supabase Auth. |
 
 ## Data model
 
@@ -170,7 +170,7 @@ npm run workers:deploy
 The Worker also stays on `https://berrify.ggomez-fd2.workers.dev`. Custom
 domains `berrify.app` and `www.berrify.app` are declared in `wrangler.jsonc`.
 Add those origins under Supabase Auth → URL configuration → Redirect URLs,
-plus `https://berrify.app/reset-password` and `http://localhost:5173/reset-password`.
+plus `https://berrify.app/reset-password`, `https://berrify.app/accept-invite`, `http://localhost:5173/reset-password`, and `http://localhost:5173/accept-invite`. Employee invites link to `/accept-invite`, so that path must be allowed or the email link falls back to the Site URL and fails.
 
 GitHub Actions (`.github/workflows/deploy-workers.yml`) deploys on push to
 `main` when these repository secrets exist:

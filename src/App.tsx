@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-
 import { AuthProvider } from "./auth/AuthProvider";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppShell } from "./components/layout/AppShell";
+import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
@@ -39,6 +40,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route element={<ProtectedRoute />}>

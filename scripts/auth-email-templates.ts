@@ -4,12 +4,20 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RECOVERY_PATH = path.join(ROOT, "supabase/templates/recovery.html");
+const INVITE_PATH = path.join(ROOT, "supabase/templates/invite.html");
 
 export const RECOVERY_SUBJECT = "Reset your Berrify password";
 export const RECOVERY_TEMPLATE_MAX_CHARS = 5000;
 
+export const INVITE_SUBJECT = "Te invitaron a Berrify";
+export const INVITE_LINK = "{{ .RedirectTo }}?token_hash={{ .TokenHash }}&amp;type=invite";
+
 export function readRecoveryTemplate(): string {
   return readFileSync(RECOVERY_PATH, "utf8").trim();
+}
+
+export function readInviteTemplate(): string {
+  return readFileSync(INVITE_PATH, "utf8").trim();
 }
 
 export function projectRefFromSupabaseUrl(url: string): string {

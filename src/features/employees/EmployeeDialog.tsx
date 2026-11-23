@@ -78,7 +78,7 @@ export function EmployeeDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={employee ? "Edit account" : "Create account"}
-      description="Admins set restaurant, station, pay, and whether this person is a manager or staff. They sign up with this email and the invite code."
+      description="Admins set restaurant, station, pay, and whether this person is a manager or staff. Save, then use Send invite on the roster to email them a sign-in link."
     >
       <form id="employee-form" className="grid grid-cols-2 gap-3" onSubmit={(e) => void onSubmit(e)}>
         <div className="col-span-2">
@@ -165,13 +165,6 @@ export function EmployeeDialog({
             onChange={(e) => setClockPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
           />
         </Field>
-        {employee && !employee.user_id && employee.invite_code ? (
-          <div className="col-span-2">
-            <Field label="Invite code" htmlFor="emp-invite">
-              <Input id="emp-invite" readOnly value={employee.invite_code} />
-            </Field>
-          </div>
-        ) : null}
         <div className="col-span-2">
           <label className="flex items-center gap-2 text-sm text-muted">
             <input
