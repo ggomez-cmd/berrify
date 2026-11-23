@@ -96,7 +96,8 @@ describe("AppShell mobile navigation", () => {
     openMenu();
     const nav = drawer() as HTMLElement;
     expect(within(nav).getByRole("link", { name: "Schedule" })).toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: "Time Clock" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "My shifts" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Time Clock" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Kiosk" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Dashboard" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Inventory" })).toBeNull();

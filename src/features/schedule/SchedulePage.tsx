@@ -1,4 +1,3 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { Button } from "../../components/ui/button";
@@ -13,7 +12,6 @@ import {
   eachDayOfWeek,
   filterShiftsForWeek,
   formatTimeRange,
-  formatWeekLabel,
   isManager,
   sameDay,
   shiftsForRestaurant,
@@ -27,6 +25,7 @@ import type { Employee, Restaurant, Shift, ShiftWithEmployee } from "../../lib/t
 import { useEmployees, useMyEmployee } from "../employees/hooks";
 import { useRestaurants } from "../invoices/hooks";
 import { ShiftDialog } from "./ShiftDialog";
+import { WeekPager } from "./WeekPager";
 import { usePublishWeek, useShiftCoworkers, useShifts } from "./hooks";
 
 const RESTAURANT_KEY = "berrify.schedule.restaurant";
@@ -265,32 +264,6 @@ export function SchedulePage() {
         restaurants={restaurants}
         restaurantId={restaurantId}
       />
-    </div>
-  );
-}
-
-function WeekPager({
-  cursor,
-  setCursor,
-}: {
-  cursor: Date;
-  setCursor: (d: Date) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <Button variant="ghost" className="px-2" onClick={() => setCursor(addDays(cursor, -7))} aria-label="Previous week">
-        <ChevronLeft className="size-4" />
-      </Button>
-      <Button variant="ghost" className="min-w-0 sm:min-w-48">
-        <CalendarDays className="size-4" />
-        {formatWeekLabel(cursor)}
-      </Button>
-      <Button variant="ghost" className="px-2" onClick={() => setCursor(addDays(cursor, 7))} aria-label="Next week">
-        <ChevronRight className="size-4" />
-      </Button>
-      <Button variant="subtle" onClick={() => setCursor(weekStart(new Date()))}>
-        This week
-      </Button>
     </div>
   );
 }
