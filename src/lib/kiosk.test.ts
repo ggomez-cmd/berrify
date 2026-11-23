@@ -34,10 +34,10 @@ describe("kiosk login role", () => {
     expect(isKioskLogin(null)).toBe(false);
   });
 
-  it("opens the kiosk like admin and manager, staff cannot", () => {
+  it("opens the kiosk only on a kiosk login", () => {
     expect(canOpenKiosk("kiosk")).toBe(true);
-    expect(canOpenKiosk("admin")).toBe(true);
-    expect(canOpenKiosk("manager")).toBe(true);
+    expect(canOpenKiosk("admin")).toBe(false);
+    expect(canOpenKiosk("manager")).toBe(false);
     expect(canOpenKiosk("staff")).toBe(false);
     expect(canOpenKiosk(null)).toBe(false);
   });

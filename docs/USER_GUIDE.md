@@ -21,7 +21,7 @@ Berrify is a multi-tenant workspace. After you sign in, you work inside one rest
 | **Admin** | Workspace admin | Everything a manager can do, plus **Employees** (create accounts, set manager/staff access, station, and pay) and Time Clock **Settings** |
 | **Kiosk** | Shared tablet login (no employee row) | **Kiosk** only. Staff punch on it with their clock PIN. It cannot open any other page or read employee, shift, or pay data. |
 
-Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movements, or Kiosk. Those routes send them to Schedule.
+Staff cannot open Dashboard, Employees, Inventory, Invoices, Suppliers, Movements, or Kiosk. Those routes send them to Schedule. Only a kiosk login opens Kiosk; admin and manager logins cannot, so nobody can run the kiosk on their own phone.
 
 A kiosk login always lands on Kiosk. Every other route sends it back to Kiosk, and it has no sidebar.
 
@@ -42,7 +42,7 @@ A kiosk login always lands on Kiosk. Every other route sends it back to Kiosk, a
 
 The message is Berrify-branded (wine button, wordmark). Delivery still uses the project’s existing Supabase mail settings. Seed addresses such as `demo@berrify.local` do not receive mail.
 
-**Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Use a staff seed account's clock PIN on the **Kiosk** to try clocking in and out. Seed passwords live in the README, not on the sign-in screen.
+**Important:** `demo@berrify.local` is an admin login used in local seed data and often has **no employee row**. That person can run the office (roster, invoices, attendance) but **cannot punch**. Sign in with a kiosk login and use a staff seed account's clock PIN on the **Kiosk** to try clocking in and out. Seed passwords live in the README, not on the sign-in screen.
 
 ### Joining an existing restaurant (staff or manager)
 
@@ -62,7 +62,7 @@ Use **Sign out** in the page header (always visible) or at the bottom of the lef
 
 The left sidebar is always visible after sign-in.
 
-- **Overview:** Dashboard, Schedule, Time Clock, Kiosk (staff see Schedule and Time Clock only)
+- **Overview:** Dashboard, Schedule, Time Clock, My shifts (staff see Schedule and My shifts only)
 - **Operations (admin / manager):** Employees (admin only), Inventory, Invoices, Suppliers, Movements
 - **Coming soon (admin / manager):** Payroll, Analytics (locked)
 
@@ -209,11 +209,11 @@ Sets organization clock rules:
 
 Click **Save settings**.
 
-### Kiosk (manager / admin / kiosk login)
+### Kiosk (kiosk login only)
 
-Open **Kiosk** from the sidebar on the shared tablet. Staff do not see this item. They enter their clock PIN on that screen to punch. Leave the kiosk with the admin exit PIN.
+The shared tablet signs in with a **kiosk login**, which opens straight to this screen. Staff enter their clock PIN on it to punch. Admin and manager logins cannot open the kiosk, so it only runs on the tablet. One kiosk login works on every tablet in the organization.
 
-A tablet can instead sign in with a **kiosk login**, which opens straight to this screen. Leaving the kiosk on a kiosk login (admin exit PIN, if one is set) signs the tablet out. Berrify support sets up kiosk logins; they cannot be created from Employees.
+Leaving the kiosk (admin exit PIN, if one is set) signs the tablet out. Berrify support sets up kiosk logins; they cannot be created from Employees.
 
 After 5 wrong PINs within 10 minutes (clock PINs and the exit PIN count together), the tablet's login is locked out of every PIN check, even a correct one, until the 10 minutes pass. The screen shows "Too many wrong PINs. Try again in N minutes." A correct PIN does not reset the count.
 
@@ -422,8 +422,8 @@ Pink carbonless photos shot sideways usually need a human pass before export.
 | Dashboard | No | Yes | Yes |
 | See own published shifts | Yes | Yes | Yes |
 | Edit / publish the week board | No | Yes | Yes |
-| Punch (if linked + active) | Yes | Yes | Yes |
-| Open tablet kiosk | No | Yes | Yes |
+| Punch at the kiosk (if linked + active) | Yes | Yes | Yes |
+| Open tablet kiosk | No (kiosk login only) | No (kiosk login only) | No (kiosk login only) |
 | Who’s working | No | Yes (times + force out) | Yes |
 | Record missing punch, activity, exceptions | No | Yes | Yes |
 | Clock settings | No | No | Yes |

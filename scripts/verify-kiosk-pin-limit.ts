@@ -249,11 +249,14 @@ try {
   check("other org's login has its own count", await failureCount(awayKiosk), 1);
   check("first login still at 5", await failureCount(kiosk), 5);
 
-  console.log("-- manager sessions are limited too");
+  console.log("-- manager logins cannot run the kiosk (0043)");
   await asUser(manager, async () => {
-    for (let i = 1; i <= 5; i += 1) check(`manager wrong PIN #${i}`, await unlock(wrongPin), "Invalid PIN");
-    check("manager locked after 5", await unlock(homePin), LOCKED);
+    check("manager unlock, right PIN", await unlock(homePin), "Not authorized");
+    check("manager unlock, wrong PIN", await unlock(wrongPin), "Not authorized");
+    check("manager punch", await punch(homePin, "clock_in"), "Not authorized");
+    check("manager exit", await confirmExit(exitPin), "Not authorized");
   });
+  check("manager refusals are not counted", await failureCount(manager), 0);
 
   console.log("-- the window passes");
   await backdate(kiosk, "3 minutes");
@@ -301,27 +304,6 @@ try {
   });
   check("old names record no failures", await failureCount(legacyUser), 0);
   check("old punch name wrote no clock event", await eventCount(home.emp_id), eventsBeforeLegacy);
-
-  console.log("-- a login with 3 memberships gets 5 wrong PINs, not 5 per membership");
-  const multi = await tempUser(home.org_id, "manager");
-  for (let i = 0; i < 2; i += 1) {
-    const { rows: orgRows } = await client.query<{ id: string }>(
-      "insert into public.organizations (name) values ($1) returning id",
-      [`kiosk-pin-verify ${randomUUID()}`],
-    );
-    await client.query("insert into public.memberships (user_id, org_id, role) values ($1, $2, 'manager')", [multi, orgRows[0].id]);
-  }
-  const memberships = await client.query<{ n: string }>("select count(*) as n from public.memberships where user_id = $1", [multi]);
-  check("multi-org login has 3 memberships", Number(memberships.rows[0].n), 3);
-  await asUser(multi, async () => {
-    for (let i = 1; i <= 4; i += 1) check(`multi-org wrong PIN #${i}`, await unlock(wrongPin), "Invalid PIN");
-  });
-  check("one row per failed check", await failureCount(multi), 4);
-  await asUser(multi, async () => {
-    check("multi-org login not locked after 4", await unlock(homePin), "ok");
-    check("multi-org wrong PIN #5", await unlock(wrongPin), "Invalid PIN");
-    check("multi-org login locked after 5", await unlock(homePin), LOCKED);
-  });
 
   console.log("-- managers cannot read PIN hashes");
   await asUser(manager, async () => {

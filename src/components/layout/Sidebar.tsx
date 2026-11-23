@@ -10,7 +10,6 @@ import {
   Lock,
   Receipt,
   Wine,
-  Tablet,
   Truck,
   Users,
   Wallet,
@@ -99,7 +98,6 @@ export function Sidebar({
         { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
         { to: "/time-clock", label: "Time Clock", icon: Clock, end: false },
         { to: "/my-shifts", label: "My shifts", icon: History, end: false },
-        { to: "/kiosk", label: "Kiosk", icon: Tablet, end: false },
       ]
     : isKioskLogin(role)
       ? []

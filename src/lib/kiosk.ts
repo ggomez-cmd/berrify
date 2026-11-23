@@ -13,8 +13,9 @@ export function isKioskLogin(role: MembershipRole | null): boolean {
   return role === "kiosk";
 }
 
+// Only the tablet's kiosk login. Admin and manager logins cannot open it.
 export function canOpenKiosk(role: MembershipRole | null): boolean {
-  return role === "admin" || role === "manager" || role === "kiosk";
+  return isKioskLogin(role);
 }
 
 export function kioskLockRedirect(role: MembershipRole | null, pathname: string): string | null {

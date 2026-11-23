@@ -10,7 +10,6 @@ import {
   KIOSK_CONFIRM_MS,
   KIOSK_IDLE_MS,
   canOpenKiosk,
-  isKioskLogin,
   shouldPromptKioskExit,
 } from "../../lib/kiosk";
 import { MAX_CLOCK_PIN_LENGTH, isValidClockPin, pinError } from "../../lib/pin";
@@ -133,14 +132,15 @@ function PinDots({ pin }: { pin: string }) {
 
 export function KioskPage() {
   const { role } = useAuth();
+  // Only the tablet's kiosk login runs the kiosk (0043).
   if (!canOpenKiosk(role)) {
-    return <Navigate to="/schedule" replace />;
+    return <Navigate to="/" replace />;
   }
   return <KioskScreen />;
 }
 
 function KioskScreen() {
-  const { org, role, signOut } = useAuth();
+  const { org, signOut } = useAuth();
   const navigate = useNavigate();
   const timeZone = org?.timezone ?? "America/Puerto_Rico";
   const clockLabel = useNow(timeZone);
@@ -185,12 +185,8 @@ function KioskScreen() {
 
   const leaveKiosk = useCallback(() => {
     allowLeave.current = true;
-    if (isKioskLogin(role)) {
-      void signOut().then(() => navigate("/login", { replace: true }));
-      return;
-    }
-    navigate("/");
-  }, [navigate, role, signOut]);
+    void signOut().then(() => navigate("/login", { replace: true }));
+  }, [navigate, signOut]);
 
   useEffect(() => {
     if (!session && !confirm) return;
