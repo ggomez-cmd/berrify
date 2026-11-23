@@ -46,8 +46,11 @@ The message is Berrify-branded (wine button, wordmark). Delivery still uses the 
 
 ### Joining an existing restaurant (staff or manager)
 
-1. An admin adds you on **Employees**, sets App access to **Staff** or **Manager**, and shares how you will sign in.
-2. You cannot create a restaurant or join from **Sign in**. Invite join from this screen is not available yet.
+1. An admin adds you on **Employees** with your email, sets App access to **Staff** or **Manager**, and clicks **Send invite**.
+2. Open the email **Te invitaron a Berrify** and click **Crear mi cuenta**. The email and the setup page are in Spanish.
+3. Choose a password (at least 6 characters) and a kiosk PIN (4 to 8 digits) for clocking in at the tablet. If the PIN is taken, pick another. If your admin already set your PIN, you only choose a password. Click **Crear cuenta**. Berrify signs you in to your restaurant.
+4. If the page says **Este enlace expiró o ya se usó**, ask your admin to click **Resend**. If you already set a password, sign in normally.
+5. You cannot create a restaurant or join from **Sign in**.
 
 ### Sign out
 
@@ -228,7 +231,12 @@ Time Clock has no pay period, payroll export, or employee timesheet approval yet
 
 Employees is where admins create accounts: name, restaurant, station (job), app access (manager or staff), phone, hourly rate, whether a login is linked, and active/inactive.
 
-A roster row can exist **before** the person has an account. **Login = Linked** means `user_id` is set. **Invite pending** means they are on the roster but have not signed in with that email yet.
+A roster row can exist **before** the person has an account. The **Login** column shows:
+
+- **No email:** add an email before inviting.
+- **No login:** click **Send invite** to email a sign-in link.
+- **Invite sent:** the email went out but they have not signed in yet. Click **Resend** if the link expired.
+- **Active login:** they have signed in.
 
 ### How to use it
 
@@ -242,10 +250,11 @@ A roster row can exist **before** the person has an account. **Login = Linked** 
    - Station
    - **App access** — Manager or Staff
    - Hourly rate
-   - Clock PIN (optional)
+   - Clock PIN (optional). Invited employees choose their own when they set up their account; after that only an admin can change it here.
    - **Active on the roster**
 4. **Edit** changes the same fields. Uncheck Active to keep history but block punches and new shifts on the active board.
 5. **Delete** removes the roster row after confirm.
+6. **Send invite** works only for active employees with an email. Changing someone's email after the invite does not move their login; Resend will refuse until that is fixed.
 
 Hourly rate is stored for the roster. Berrify does **not** run payroll from it yet.
 

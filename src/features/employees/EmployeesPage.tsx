@@ -7,19 +7,58 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Table, THead, Td, Th } from "../../components/ui/table";
+import { canSendInvite, loginState, type LoginState } from "../../lib/employee-invite";
 import { formatMoney } from "../../lib/format";
 import { groupEmployeesByRestaurant, isAdmin } from "../../lib/schedule";
 import type { Employee } from "../../lib/types";
 import { useRestaurants } from "../invoices/hooks";
 import { EmployeeDialog } from "./EmployeeDialog";
-import { useDeleteEmployee, useEmployees, useRotateInvite } from "./hooks";
+import { useDeleteEmployee, useEmployeeLogins, useEmployees, useSendInvite } from "./hooks";
+
+const LOGIN_LABELS: Record<LoginState, { label: string; tone: "ok" | "info" | "neutral" }> = {
+  linked: { label: "Active login", tone: "ok" },
+  invited: { label: "Invite sent", tone: "info" },
+  "not-invited": { label: "No login", tone: "neutral" },
+  "no-email": { label: "No email", tone: "neutral" },
+  inactive: { label: "No login", tone: "neutral" },
+};
+
+function LoginCell({
+  employee,
+  state,
+  sending,
+  busy,
+  onSend,
+}: {
+  employee: Employee;
+  state: LoginState;
+  sending: boolean;
+  busy: boolean;
+  onSend: () => void;
+}) {
+  const { label, tone } = LOGIN_LABELS[state];
+  return (
+    <div className="flex items-center gap-1">
+      <Badge tone={tone} dot>
+        {label}
+      </Badge>
+      {canSendInvite(employee, state) ? (
+        <Button variant="subtle" disabled={busy} onClick={onSend}>
+          {sending ? "Sending…" : state === "invited" ? "Resend" : "Send invite"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 export function EmployeesPage() {
   const { role } = useAuth();
   const { data: employees = [], isLoading, error } = useEmployees();
   const remove = useDeleteEmployee();
   const { data: restaurants = [] } = useRestaurants();
-  const rotateInvite = useRotateInvite();
+  const { data: logins } = useEmployeeLogins();
+  const sendInvite = useSendInvite();
+  const [inviteNotice, setInviteNotice] = useState<{ ok: boolean; message: string } | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -61,6 +100,11 @@ export function EmployeesPage() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error.message}</p> : null}
+      {inviteNotice ? (
+        <p className={`mb-3 text-sm ${inviteNotice.ok ? "text-ok" : "text-danger"}`} role="status">
+          {inviteNotice.message}
+        </p>
+      ) : null}
       {isLoading ? <p className="text-sm text-muted">Loading roster…</p> : null}
 
       {!isLoading ? (
@@ -73,7 +117,6 @@ export function EmployeesPage() {
               <Th>Phone</Th>
               <Th>Rate</Th>
               <Th>Login</Th>
-              <Th>Invite</Th>
               <Th>Status</Th>
               <Th />
             </tr>
@@ -81,7 +124,7 @@ export function EmployeesPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <Td colSpan={9} className="py-10 text-center text-muted">
+                <Td colSpan={8} className="py-10 text-center text-muted">
                   No employees yet.
                 </Td>
               </tr>
@@ -89,7 +132,7 @@ export function EmployeesPage() {
               groups.map((group) => (
                 <Fragment key={group.restaurant?.id ?? "none"}>
                   <tr>
-                    <Td colSpan={9} className="bg-paper text-xs font-medium uppercase tracking-wide text-ink">
+                    <Td colSpan={8} className="bg-paper text-xs font-medium uppercase tracking-wide text-ink">
                       {group.restaurant?.name ?? "No restaurant"} · {group.employees.length}
                     </Td>
                   </tr>
@@ -109,38 +152,27 @@ export function EmployeesPage() {
                       <Td>{employee.phone ?? "—"}</Td>
                       <Td>{formatMoney(employee.hourly_rate)}</Td>
                       <Td>
-                        <Badge tone={employee.user_id ? "ok" : "neutral"} dot>
-                          {employee.user_id ? "Linked" : "Invite pending"}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        {employee.user_id ? (
-                          <span className="text-muted">—</span>
-                        ) : employee.invite_code ? (
-                          <div className="flex items-center gap-1">
-                            <code className="rounded bg-paper px-1.5 py-0.5 text-[11px]">
-                              {employee.invite_code.slice(0, 8)}…
-                            </code>
-                            <Button
-                              variant="subtle"
-                              onClick={() => {
-                                void navigator.clipboard.writeText(employee.invite_code ?? "");
-                              }}
-                            >
-                              Copy
-                            </Button>
-                            <Button
-                              variant="subtle"
-                              onClick={() => {
-                                void rotateInvite.mutateAsync(employee.id);
-                              }}
-                            >
-                              Rotate
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted">Add an email</span>
-                        )}
+                        <LoginCell
+                          employee={employee}
+                          state={loginState(employee, logins?.get(employee.id))}
+                          sending={sendInvite.isPending && sendInvite.variables === employee.id}
+                          busy={sendInvite.isPending}
+                          onSend={() => {
+                            setInviteNotice(null);
+                            sendInvite.mutate(employee.id, {
+                              onSuccess: (status) =>
+                                setInviteNotice({
+                                  ok: true,
+                                  message: `${status === "resent" ? "Invite sent again" : "Invite sent"} to ${employee.email}.`,
+                                }),
+                              onError: (err) =>
+                                setInviteNotice({
+                                  ok: false,
+                                  message: `${employee.full_name}: ${err instanceof Error ? err.message : "Could not send the invite"}`,
+                                }),
+                            });
+                          }}
+                        />
                       </Td>
                       <Td>
                         <Badge tone={employee.active ? "ok" : "neutral"} dot>
