@@ -370,6 +370,9 @@ try {
   for (const [label, userId] of [
     ["staff S1", s1],
     ["staff S0 (no employee)", s0],
+    // 0043: only a kiosk login runs the kiosk.
+    ["admin", admin],
+    ["manager", manager],
   ] as const) {
     await asUser(userId, async () => {
       const denied = "raise: Not authorized";
@@ -392,11 +395,7 @@ try {
     check(`${label} refusals are not counted as PIN failures`, await failuresOf(userId), 0);
   }
 
-  for (const [label, userId] of [
-    ["admin", admin],
-    ["manager", manager],
-    ["kiosk", kiosk],
-  ] as const) {
+  for (const [label, userId] of [["kiosk", kiosk]] as const) {
     const before = await failuresOf(userId);
     await asUser(userId, async () => {
       check(`${label} unlock, right PIN`, answer(await attempt("select public.kiosk_unlock_v2($1) as r", [e2Pin])), `id: ${e2}`);

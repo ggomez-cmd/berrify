@@ -87,7 +87,7 @@ describe("AppShell mobile navigation", () => {
     expect(within(nav).getByRole("link", { name: /^Payroll$/ })).toBeInTheDocument();
     expect(within(nav).queryByRole("link", { name: "Payroll setup" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Payroll runs" })).toBeNull();
-    expect(within(nav).getByRole("link", { name: "Kiosk" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Kiosk" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Employees" })).toBeNull();
   });
 

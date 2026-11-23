@@ -282,8 +282,9 @@ try {
     const s = await rowCount("select count(*) as n from public.staff_shifts where id = $1", [draftId]);
     check("admin reads the draft shift", s, 1);
     check("admin reads its organization", await rowCount("select count(*) as n from public.organizations where id = $1", [home.org_id]), 1);
+    // 0043: only a kiosk login runs the kiosk.
     const unlock = await attempt("select public.kiosk_unlock_v2($1) as r", [homePin]);
-    check("admin kiosk_unlock still works", "error" in unlock ? outcome(unlock) : (unlock.rows[0].r as { id: string }).id, home.emp_id);
+    check("admin kiosk_unlock is refused", "error" in unlock ? unlock.error : "ran", "Not authorized");
   });
   await asUser(staff, async () => {
     // 0040: staff read only their own employee row; this staff login has none.

@@ -32,13 +32,6 @@ async function q<T extends Record<string, unknown>>(
   return client.query<T>(sql, params);
 }
 
-// Kiosk PIN RPCs return { error } for a wrong PIN instead of raising (0039).
-async function pinRpc(sql: string, params: unknown[] = []): Promise<void> {
-  const { rows } = await client.query<{ r: { error?: unknown } | null }>(sql, params);
-  const r = rows[0]?.r;
-  if (r && typeof r === "object" && typeof r.error === "string") throw new Error(r.error);
-}
-
 async function become(userId: string): Promise<void> {
   await client.query("reset role");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
@@ -514,31 +507,19 @@ try {
   );
   assert(staffKioskUnlock, "staff can unlock the kiosk");
 
-  const badPin = await asAuthenticated(ownerId, async () =>
-    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_unlock_v2('0000')) as r`), /Invalid PIN|PIN must be/i),
+  // 0043: only a kiosk login runs the kiosk; verify-kiosk-role covers it.
+  const ownerKioskUnlock = await asAuthenticated(ownerId, async () =>
+    expectReject(() => q(`select public.kiosk_unlock_v2('9999')`), /Not authorized/i),
   );
-  assert(badPin, "wrong PIN unlocks the kiosk");
+  assert(ownerKioskUnlock, "an admin login can unlock the kiosk");
 
-  const unlocked = await asAuthenticated(ownerId, async () => {
-    const { rows } = await q<{ kiosk_unlock: { id: string; full_name: string; state: string } }>(
-      `select public.kiosk_unlock_v2('9999') as kiosk_unlock`,
-    );
-    return rows[0]?.kiosk_unlock;
-  });
-  assert(unlocked?.id === probeId, "kiosk_unlock did not return the probe employee");
-  assert(unlocked?.full_name === "Kiosk Probe", "kiosk_unlock hid the employee name");
-  assert(unlocked?.state === "off_clock", "kiosk probe was not off clock");
-
-  const kioskIn = await asAuthenticated(ownerId, async () => {
-    const { rows } = await q<ClockEvent>(
-      `select e.* from jsonb_populate_record(null::public.clock_events, to_jsonb(public.kiosk_record_clock_event_v2('9999', 'clock_in', $1::uuid, null))) e`,
-      [crypto.randomUUID()],
-    );
-    return rows[0];
-  });
-  assert(kioskIn?.employee_id === probeId, "kiosk punch bound the tablet user, not the PIN employee");
-  assert(kioskIn?.source === "kiosk", "kiosk punch source was not kiosk");
-  assert(kioskIn?.actor_type === "employee", "kiosk punch actor was not employee");
+  const ownerKioskPunch = await asAuthenticated(ownerId, async () =>
+    expectReject(
+      () => q(`select public.kiosk_record_clock_event_v2('9999', 'clock_in', $1::uuid, null)`, [crypto.randomUUID()]),
+      /Not authorized/i,
+    ),
+  );
+  assert(ownerKioskPunch, "an admin login can punch at the kiosk");
 
   const staffSetOwnerPin = await asAuthenticated(staffId, async () =>
     expectReject(() => q(`select public.set_owner_kiosk_pin('7777')`), /Not authorized/i),
@@ -562,20 +543,11 @@ try {
   );
   assert(staffOwnerHash, "authenticated can select kiosk_exit_pin_hash");
 
-  const employeePinExit = await asAuthenticated(cookUserId, async () =>
-    expectReject(() => pinRpc(`select to_jsonb(public.kiosk_confirm_exit_v2('9999')) as r`), /Invalid PIN/i),
+  // Kiosk exit runs only on a kiosk login (0040, 0043); verify-kiosk-role covers it.
+  const staffExit = await asAuthenticated(cookUserId, async () =>
+    expectReject(() => q(`select public.kiosk_confirm_exit_v2('7777')`), /Not authorized/i),
   );
-  assert(employeePinExit, "employee clock PIN exits the kiosk");
-
-  const required = await asAuthenticated(cookUserId, async () => {
-    const { rows } = await q<{ kiosk_exit_required: boolean }>(`select public.kiosk_exit_required() as kiosk_exit_required`);
-    return rows[0]?.kiosk_exit_required;
-  });
-  assert(required === true, "kiosk_exit_required was false after owner set a PIN");
-
-  await asAuthenticated(cookUserId, async () => {
-    await q(`select public.kiosk_confirm_exit_v2('7777')`);
-  });
+  assert(staffExit, "a staff login can exit the kiosk");
 
   const selfPunchRefused = await asAuthenticated(cookUserId, () =>
     expectReject(
